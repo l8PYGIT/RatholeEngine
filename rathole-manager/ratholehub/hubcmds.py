@@ -347,6 +347,14 @@ def build_node_cmd(action, a):
             if not RE_IPPORT.match(remote): return None
             if transport not in ("ws", "wsmux", "wss", "wssmux"): return None
         return ["ratholenode", "backhaul", "on", remote, token, transport, profile]
+    if action == "add_bh_svc":
+        name = a.get("name", ""); token = a.get("token", ""); inbound = str(a.get("inbound", ""))
+        if not RE_NAME.match(name) or not RE_BH_TOK.match(token) or not RE_PORT.match(inbound): return None
+        return ["ratholenode", "backhaul", "add-svc", name, token, inbound]
+    if action == "rm_bh_svc":
+        name = a.get("name", "")
+        if not RE_NAME.match(name): return None
+        return ["ratholenode", "backhaul", "rm-svc", name]
     if action == "migrate":     return ["ratholenode", "migrate"]
 
     if action == "tune":        return ["ratholenode", "tune"]
@@ -495,7 +503,7 @@ WRITE_ACTIONS = {
 
     "backup", "enable", "regen_full", "regen",
     # node
-    "add_svc", "rm_svc", "kcp_on", "kcp_off", "apply", "restart", "set_server", "set_main",
+    "add_svc", "rm_svc", "add_bh_svc", "rm_bh_svc", "kcp_on", "kcp_off", "apply", "restart", "set_server", "set_main",
     "upstream_add", "upstream_add_svc", "upstream_rm", "upstream_rm_svc",
     "upstream_kcp_on", "upstream_kcp_off", "upstream_apply", "upstream_restart",
     "upstream_plain_on", "upstream_plain_off",

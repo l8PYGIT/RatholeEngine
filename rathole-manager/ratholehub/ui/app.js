@@ -457,6 +457,13 @@ function renderNode(n,ov){
    <td class="btns"><button class="r" onclick="rmSvc('${n}','${esc(d.name)}')">${t('remove')}</button></td></tr>`;});
   s+='</table>';}
  s+='</div>';
+ s+=`<div class="sec"><h4>${t('bh_services')} <button class="g" onclick="addBhSvc('${n}')">${t('add_svc')}</button>
+   <button class="gh" onclick="run('${n}','backhaul_status')">${t('status')}</button></h4>`;
+ const bsv=ov.backhaul_services||[];
+ if(!bsv.length)s+=`<div class="empty">${t('no_svc')}</div>`;
+ else{s+=tbl([t('c_svc'),t('c_inbound'),t('c_ops')]);bsv.forEach(d=>{s+=`<tr><td><span class="dot d-ok" style="margin-inline-end:6px"></span>${esc(d.name)}</td><td>${esc(d.inbound)}</td>
+   <td class="btns"><button class="r" onclick="rmBhSvc('${n}','${esc(d.name)}')">${t('remove')}</button></td></tr>`;});s+='</table>';}
+ s+='</div>';
  s+=`<div class="sec"><h4>${t('upstreams')} <button class="g" onclick="upAdd('${n}')">${t('add_up')}</button></h4>
    <div class="sub" style="margin-bottom:6px">${h(t('upcarrier_hint'))}</div>`;
  const ups=ov.upstreams||[];
@@ -1141,6 +1148,12 @@ function addSvc(n){formModal(t('t_add_svc'),[
   {id:'inbound',label:t('l_inbound'),req:1}],
   v=>{closeModal();run(n,'add_svc',v);});}
 function rmSvc(n,name){if(confirm(t('cf_delsvc')+' ('+name+')'))run(n,'rm_svc',{name});}
+function addBhSvc(n){formModal(t('t_bh_addsvc'),[
+  {id:'name',label:t('f_name'),req:1},
+  {id:'token',label:t('l_bh_token'),req:1},
+  {id:'inbound',label:t('l_inbound'),req:1}],
+  v=>{closeModal();run(n,'add_bh_svc',v);});}
+function rmBhSvc(n,name){if(confirm(t('cf_delsvc')+' ('+name+')'))run(n,'rm_bh_svc',{name});}
 function upAdd(n){formModal(t('t_up_add'),[
   {id:'id',label:t('l_up_id'),ph:'iran2',req:1},
   {id:'server',label:t('l_up_srv'),ph:'rp02.example.ir:443',req:1}],

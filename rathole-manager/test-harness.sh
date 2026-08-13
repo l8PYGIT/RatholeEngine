@@ -43,6 +43,7 @@ sed \
   -e "s#^STATE=.*#STATE=\"$ROOT/etc/rathole-manager/state.json\"#" \
   -e "s#^SERVER_TOML=.*#SERVER_TOML=\"$ROOT/etc/rathole/server.toml\"#" \
   -e "s#^NGINX_CONF=.*#NGINX_CONF=\"$ROOT/etc/nginx/conf.d/rathole.conf\"#" \
+  -e "s#^STREAM_CONF=.*#STREAM_CONF=\"$ROOT/etc/nginx/stream.d/rathole-stream.conf\"#" \
   -e 's/\r$//' \
   "$BASE/ratholectl" > "$ROOT/ratholectl.lib"
 
@@ -60,6 +61,8 @@ source "$ROOT/ratholectl.lib"
 need_root(){ :; }
 nginx(){ return 0; }
 systemctl(){ return 0; }
+# test-harness nabayad /etc/nginx/nginx.conf-e host ra taghir dahad.
+ensure_stream_include(){ mkdir -p "\$(dirname "\$STREAM_CONF")"; }
 "\$@"
 EOF
 chmod +x "$RUN"
@@ -83,6 +86,9 @@ cat "$ROOT/etc/rathole/server.toml"
 
 line "tst 4: config nginx tvlidshdh"
 cat "$ROOT/etc/nginx/conf.d/rathole.conf"
+CONF="$ROOT/etc/nginx/conf.d/rathole.conf"
+grep -q 'ssl_protocols TLSv1.2 TLSv1.3;' "$CONF" && echo "OK: TLS az 1.2 shoroo mishavad" || echo "FAIL: TLS 1.2 nist"
+grep -qE '^\s*listen 443 ssl http2' "$CONF" && echo "OK: ALPN h2 + HTTP/1.1 fallback faal ast" || echo "FAIL: http2 rooye listener 443 nist"
 
 line "tst 5: hazf node nld01 va baztolid"
 bash "$RUN" cmd_rm nld01
@@ -130,6 +136,15 @@ bash "$RUN" cmd_add gm01 2087 2>/dev/null
 jq '(.nodes[]|select(.name=="gm01")|.sni)="ex.com"' "$ROOT/etc/rathole-manager/state.json" > "$ROOT/s.tmp" && mv "$ROOT/s.tmp" "$ROOT/etc/rathole-manager/state.json"
 bash "$RUN" regenerate
 sed -n '/map \$http_x_cdn_id \$direct_node/,/}/p' "$CONF" | grep -q '"gm01"' && echo "FAIL: node SNI dar map" || echo "OK: node SNI hazf shod az map"
+
+line "tst 11.1: IP-TLS + SNI -> TLS 1.2 va ALPN h2/HTTP-1.1"
+: > "$ROOT/ip-fullchain.pem"; : > "$ROOT/ip-key.pem"
+jq --arg fc "$ROOT/ip-fullchain.pem" --arg key "$ROOT/ip-key.pem" \
+  '.ip_tls={ip:"203.0.113.10",fullchain:$fc,key:$key}' \
+  "$ROOT/etc/rathole-manager/state.json" > "$ROOT/s.tmp" && mv "$ROOT/s.tmp" "$ROOT/etc/rathole-manager/state.json"
+bash "$RUN" regenerate
+grep -qE '^\s*listen 127\.0\.0\.1:8443 ssl http2 default_server;' "$CONF" && echo "OK: IP-TLS listener -> http2/ALPN" || echo "FAIL: IP-TLS listener http2 nist"
+grep -q 'ssl_protocols TLSv1.2 TLSv1.3;' "$CONF" && echo "OK: IP-TLS -> TLS 1.2+" || echo "FAIL: IP-TLS TLS 1.2 nist"
 
 line "tst 12: direct_port == plain_port -> yek block (bedoon duplicate listen)"
 jq 'del(.direct_port,.direct_header) | .plain_port=9000 | .direct_port=9000 | .direct_header="X-Cdn-Id"' "$ROOT/etc/rathole-manager/state.json" > "$ROOT/s.tmp" && mv "$ROOT/s.tmp" "$ROOT/etc/rathole-manager/state.json"

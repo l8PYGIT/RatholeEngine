@@ -9,6 +9,12 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-08-11
+
+- **dual-core lanes:** یک نود اکنون می‌تواند `rathole-client` و `backhaul-client` را هم‌زمان اجرا کند. registry جداگانهٔ `/etc/rathole/bh-services.conf` و فرمان‌های `ratholenode backhaul add-svc|rm-svc|ls` اضافه شد؛ فعال‌کردن Backhaul دیگر رتهول را خاموش نمی‌کند.
+- **Hub:** جدول مستقل Backhaul-lane services و actionهای argv-validated برای افزودن/حذف آن‌ها اضافه شد.
+- **doctor:** پنل ایران سلامت service و listener بک‌هال را در کنار رتهول بررسی می‌کند.
+
 ## [1.8.4] - 2026-08-09
 
 ### Added

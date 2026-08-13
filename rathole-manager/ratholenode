@@ -24,6 +24,7 @@ rth_mktempd(){ mktemp -d "$@"; }
 
 ENV_FILE="/etc/rathole/node.env"
 SVC_FILE="/etc/rathole/services.conf"
+BH_SVC_FILE="/etc/rathole/bh-services.conf"
 CLIENT_TOML="/etc/rathole/client.toml"
 SVC="rathole-client"
 
@@ -187,7 +188,9 @@ cmd_apply(){
   log "client.toml ba $(grep -cvE '^\s*(#|$)' "$SVC_FILE" 2>/dev/null || echo 0) service rooye yek tunnel sakhte shod."
 }
 
+svc_file_has_entries(){ [ -f "$1" ] && grep -qvE '^[[:space:]]*(#|$)' "$1" 2>/dev/null; }
 svc_exists(){ grep -qE "^$1\|" "$SVC_FILE" 2>/dev/null; }
+bh_svc_exists(){ grep -qE "^$1\|" "$BH_SVC_FILE" 2>/dev/null; }
 
 # aatbarsnji-ye moshtarak baraye name/token-e service (jelogiri az tzrigh be TOML/services.conf)
 valid_svc_name(){ echo "$1" | grep -qE '^[a-zA-Z0-9_-]+$'; }
@@ -608,6 +611,21 @@ gen_backhaul_client_toml(){
     echo "mux_streambuffer = ${muxstream:-65536}"
     echo "log_level = \"info\""
     echo "web_port = 0"
+    # registry-e lane: Backhaul port-map rooye server-e Iran ast; in comments
+    # ownership-e servicehaye node ra sabt mikonand, bedoon leak-e token.
+    if [ -f "$BH_SVC_FILE" ]; then
+      while IFS='|' read -r name svc_token inbound; do
+        [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
+        svc_token="${svc_token%$'\r'}"; inbound="${inbound%$'\r'}"
+        if ! valid_svc_name "$name" || [ -z "$svc_token" ] || ! echo "$inbound" | grep -qE '^[0-9]+$'; then
+          warn "khatt-e namotabar dar bh-services.conf rad shod (name=$name)."
+          continue
+        fi
+        echo "# lane-service: ${name} -> 127.0.0.1:${inbound}"
+      done < "$BH_SVC_FILE"
+    else
+      echo "# bh-services.conf khali ast (legacy single-backhaul mode)"
+    fi
   } > "$BH_TOML.tmp"
   rth_commit_config "$BH_TOML.tmp" "$BH_TOML"
 }
@@ -628,6 +646,66 @@ RestartSec=2
 WantedBy=multi-user.target
 UNIT
   systemctl daemon-reload 2>/dev/null || true
+}
+
+cmd_bh_add_svc(){
+  need_root; load_env
+  local name="${1:-}" token="${2:-}" inbound="${3:-}"
+  [ -n "$name" ] && [ -n "$token" ] && [ -n "$inbound" ] || die "estefade: ratholenode backhaul add-svc <name> <token> <inbound_port>"
+  valid_svc_name "$name" || die "name namotabar."
+  valid_svc_token "$token" || die "token namotabar (faghat [A-Za-z0-9._=+/-] mjaz ast)."
+  echo "$inbound" | grep -qE '^[0-9]+$' || die "port bayad adad bashad."
+  check_port_conflict "$inbound" "backhaul service '$name'" || die "tadakhol port â€” meghdar digari entekhab kon."
+  if [ -n "${BH_TOKEN:-}" ] && [ "$token" != "$BH_TOKEN" ]; then
+    die "token service bayad ba BH_TOKEN-e moshterak yeksan bashad."
+  fi
+  touch "$BH_SVC_FILE"; chmod 600 "$BH_SVC_FILE"
+  if bh_svc_exists "$name"; then
+    warn "backhaul service '$name' vojood dard; beroozresani mishavad."
+    sed -i "/^$name|/d" "$BH_SVC_FILE"
+  fi
+  echo "${name}|${token}|${inbound}" >> "$BH_SVC_FILE"
+  [ -n "${BH_REMOTE_ADDR:-${BH_REMOTE:-}}" ] && [ -n "${BH_TOKEN:-}" ] && gen_backhaul_client_toml
+  log "backhaul service '$name' -> 127.0.0.1:$inbound sabt shod (lane-e joda az rathole)."
+}
+
+cmd_bh_rm_svc(){
+  need_root
+  local name="${1:-}"
+  [ -n "$name" ] || die "estefade: ratholenode backhaul rm-svc <name>"
+  valid_svc_name "$name" || die "name namotabar."
+  bh_svc_exists "$name" || die "backhaul service '$name' peyda nashod."
+  sed -i "/^$name|/d" "$BH_SVC_FILE"
+  if [ -f "$ENV_FILE" ]; then
+    load_env
+    [ -n "${BH_REMOTE_ADDR:-${BH_REMOTE:-}}" ] && [ -n "${BH_TOKEN:-}" ] && gen_backhaul_client_toml
+  fi
+  log "backhaul service '$name' hazf shod."
+}
+
+cmd_bh_ls(){
+  [ -f "$BH_SVC_FILE" ] || { warn "hich backhaul service-i nist."; return; }
+  printf '%-16s %-10s %s\n' "SERVICE" "INBOUND" "TOKEN"
+  printf '%s\n' "-------------------------------------------"
+  while IFS='|' read -r name token inbound; do
+    [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
+    printf '%-16s %-10s %s\n' "$name" "$inbound" "${token:0:8}…"
+  done < "$BH_SVC_FILE"
+}
+
+start_rathole_lane_if_present(){
+  load_env
+  if ! svc_file_has_entries "$SVC_FILE"; then
+    systemctl disable --now "$SVC" 2>/dev/null || true
+    return
+  fi
+  if [ "${TUNNEL:-ws}" = "backhaul" ]; then
+    warn "node.env-e ghadimi TUNNEL=backhaul ast; lane-e rathole khodkar start nashod. pas az bargardandan node-haye rathole rooye Iran, yekbar 'ratholenode plain off' bezan."
+    return
+  fi
+  gen_client
+  reload_svc
+  log "$SVC lane-e rathole hamzamam ba backhaul faal ast."
 }
 
 cmd_backhaul(){
@@ -653,7 +731,6 @@ cmd_backhaul(){
       env_set BH_TOKEN "$token"
       env_set BH_TRANSPORT "$transport"
       env_set BH_PROFILE "$profile"
-      env_set TUNNEL backhaul
       gen_backhaul_client_toml
       gen_backhaul_client_unit
       systemctl enable "$BH_CLI_SVC" >/dev/null 2>&1 || true
@@ -667,29 +744,32 @@ cmd_backhaul(){
           echo "$remote" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}:' && \
             warn "TLS be IP-e khali: gvahi verify NEMISHAVAD — ramz dar barabar-e shenod-e ghayr-faal bargharar ast، vali MITM-e faal daf nemishavad." ;;
       esac
-      # backhaul JAYGOZIN-e kamel-e tunnel-e rathole baraye in node ast: samt-e Iran service az
-      # server.toml hazf shode, pas rathole-client be service-i vasl mishavad ke digar nist va
-      # crash-loop mikonad. khamoosh (va disable ta bad az reboot ham balaa nayayad).
-      systemctl disable --now "$SVC" 2>/dev/null || true
-      log "$SVC khamoosh shod (backhaul jaygozin-e tunnel shod)."
+      start_rathole_lane_if_present
+      if ! svc_file_has_entries "$BH_SVC_FILE"; then
+        warn "bh-services.conf khali ast; in halat baraye sazgari ba nasb-e ghadimi kar mikonad. baraye dual-core, service-haye backhaul ra ba 'ratholenode backhaul add-svc' sabt kon."
+      fi
       warn "rooye Iran motmaen shv 'ratholectl backhaul on' zade shode va in node ba 'ratholectl backhaul node <name> on' faal ast."
       ;;
     off)
+      load_env
+      local old_mode="${TUNNEL:-ws}"
       systemctl disable --now "$BH_CLI_SVC" 2>/dev/null || true
       rm -f "$BH_CLI_UNIT" "$BH_TOML"; systemctl daemon-reload 2>/dev/null || true
       # pak kardan env-haye backhaul az node.env
       sed -i '/^BH_REMOTE=/d;/^BH_REMOTE_ADDR=/d;/^BH_TOKEN=/d;/^BH_TRANSPORT=/d;/^BH_PROFILE=/d' "$ENV_FILE" 2>/dev/null || true
-      # bargasht be tunnel-e pishfarz (ws/443) va roshan kardan-e dobare-ye rathole-client.
-      env_set TUNNEL ws
-      gen_client
-      restart_svc
-      log "backhaul client khamoosh va hazf shod; tunnel be ws/443 bargasht."
+      # migration-e state-e ghadimi: TUNNEL=backhaul dige jozv carrier-haye rathole nist.
+      [ "$old_mode" = "backhaul" ] && env_set TUNNEL ws
+      start_rathole_lane_if_present
+      log "backhaul client khamoosh va hazf shod; lane-e rathole (agar service dashte bashad) joda edame midahad."
       warn "rooye Iran ham 'ratholectl backhaul node <name> off' ra bezan ta service dobare be server.toml bargardad."
       ;;
+    add-svc) cmd_bh_add_svc "${1:-}" "${2:-}" "${3:-}" ;;
+    rm-svc)  cmd_bh_rm_svc "${1:-}" ;;
+    ls)      cmd_bh_ls ;;
     status)
       load_env
       if systemctl is-active --quiet "$BH_CLI_SVC"; then
-        echo "backhaul client: $(c_g 'active')  → ${BH_REMOTE_ADDR:-${BH_REMOTE:-?}:443} (transport=${BH_TRANSPORT:-wssmux}, profile=${BH_PROFILE:-balanced})"
+        echo "backhaul client: $(c_g 'active')  → ${BH_REMOTE_ADDR:-${BH_REMOTE:-?}:443} (transport=${BH_TRANSPORT:-wssmux}, profile=${BH_PROFILE:-balanced}, services=$(grep -cvE '^[[:space:]]*(#|$)' "$BH_SVC_FILE" 2>/dev/null || echo 0))"
       else
         echo "backhaul client: $(c_y 'inactive')"
       fi
@@ -697,7 +777,7 @@ cmd_backhaul(){
     logs)
       journalctl -u "$BH_CLI_SVC" -n "${1:-40}" --no-pager 2>/dev/null || true
       ;;
-    *) die "estefade: ratholenode backhaul <on <domain|host:port> <token> [transport] [profile]|off|status|logs>" ;;
+    *) die "estefade: ratholenode backhaul <on <domain|host:port> <token> [transport] [profile]|off|add-svc|rm-svc|ls|status|logs>" ;;
   esac
 }
 
@@ -1474,7 +1554,8 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   kcp on <iran_ip:udp_port> <key> [profile] | off | status   switch tunnel be UDP+FEC (kcptun) ba estetar/profile ya bargasht be 443
   plain on <iran_ip:port> | off | status   tunnel-e websocket bedoon-e TLS (mostaghim be port HTTP-e sade rooye Iran)
   noise on <iran_ip:port> <pubkey> [pattern] | off | status   tunnel-e ramznegari-shode (Noise) bedoon-e TLS/cert
-  backhaul on <domain|host:port> <token> [transport] [profile] | off | status   TLS/443: wss/wssmux؛ direct-IP bedoon TLS: ws/wsmux
+  backhaul on <domain|host:port> <token> [transport] [profile] | off | status   lane-e joda: TLS/443=wss/wssmux, direct-IP=ws/wsmux
+  backhaul add-svc <name> <token> <port> | rm-svc <name> | ls   registry-e servicehaye lane-e backhaul
 
   fakeweb <start|stop|rm> [port] web fik sabok baraye fallback inbound TLS (pishfarz 8081)
   upstream add <id> <server:port> [host]      afzoodan server Iran dovom/sevom (tunnel jda)

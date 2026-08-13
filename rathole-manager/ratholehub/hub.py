@@ -1209,6 +1209,8 @@ class Handler(BaseHTTPRequestHandler):
                 ov["reachable"] = False; ov["error"] = r.get("err", "") or ("rc=%s" % r.get("rc")); return self._send(200, ov)
             nls = parse_node_ls(r.get("out", ""))
             ov["main_server"] = nls["server"]; ov["services"] = nls["services"]
+            bls = parse_node_ls(R(["ratholenode", "backhaul", "ls"]).get("out", ""))
+            ov["backhaul_services"] = bls["services"]
             # Node-haye jadid JSON-e normalized midahand; node-haye ghadimi fallback-e parser ra negah midarand.
             try:
                 raw = R(["ratholenode", "status", "--json"]).get("out", "") or "{}"

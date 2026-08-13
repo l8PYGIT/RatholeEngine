@@ -113,7 +113,7 @@ ok "nginx-e generated cert-e IP ra default va cert-e domain ra SNI-specific nega
       ip_tls:{ip:"1.2.3.4",fullchain:$ifc,key:$ikey,self_signed:true}}' > "$STATE"
   gen_nginx_conf
 
-  grep -qF 'listen 127.0.0.1:8443 ssl default_server;' "$NGINX_CONF" || fail "IP TLS default-e listener-e dakhli nist"
+  grep -qF 'listen 127.0.0.1:8443 ssl http2 default_server;' "$NGINX_CONF" || fail "IP TLS default-e listener-e dakhli (http2/ALPN) nist"
   grep -qF 'default   127.0.0.1:8443;' "$STREAM_CONF" || fail "stream default be listener-e dakhli nemiravad"
   grep -qF 'game.test                    127.0.0.1:1001;' "$STREAM_CONF" || fail "SNI-e game be node route nashode"
 )

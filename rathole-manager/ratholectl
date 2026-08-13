@@ -566,7 +566,10 @@ gen_nginx_conf(){
   if [ -n "$ip_tls_ip" ] && [ -n "$ip_tls_fc" ] && [ -n "$ip_tls_key" ]; then
     [ -f "$ip_tls_fc" ] && [ -f "$ip_tls_key" ] || die "gvahi IP TLS peyda nashod: $ip_tls_fc / $ip_tls_key"
     if [ "$sni_count" -gt 0 ]; then
-      listen_line_ip="listen 127.0.0.1:${internal} ssl default_server;"
+      # http2 rooye default listener miayad ta ALPN baraye IP-TLS ham h2 va
+      # fallback-e standard-e HTTP/1.1 ra elan konad. server block-haye digar
+      # hamin socket ra share mikonand va nabayad dobare option-e http2 bedahand.
+      listen_line_ip="listen 127.0.0.1:${internal} ssl http2 default_server;"
     else
       listen_line_ip="listen 443 ssl http2 default_server;"
     fi
@@ -574,6 +577,12 @@ gen_nginx_conf(){
   # damnh asli default_server ast magar IP TLS faal bashad. agar default-e khareji vojood
   # darad, be an dast nemizanim; cmd_ip_cert ghabl az faal-sazi in tadakhol ra rad mikonad.
   local listen_line_primary="$listen_line"
+  # vaghti IP-TLS + SNI faal ast, default server ghablan http2 ra rooye hamin
+  # listener set karde ast. tekrarash dar server-e domain hoshdar-e nginx
+  # ("protocol options redefined") midehad.
+  if [ "$sni_count" -gt 0 ] && [ -n "$listen_line_ip" ]; then
+    listen_line_primary="${listen_line/ http2/}"
+  fi
   if [ "$sni_count" -eq 0 ] && [ -z "$listen_line_ip" ]; then
     local ext_default=0
     if grep -rlsE 'listen[^;]*\bdefault_server\b' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null \
@@ -2709,6 +2718,13 @@ cmd_doctor(){
       "ss -ltnH 'sport = :$ctrl' | grep -q ."
   chk "sait fik rooye 127.0.0.1:$fake gvsh midahad" \
       "ss -ltnH 'sport = :$fake' | grep -q ."
+  local bhp
+  bhp="$(jq -r '.backhaul_port // empty' "$STATE" 2>/dev/null)"
+  if [ -n "$bhp" ] && [ "$bhp" != null ]; then
+    chk "backhaul-server faal ast" "systemctl is-active --quiet $BH_SVC"
+    chk "backhaul rooye 127.0.0.1:$bhp gvsh midahad" \
+        "ss -ltnH 'sport = :$bhp' | grep -q ."
+  fi
   jq -r '.nodes[] | [.name,(.port|tostring)] | @tsv' "$STATE" |
   while IFS=$'\t' read -r n p; do
     if ss -ltnH "sport = :$p" | grep -q .; then
@@ -2769,6 +2785,15 @@ cmd_doctor(){
         printf '  %s control_path dar state set shode (%s) vali binary support nadarad!\n' "$(c_r 'FAIL')" "$cp"
         printf '       node-ha CRASH khahnd krd. baraye pak-krdn: ratholectl control-path clear\n'
         bad=$((bad+1))
+      fi
+    fi
+    if [ -n "$bhp" ] && [ "$bhp" != null ]; then
+      local ws_bh
+      ws_bh="$(rth_probe "https://$domain/channel" "$domain" "${wsh[@]}")"
+      if [ "$ws_bh" = 101 ]; then
+        printf '  %s backhaul WS (/channel) → 101 (core salem)\n' "$(c_g 'OK ')"; ok=$((ok+1))
+      else
+        printf '  %s backhaul WS (/channel) → %s (entezar 101)\n' "$(c_r 'FAIL')" "$ws_bh"; bad=$((bad+1))
       fi
     fi
   else

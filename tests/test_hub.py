@@ -311,5 +311,20 @@ class TestUpstreamCarrier(unittest.TestCase):
             self.assertIn(act, WRITE_ACTIONS, act)
 
 
+class TestDualCoreActions(unittest.TestCase):
+    def test_backhaul_service_argv_and_write(self):
+        tok = "a" * 40
+        self.assertEqual(build_node_cmd("add_bh_svc", {"name": "bulk", "token": tok, "inbound": "1201"}),
+                         ["ratholenode", "backhaul", "add-svc", "bulk", tok, "1201"])
+        self.assertEqual(build_node_cmd("rm_bh_svc", {"name": "bulk"}),
+                         ["ratholenode", "backhaul", "rm-svc", "bulk"])
+        self.assertIn("add_bh_svc", WRITE_ACTIONS)
+        self.assertIn("rm_bh_svc", WRITE_ACTIONS)
+
+    def test_backhaul_service_rejects_injection(self):
+        self.assertIsNone(build_node_cmd("add_bh_svc", {"name": "x;id", "token": "a" * 40, "inbound": "1201"}))
+        self.assertIsNone(build_node_cmd("rm_bh_svc", {"name": "x\n"}))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

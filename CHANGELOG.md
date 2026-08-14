@@ -9,6 +9,13 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-08-14
+
+### Changed
+- **بازنویسی کامل رابط Hub:** طراحی واکنش‌گرا برای دسکتاپ و موبایل، حالت روشن/تیره، ناوبری استاندارد RTL/LTR، آیکن‌های SVG یکدست و چیدمان خواناتر برای داشبورد، سرورها، تنظیمات و لاگ فعالیت.
+- **دسترس‌پذیری رابط:** کنترل‌های معنایی، label واقعی فرم‌ها، focus قابل مشاهده، دیالوگ با focus trap و Escape، خطای inline و پشتیبانی از `prefers-reduced-motion` اضافه شد.
+- **بدون وابستگی جدید:** رابط همچنان با HTML/CSS/JavaScript ساده و Python stdlib اجرا می‌شود.
+
 ## [1.9.0] - 2026-08-11
 
 - **dual-core lanes:** یک نود اکنون می‌تواند `rathole-client` و `backhaul-client` را هم‌زمان اجرا کند. registry جداگانهٔ `/etc/rathole/bh-services.conf` و فرمان‌های `ratholenode backhaul add-svc|rm-svc|ls` اضافه شد؛ فعال‌کردن Backhaul دیگر رتهول را خاموش نمی‌کند.

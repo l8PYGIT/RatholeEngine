@@ -6,6 +6,13 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-08-14
+
+### Changed
+- **Complete Hub UI rewrite:** responsive desktop/mobile layouts, light and dark themes, correct RTL/LTR navigation, consistent SVG icons, and clearer dashboard, server, settings, and activity-log views.
+- **Accessibility:** semantic controls, associated form labels, visible focus, focus-trapped dialogs with Escape support, inline validation, and `prefers-reduced-motion` support.
+- **No new dependency:** the Hub remains plain HTML/CSS/JavaScript served by the Python standard-library backend.
+
 ## [1.8.3] - 2026-08-07
 
 ### Fixed

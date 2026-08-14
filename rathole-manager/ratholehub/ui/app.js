@@ -2,41 +2,63 @@ const $=id=>document.getElementById(id);
 let TOKEN=localStorage.getItem('rh_token')||'';
 let SERVERS=[];
 let LANG=localStorage.getItem('rh_lang')||'fa';
+let THEME=localStorage.getItem('rh_theme')||document.documentElement.dataset.theme||'dark';
+let LAST_FOCUS=null;
 
 function t(k){return (DICT[LANG]&&DICT[LANG][k])||DICT.fa[k]||k;}
 function applyStatic(){
  document.documentElement.lang=LANG; document.documentElement.dir=(LANG==='fa'?'rtl':'ltr');
+ document.documentElement.dataset.theme=THEME;
 }
 function toggleLang(){LANG=(LANG==='fa'?'en':'fa');localStorage.setItem('rh_lang',LANG);applyStatic();shell();}
+function toggleTheme(){THEME=THEME==='dark'?'light':'dark';localStorage.setItem('rh_theme',THEME);applyStatic();}
 function confirmT(k,extra){return confirm(t(k)+(extra?(' '+extra):'')+' ?');}
 
 function h(t){return (''+(t==null?'':t)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function icon(name){return `<svg class="icon" aria-hidden="true"><use href="#i-${name}"></use></svg>`;}
 function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),5000);}
 async function api(m,p,b){const o={method:m,headers:{'Content-Type':'application/json'}};
  if(TOKEN)o.headers['Authorization']='Bearer '+TOKEN; if(b)o.body=JSON.stringify(b);
  const r=await fetch(p,o); let j={};try{j=await r.json()}catch(e){}
  if(r.status===401){TOKEN='';localStorage.removeItem('rh_token');shell();} return {status:r.status,j};}
 function logout(){TOKEN='';localStorage.removeItem('rh_token');shell();}
-function modal(html){let m=$('modal');if(!m){m=document.createElement('div');m.id='modal';m.className='modal';m.onclick=e=>{if(e.target===m)closeModal();};document.body.appendChild(m);}m.innerHTML='<div class="mbox">'+html+'</div>';m.style.display='flex';}
-function closeModal(){const m=$('modal');if(m)m.style.display='none';}
+function modal(html){let m=$('modal');LAST_FOCUS=document.activeElement;
+ if(!m){m=document.createElement('div');m.id='modal';m.className='modal';m.onclick=e=>{if(e.target===m)closeModal();};document.body.appendChild(m);}
+ m.innerHTML=`<div class="mbox" role="dialog" aria-modal="true"><button class="modal-close" type="button" onclick="closeModal()" aria-label="${h(t('close'))}">${icon('close')}</button><div class="modal-content">${html}</div></div>`;
+ const box=m.querySelector('.mbox'),title=box.querySelector('h1,h2,h3');
+ if(title){title.id='modal_title';box.setAttribute('aria-labelledby','modal_title');}else box.setAttribute('aria-label',t('settings'));
+ box.querySelectorAll('label:not([for])').forEach((label,i)=>{const control=label.parentElement&&label.parentElement.querySelector('input,select,textarea');if(control){if(!control.id)control.id='modal_field_'+i;label.htmlFor=control.id;}});
+ m.onkeydown=e=>{
+  if(e.key==='Escape'){closeModal();return;}
+  if(e.key!=='Tab')return;
+  const items=[...box.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])')];
+  if(!items.length)return;const first=items[0],last=items[items.length-1];
+  if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+ };
+ $('app').setAttribute('inert','');$('app').setAttribute('aria-hidden','true');
+ m.style.display='flex';
+ requestAnimationFrame(()=>{const first=box.querySelector('input:not([disabled]),select:not([disabled]),button:not(.modal-close):not([disabled])')||box.querySelector('.modal-close');if(first)first.focus();});
+}
+function closeModal(){const m=$('modal'),app=$('app');if(m){m.style.display='none';m.innerHTML='';}if(app){app.removeAttribute('inert');app.removeAttribute('aria-hidden');}if(LAST_FOCUS&&LAST_FOCUS.focus)LAST_FOCUS.focus();LAST_FOCUS=null;}
 
 // ---------- form modal (jaigozin prompt zanjire-i) ----------
 // fields: [{id,label,type,val,ph,opts:[{v,t}],req}]  onOk(values)
 function formModal(title,fields,onOk){
  const rows=fields.map(f=>{
   let inp;
-  if(f.type==='select'){inp=`<select id="f_${f.id}">`+f.opts.map(o=>`<option value="${h(o.v)}"${o.v==(f.val||'')?' selected':''}>${h(o.t)}</option>`).join('')+`</select>`;}
-  else{inp=`<input id="f_${f.id}" type="${f.type||'text'}" value="${h(f.val==null?'':f.val)}" placeholder="${h(f.ph||'')}">`;}
-  return `<div class="row"><label>${h(f.label)}</label>${inp}</div>`;
+  const req=f.req?' required aria-required="true"':'';
+  if(f.type==='select'){inp=`<select id="f_${f.id}" name="${h(f.id)}"${req}>`+f.opts.map(o=>`<option value="${h(o.v)}"${o.v==(f.val||'')?' selected':''}>${h(o.t)}</option>`).join('')+`</select>`;}
+  else{inp=`<input id="f_${f.id}" name="${h(f.id)}" type="${f.type||'text'}" value="${h(f.val==null?'':f.val)}" placeholder="${h(f.ph||'')}"${req}>`;}
+  return `<div class="row"><label for="f_${f.id}">${h(f.label)}${f.req?' *':''}</label>${inp}</div>`;
  }).join('');
- modal(`<h3>${h(title)}</h3>${rows}<div class="row" style="margin-top:12px;justify-content:flex-end">
-  <button class="gh" onclick="closeModal()">${t('cancel')}</button>
-  <button class="g" id="f_ok">${t('save')}</button></div>`);
- setTimeout(()=>{const first=fields[0]&&$('f_'+fields[0].id);if(first)first.focus();},30);
+ modal(`<h3>${h(title)}</h3><div class="form-error" id="f_error" role="alert"></div>${rows}<div class="modal-actions">
+  <button class="gh" type="button" onclick="closeModal()">${t('cancel')}</button>
+  <button class="g" type="button" id="f_ok">${t('save')}</button></div>`);
  $('f_ok').onclick=()=>{
-  const v={};let ok=true;
-  fields.forEach(f=>{v[f.id]=($('f_'+f.id).value||'').trim();if(f.req&&!v[f.id])ok=false;});
-  if(!ok){toast(t('fill'));return;}
+  const v={};let firstBad=null;
+  fields.forEach(f=>{const el=$('f_'+f.id);v[f.id]=(el.value||'').trim();const bad=f.req&&!v[f.id];el.setAttribute('aria-invalid',bad?'true':'false');if(bad&&!firstBad)firstBad=el;});
+  if(firstBad){const err=$('f_error');err.textContent=t('fill');err.classList.add('show');firstBad.focus();return;}
   onOk(v);
  };
 }
@@ -54,7 +76,7 @@ function parseHash(){const hh=location.hash||'#/dashboard';
 function nav(hh){if(location.hash===hh){router();}else{location.hash=hh;}}
 window.addEventListener('hashchange',()=>{if(TOKEN)router();});
 function markNav(){document.querySelectorAll('.sitem').forEach(e=>{
- e.classList.toggle('active',e.dataset.pg===ROUTE.page);});}
+ const active=e.dataset.pg===ROUTE.page;e.classList.toggle('active',active);e.setAttribute('aria-current',active?'page':'false');});}
 async function router(){
  if(!TOKEN)return; ROUTE=parseHash(); markNav();
  await ensureServers();
@@ -82,24 +104,31 @@ async function loadOv(n){const {j}=await api('GET','api/servers/'+n+'/overview')
 function shell(){
  applyStatic();
  if(!TOKEN){document.body.classList.add('login');
-  $('app').innerHTML=`<main id="page"><div class="card" style="min-width:300px"><div class="cbody"><h3>${t('login_title')}</h3>
-   <div class="addbar"><input id="pw" type="password" placeholder="${t('pw_ph')}" style="min-width:220px">
-   <button class="g" onclick="doLogin()">${t('login_btn')}</button></div><div id="msg" class="sub"></div></div></div></main>`;
+  $('app').innerHTML=`<main id="page"><section class="login-panel" aria-labelledby="login_title">
+   <div class="login-brand"><span class="brand-mark">${icon('brand')}</span><div class="brand-name">rathole<span>hub</span></div></div>
+   <div class="login-body"><h1 id="login_title">${t('login_title')}</h1>
+    <div class="field"><label for="pw">${t('pw_ph')}</label><div class="login-actions"><input id="pw" type="password" autocomplete="current-password" aria-describedby="msg"><button class="g" type="button" onclick="doLogin()">${t('login_btn')}</button></div></div>
+    <div id="msg" class="form-message" role="alert"></div>
+   </div></section></main>`;
   const p=$('pw'); if(p)p.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();}); return;}
  document.body.classList.remove('login');
- $('app').innerHTML=`<nav id="sb">
-   <div class="logo">rathole<span>hub</span></div>
-   <div class="sitem" data-pg="dashboard" onclick="nav('#/dashboard')"><span class="ic">▦</span><span>${t('nav_dash')}</span></div>
-   <div class="sitem" data-pg="routing" onclick="nav('#/routing')"><span class="ic">◈</span><span>${t('nav_routing')}</span></div>
-   <div class="sitem" data-pg="audit" onclick="nav('#/audit')"><span class="ic">≡</span><span>${t('audit')}</span></div>
-   <div class="sitem" data-pg="settings" onclick="nav('#/settings')"><span class="ic">⚙</span><span>${t('settings')}</span></div>
+ $('app').innerHTML=`<aside id="sb">
+   <div class="brand"><span class="brand-mark">${icon('brand')}</span><div class="brand-name">rathole<span>hub</span></div></div>
+   <nav class="nav-list" aria-label="${h(t('nav_label'))}">
+    <button class="sitem" type="button" data-pg="dashboard" onclick="nav('#/dashboard')">${icon('dashboard')}<span>${t('nav_dash')}</span></button>
+    <button class="sitem" type="button" data-pg="routing" onclick="nav('#/routing')">${icon('route')}<span>${t('nav_routing')}</span></button>
+    <button class="sitem" type="button" data-pg="audit" onclick="nav('#/audit')">${icon('history')}<span>${t('audit')}</span></button>
+    <button class="sitem" type="button" data-pg="settings" onclick="nav('#/settings')">${icon('settings')}<span>${t('settings')}</span></button>
+   </nav>
    <div class="sfoot">
-    <span class="clock" id="clock"></span>
-    <label class="sw"><input type="checkbox" id="auto" checked> <span>${t('auto')}</span></label>
-    <div class="btns"><button class="gh" onclick="toggleLang()">${LANG==='fa'?'EN':'فا'}</button>
-    <button class="gh" onclick="refreshPage()">${t('refresh')}</button>
-    <button class="s" onclick="logout()">${t('logout')}</button></div>
-   </div></nav><main id="page"></main>`;
+    <div class="sidebar-meta"><span class="clock" id="clock"></span><label class="sw"><input type="checkbox" id="auto" checked><span>${t('auto')}</span></label></div>
+    <div class="utility-actions">
+     <button class="gh icon-btn" type="button" onclick="toggleLang()" title="${LANG==='fa'?'English':'Finglish'}" aria-label="${LANG==='fa'?'English':'Finglish'}">${icon('language')}</button>
+     <button class="gh icon-btn" type="button" onclick="toggleTheme()" title="${t('theme')}" aria-label="${t('theme')}">${icon('theme')}</button>
+     <button class="gh icon-btn" type="button" onclick="refreshPage()" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button>
+     <button class="s icon-btn" type="button" onclick="logout()" title="${t('logout')}" aria-label="${t('logout')}">${icon('logout')}</button>
+    </div>
+   </div></aside><main id="page" tabindex="-1"></main>`;
  router();
 }
 function refreshPage(){SERVERS=[];ensureServers().then(()=>{router();pollByPage();});}
@@ -113,7 +142,8 @@ function pollByPage(){
  if(ROUTE.page==='dashboard')loadHubStatus();
 }
 async function doLogin(){const {status,j}=await api('POST','api/login',{password:$('pw').value});
- if(status===200){TOKEN=j.token;localStorage.setItem('rh_token',TOKEN);if(!location.hash)location.hash='#/dashboard';shell();}else{$('msg').textContent=t('pw_wrong');}}
+ if(status===200){$('pw').setAttribute('aria-invalid','false');TOKEN=j.token;localStorage.setItem('rh_token',TOKEN);if(!location.hash)location.hash='#/dashboard';shell();}
+ else{$('pw').setAttribute('aria-invalid','true');$('msg').textContent=t('pw_wrong');$('pw').focus();}}
 function fnd(n){return SERVERS.find(s=>s.name===n)||{};}
 function setDot(n,cls){const d=$('dot_'+n); if(d)d.className='dot '+cls;}
 
@@ -195,21 +225,23 @@ function updateHubStrip(){
 // ---------- safhe: dashboard (grid/list kart-haye khoolase) ----------
 function renderDashboard(){
  const pg=$('page'); if(!pg)return;
- pg.innerHTML=`<div class="ptitle"><h2>${t('nav_dash')}</h2><span style="flex:1"></span>
-   <button class="g" id="updall" onclick="updateAll()">${t('upd_all')}</button>
-   <div class="vswitch"><button id="vg" class="${VIEW==='grid'?'on':''}" onclick="setView('grid')">▦ ${t('view_grid')}</button>
-   <button id="vl" class="${VIEW==='list'?'on':''}" onclick="setView('list')">☰ ${t('view_list')}</button></div></div>
+ pg.innerHTML=`<div class="ptitle"><h2>${t('nav_dash')}</h2><span class="page-count">${SERVERS.length}</span><span class="ptitle-spacer"></span>
+   <div class="page-actions"><button class="g" id="updall" type="button" onclick="updateAll()">${icon('download')}${t('upd_all')}</button>
+   <div class="vswitch" role="group" aria-label="${h(t('view'))}"><button id="vg" type="button" class="${VIEW==='grid'?'on':''}" aria-pressed="${VIEW==='grid'}" onclick="setView('grid')">${icon('grid')}${t('view_grid')}</button>
+   <button id="vl" type="button" class="${VIEW==='list'?'on':''}" aria-pressed="${VIEW==='list'}" onclick="setView('list')">${icon('list')}${t('view_list')}</button></div></div></div>
   <div id="updpanel"></div>
-  <div class="card" style="margin-top:0"><div class="cbody" id="hubstrip" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 16px"></div></div>
-  <div class="card"><div class="cbody">
-   <div class="addbar"><b>${t('add_server')}:</b>
-   <input id="n" placeholder="${t('f_name')}" size="10"><select id="rl"><option value="iran">iran</option><option value="node">node</option></select>
-   <input id="hh" placeholder="${t('f_host')}" size="14"><input id="uu" value="root" size="6"><input id="pp" value="22" size="4">
-   <input id="sw" type="password" placeholder="${t('prov_pw')}" size="14">
-   <select id="isv" title="${t('l_iran_srv')}"><option value="">${t('l_iran_srv')}?</option>${iranSrvOptions()}</select>
-   <button class="g" onclick="provSrv()">${t('prov_btn')}</button>
-   <button class="gh" onclick="addSrv()">${t('add_btn')}</button></div>
-   <div class="sub" style="margin-top:6px">${t('prov_hint')}</div></div></div>
+  <section class="status-strip" id="hubstrip" aria-label="${h(t('hub_box'))}"></section>
+  <section class="card server-panel" aria-labelledby="add_server_title"><div class="chead"><span class="brand-mark">${icon('server')}</span><div><div class="name" id="add_server_title">${t('add_server')}</div></div></div><div class="cbody">
+   <div class="server-form">
+    <div class="field"><label for="n">${t('f_name')}</label><input id="n" autocomplete="off"></div>
+    <div class="field"><label for="rl">${t('role')}</label><select id="rl"><option value="iran">iran</option><option value="node">node</option></select></div>
+    <div class="field host"><label for="hh">${t('f_host')}</label><input id="hh" inputmode="url" autocomplete="off"></div>
+    <div class="field"><label for="uu">${t('f_user')}</label><input id="uu" value="root" autocomplete="username"></div>
+    <div class="field"><label for="pp">${t('f_port')}</label><input id="pp" value="22" inputmode="numeric"></div>
+    <div class="field password"><label for="sw">${t('prov_pw')}</label><input id="sw" type="password" autocomplete="new-password"></div>
+    <div class="field"><label for="isv">${t('l_iran_srv')}</label><select id="isv"><option value="">${t('l_iran_srv')}?</option>${iranSrvOptions()}</select></div>
+    <div class="server-form-actions"><button class="gh" type="button" onclick="addSrv()">${t('add_btn')}</button><button class="g" type="button" onclick="provSrv()">${t('prov_btn')}</button></div>
+   </div></div></section>
   <div id="servers" class="grid ${VIEW==='list'?'list':''}"></div>`;
  drawCards();
  updateHubStrip(); loadHubStatus();
@@ -217,17 +249,17 @@ function renderDashboard(){
 }
 function setView(v){VIEW=v;localStorage.setItem('rh_view',v);
  const c=$('servers');if(c)c.classList.toggle('list',v==='list');
- const vg=$('vg'),vl=$('vl');if(vg)vg.classList.toggle('on',v==='grid');if(vl)vl.classList.toggle('on',v==='list');}
+ const vg=$('vg'),vl=$('vl');if(vg){vg.classList.toggle('on',v==='grid');vg.setAttribute('aria-pressed',String(v==='grid'));}if(vl){vl.classList.toggle('on',v==='list');vl.setAttribute('aria-pressed',String(v==='list'));}}
 function drawCards(){
  const c=$('servers'); if(!c)return;
  if(!SERVERS.length){c.innerHTML=`<div class="card" style="margin:0"><div class="cbody empty">${t('no_servers')}</div></div>`;return;}
- c.innerHTML=SERVERS.map(s=>`<div class="scard" id="srv_${h(s.name)}" onclick="nav('#/server/${h(s.name)}')">
-   <div class="top"><span class="dot d-un" id="dot_${h(s.name)}"></span>
-    <span class="name">${h(s.name)}</span><span class="badge b-role">${h(s.role)}</span></div>
+ c.innerHTML=SERVERS.map(s=>`<article class="scard" id="srv_${h(s.name)}">
+   <div class="top"><span class="dot d-un" id="dot_${h(s.name)}" aria-hidden="true"></span>
+    <button class="server-link" type="button" onclick="nav('#/server/${h(s.name)}')">${h(s.name)}</button><span class="badge b-role">${h(s.role)}</span></div>
    <div class="host mono">${h(s.host)}:${s.ssh_port}</div>
    <div class="bstrip" id="hd_${h(s.name)}"><span class="sub">${t('loading')}</span></div>
-   <div class="meta" id="mt_${h(s.name)}"><span class="qr"><button class="gh" onclick="event.stopPropagation();loadOv('${h(s.name)}')">↻</button></span></div>
-  </div>`).join('');
+   <div class="meta" id="mt_${h(s.name)}"><span class="qr"><button class="gh icon-btn" type="button" onclick="loadOv('${h(s.name)}')" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button></span></div>
+  </article>`).join('');
 }
 function updateCard(n){
  const ov=OVS[n]; if(!ov)return;
@@ -241,21 +273,20 @@ function updateCard(n){
  else{meta=`<span>${(ov.services||[]).length} ${t('n_svcs')}</span>`;
   if((ov.upstreams||[]).length)meta+=`<span>${ov.upstreams.length} ${t('n_ups')}</span>`;
   if(ov.main_server)meta+=`<span class="mono">→ ${h(ov.main_server)}</span>`;}
- mt.innerHTML=meta+`<span class="qr"><button class="gh" onclick="event.stopPropagation();loadOv('${h(n)}')">↻</button></span>`;
+ mt.innerHTML=meta+`<span class="qr"><button class="gh icon-btn" type="button" onclick="loadOv('${h(n)}')" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button></span>`;
 }
 
 // ---------- safhe: server (hameye amaliat-e ghadimi inja) ----------
 function renderServerPage(n){
  const pg=$('page'); if(!pg)return; const s=fnd(n);
- if(!s.name){pg.innerHTML=`<div class="ptitle"><button class="back" onclick="nav('#/dashboard')">${LANG==='fa'?'→':'←'} ${t('back')}</button><h2>${t('srv_notfound')}</h2></div>`;return;}
+ if(!s.name){pg.innerHTML=`<div class="ptitle"><button class="back" type="button" onclick="nav('#/dashboard')">${icon('arrow')}${t('back')}</button><h2>${t('srv_notfound')}</h2></div>`;return;}
  const ov=OVS[n];
- let head=`<div class="spage-head"><button class="back" onclick="nav('#/dashboard')">${LANG==='fa'?'→':'←'} ${t('back')}</button>
+ let head=`<div class="spage-head"><button class="back" type="button" onclick="nav('#/dashboard')">${icon('arrow')}${t('back')}</button>
    <span class="dot ${ovDotCls(n,ov)}" id="dot_${h(n)}"></span>
    <span class="name" style="font-size:18px">${h(n)}</span><span class="badge b-role">${h(s.role)}</span>
    <span class="sub mono">${h(s.host)}:${s.ssh_port}</span><span id="hd_${h(n)}">${ov?headBadges(n,ov):''}</span>
-   <span style="flex:1"></span>
    <div class="btns">
-     <button class="gh" onclick="loadOv('${h(n)}')">↻</button>
+     <button class="gh icon-btn" type="button" onclick="loadOv('${h(n)}')" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button>
      <button class="gh" onclick="showDetails('${h(n)}')">${t('details')}</button>
      ${s.role==='iran'?`<button class="g" onclick="statusModal('${h(n)}')">${t('status_btn')}</button>`:''}
      <button class="s" onclick="doDeploy('${h(n)}')">${t('update')}</button>
@@ -813,32 +844,34 @@ function bindGraphDrag(w){
 // ---------- safhe: audit / settings (ghablan modal boodand) ----------
 async function renderAuditPage(){
  const pg=$('page'); if(!pg)return;
- pg.innerHTML=`<div class="ptitle"><h2>${t('audit')}</h2></div><div class="card" style="margin-top:0"><div class="cbody" id="auditbody"><div class="empty">${t('loading')}</div></div></div>`;
+ pg.innerHTML=`<div class="ptitle"><h2>${t('audit')}</h2></div><section class="card" style="margin-top:0"><div class="cbody" id="auditbody"><div class="empty">${t('loading')}</div></div></section>`;
  const {j}=await api('GET','api/audit?limit=100');
  const box=$('auditbody'); if(!box)return;
  const rows=(j||[]);
  if(!rows.length){box.innerHTML=`<div class="empty">${t('no_audit')}</div>`;return;}
- let x=`<table><tr><th>${t('c_time')}</th><th>${t('c_user')}</th><th>server</th><th>${t('c_action')}</th><th>rc</th></tr>`;
+ let x=`<div class="table-wrap"><table><thead><tr><th>${t('c_time')}</th><th>${t('c_user')}</th><th>server</th><th>${t('c_action')}</th><th>rc</th></tr></thead><tbody>`;
  rows.forEach(e=>{const d=new Date((e.ts||0)*1000).toLocaleString(LANG==='fa'?'fa-IR':'en-US');
   x+=`<tr><td>${h(d)}</td><td class="mono">${h(e.user)}</td><td>${h(e.server)}</td><td class="mono">${h(e.action)}</td><td>${h(e.rc)}</td></tr>`;});
- box.innerHTML=x+'</table>';
+ box.innerHTML=x+'</tbody></table></div>';
 }
 async function renderSettingsPage(){
  const pg=$('page'); if(!pg)return;
- pg.innerHTML=`<div class="ptitle"><h2>${t('settings')}</h2></div><div class="card" style="margin-top:0"><div class="cbody" id="setbody"><div class="empty">${t('loading')}</div></div></div>`;
+ pg.innerHTML=`<div class="ptitle"><h2>${t('settings')}</h2></div><div id="setbody"><div class="empty">${t('loading')}</div></div>`;
  const {j}=await api('GET','api/config');const c=j||{};
- const warn=c.insecure?`<div class="badge b-bad" style="margin-bottom:10px">${t('insecure')}</div>`:'';
+ const warn=c.insecure?`<div class="settings-alert" role="alert">${t('insecure')}</div>`:'';
  const box=$('setbody'); if(!box)return;
  box.innerHTML=`${warn}
-  <div class="mbox" style="background:transparent;border:0;padding:0;min-width:0">
-  <div class="row"><label>${t('l_apitoken')}</label><span class="sub mono">${h(c.api_token_hint||'')}</span></div>
-  <div class="row"><label>${t('l_listen')}</label><span class="sub mono">${h(c.listen_host||'')}:${h(c.listen_port||'')}</span></div>
-  <h3 style="margin-top:14px">${t('chpw')}</h3>
-  <div class="row"><label>${t('l_curpw')}</label><input id="cpw" type="password"></div>
-  <div class="row"><label>${t('l_newpw')}</label><input id="npw" type="password" placeholder="${t('pw_hint')}"></div>
-  <div class="row"><button class="g" onclick="savePw()">${t('save_pw')}</button></div>
-  <h3 style="margin-top:14px">${t('l_apitoken')}</h3>
-  <div class="row"><button class="s" onclick="rotTok()">${t('rot_tok')}</button></div></div>`;
+  <div class="settings-grid">
+   <section class="settings-section"><h3>${t('t_settings')}</h3><div class="settings-kv">
+    <span class="k">${t('l_apitoken')}</span><span class="mono">${h(c.api_token_hint||'')}</span>
+    <span class="k">${t('l_listen')}</span><span class="mono">${h(c.listen_host||'')}:${h(c.listen_port||'')}</span>
+   </div><div class="modal-actions"><button class="s" type="button" onclick="rotTok()">${t('rot_tok')}</button></div></section>
+   <section class="settings-section"><h3>${t('chpw')}</h3><div class="settings-form">
+    <div class="field"><label for="cpw">${t('l_curpw')}</label><input id="cpw" type="password" autocomplete="current-password"></div>
+    <div class="field"><label for="npw">${t('l_newpw')}</label><input id="npw" type="password" autocomplete="new-password" placeholder="${t('pw_hint')}"></div>
+    <button class="g" type="button" onclick="savePw()">${t('save_pw')}</button>
+   </div></section>
+  </div>`;
 }
 
 function outModal(title,text){var id='om_'+Math.random().toString(36).slice(2);modal('<h3>'+h(title)+'</h3><pre id="'+id+'" style="max-height:52vh;overflow:auto;white-space:pre-wrap;user-select:text;-webkit-user-select:text">'+h(text)+'</pre><div class="row" style="margin-top:10px"><button class="g" onclick="copyText(\''+id+'\')">'+t('copy_out')+'</button> <button class="gh" onclick="closeModal()">'+t('close')+'</button></div>');}
@@ -960,10 +993,10 @@ async function statusModal(n){toast(t('loading'));
 function copyText(id){const el=$(id);if(!el)return;const x=el.textContent;
  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(x).then(()=>toast(t('copied')),()=>toast('copy?'));}
  else{const r=document.createRange();r.selectNode(el);getSelection().removeAllRanges();getSelection().addRange(r);try{document.execCommand('copy');toast(t('copied'));}catch(e){toast('copy?');}}}
-async function addSrv(){const b={name:$('n').value,role:$('rl').value,host:$('hh').value,ssh_user:$('uu').value,ssh_port:$('pp').value};
+function requireInputs(ids){let first=null;ids.forEach(id=>{const el=$(id),bad=!el||!(el.value||'').trim();if(el)el.setAttribute('aria-invalid',bad?'true':'false');if(bad&&!first)first=el;});if(first){toast(t('fill'));first.focus();return false;}return true;}
+async function addSrv(){if(!requireInputs(['n','hh','uu','pp']))return;const b={name:$('n').value,role:$('rl').value,host:$('hh').value,ssh_user:$('uu').value,ssh_port:$('pp').value};
  const {status,j}=await api('POST','api/servers',b); if(status!==200){toast('error: '+(j.error||status));return;} $('n').value='';$('hh').value=''; loadAll();}
-async function provSrv(){const b={name:$('n').value,role:$('rl').value,host:$('hh').value,ssh_user:$('uu').value,ssh_port:$('pp').value,ssh_password:$('sw').value,iran_server:($('isv')?$('isv').value:'')};
- if(!b.name||!b.host||!b.ssh_password){toast(t('fill'));return;}
+async function provSrv(){if(!requireInputs(['n','hh','uu','pp','sw']))return;const b={name:$('n').value,role:$('rl').value,host:$('hh').value,ssh_user:$('uu').value,ssh_port:$('pp').value,ssh_password:$('sw').value,iran_server:($('isv')?$('isv').value:'')};
  toast(t('provisioning'));
  const {status,j}=await api('POST','api/provision',b);
  const out=((j&&j.out)||'')+((j&&j.err)?('\n'+j.err):'');

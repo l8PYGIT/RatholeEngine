@@ -1,7 +1,7 @@
 // ---------- i18n (fa/en) — faghat baraye hub ----------
 const DICT={
  fa:{
-  auto:'refresh khodkar',refresh:'refresh',settings:'tanzimat',audit:'log faaliat',logout:'khorooj',
+  auto:'refresh khodkar',refresh:'refresh',theme:'theme',view:'noe namayesh',nav_label:'menu asli',settings:'tanzimat',audit:'log faaliat',logout:'khorooj',
   login_title:'vorod be panel',pw_ph:'ramz modiriat',login_btn:'vorod',pw_wrong:'ramz eshtebah ast',
   add_server:'afzoodan server',f_name:'nam',f_host:'host/IP',f_user:'karbar SSH',f_port:'port SSH',add_btn:'+ afzoodan',
   prov_btn:'nasb khodkar',prov_pw:'ramz SSH (root)',provisioning:'dar hal etesal va nasb…',
@@ -155,7 +155,7 @@ const DICT={
   nd_up:'faal',nd_down:'ghat',e_bad:'edge ghermez = node vasl nist (doctor)',
  },
  en:{
-  auto:'Auto refresh',refresh:'Refresh',settings:'Settings',audit:'Activity log',logout:'Logout',
+  auto:'Auto refresh',refresh:'Refresh',theme:'Theme',view:'View',nav_label:'Main navigation',settings:'Settings',audit:'Activity log',logout:'Logout',
   login_title:'Panel login',pw_ph:'Admin password',login_btn:'Login',pw_wrong:'Wrong password',
   add_server:'Add server',f_name:'Name',f_host:'Host/IP',f_user:'SSH user',f_port:'SSH port',add_btn:'+ Add',
   prov_btn:'Auto install',prov_pw:'SSH password (root)',provisioning:'Connecting & installing…',

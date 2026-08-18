@@ -438,7 +438,7 @@ sudo ratholectl domain primary cdn.example.ir --certbot
 
 ## 5. Full central hub install
 
-The hub (`ratholehub`) is a single-file web panel (Python stdlib) installed on **one management server** (usually the Iran panel itself) that runs `ratholectl`/`ratholenode` on the other servers over **SSH with a key**, using a **validated argv** — never a raw shell string. It listens on `127.0.0.1`.
+The hub (`ratholehub`) is a Python stdlib web panel installed on **one management server** (usually the Iran panel itself). The backend is split between `hub.py` and the security-critical `hubcmds.py`; static UI assets live under `ui/`. It runs `ratholectl`/`ratholenode` on other servers over **SSH with a key**, using validated argv — never a raw shell string. It listens on `127.0.0.1`.
 
 ### 5.1 Install
 

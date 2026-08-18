@@ -6,6 +6,12 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-08-15
+
+### Changed
+- **Documentation sync:** guides now match the dual-core Backhaul lane, current CLI signatures, and the Hub UI released in 1.9.1.
+- **Repository default:** installer, Hub, and documentation URLs now target `loopy-iri/tunnelplus`, so one-line installs and remote updates pull the correct Release assets.
+
 ## [1.9.1] - 2026-08-14
 
 ### Changed

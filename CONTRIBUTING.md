@@ -5,7 +5,7 @@ Thank you for contributing. This is a Bash + Python stdlib project — no build 
 ## Quick start
 
 ```bash
-git clone https://github.com/loopy-iri/RatholeEngine
+git clone https://github.com/loopy-iri/tunnelplus
 cd RatholeEngine
 ```
 

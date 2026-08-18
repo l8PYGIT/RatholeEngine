@@ -10,16 +10,16 @@ _One port · one domain · one certificate · many foreign nodes routed by URL p
 _Built for censorship-resistant tunneling into Iran._
 
 <!-- badges -->
-[![CI](https://github.com/loopy-iri/RatholeEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/loopy-iri/RatholeEngine/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/loopy-iri/RatholeEngine?sort=semver&color=7c3aed)](https://github.com/loopy-iri/RatholeEngine/releases/latest)
-[![License](https://img.shields.io/github/license/loopy-iri/RatholeEngine?color=blue)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/loopy-iri/RatholeEngine?style=flat&color=16a34a)](https://github.com/loopy-iri/RatholeEngine/stargazers)
+[![CI](https://github.com/loopy-iri/tunnelplus/actions/workflows/ci.yml/badge.svg)](https://github.com/loopy-iri/tunnelplus/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/loopy-iri/tunnelplus?sort=semver&color=7c3aed)](https://github.com/loopy-iri/tunnelplus/releases/latest)
+[![License](https://img.shields.io/github/license/loopy-iri/tunnelplus?color=blue)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/loopy-iri/tunnelplus?style=flat&color=16a34a)](https://github.com/loopy-iri/tunnelplus/stargazers)
 <br/>
 ![shell](https://img.shields.io/badge/shell-bash-4EAA25?logo=gnubash&logoColor=white)
 ![python](https://img.shields.io/badge/python-stdlib%20only-3776AB?logo=python&logoColor=white)
 ![tunnel](https://img.shields.io/badge/tunnel-rathole%20%2B%20nginx-7c3aed)
 
-[**English**](#what-is-this) · [**فارسی**](docs/README.fa.md) · [**Full Wiki**](https://github.com/loopy-iri/RatholeEngine/wiki) · [Quick start](#quick-start) · [Documentation](#documentation) · [Telegram](https://t.me/l8PY4NET)
+[**English**](#what-is-this) · [**فارسی**](docs/README.fa.md) · [**Full Wiki**](https://github.com/loopy-iri/tunnelplus/wiki) · [Quick start](#quick-start) · [Documentation](#documentation) · [Telegram](https://t.me/l8PY4NET)
 
 </div>
 
@@ -57,7 +57,7 @@ The core design principle everywhere: **change state → regenerate config → v
 
 ## Transport modes
 
-The same tunnel can be carried **five** ways (plus a game/SNI L4 mode, direct-IP ingress, and a proxy ingress) — switching never changes user services, tokens, or paths, only the carrier. Each node's carrier is **exclusive**: the hub exposes it as a single select (`ws`/`kcp`/`plain`/`noise`/`backhaul`) that coordinates both sides.
+The rathole lane supports **four carriers** (WebSocket/TLS, KCP, plain, and Noise); Backhaul is a separate SMUX lane that can run alongside rathole on the same node. Game/SNI, direct-IP, and proxy are ingress modes, not carriers. Switching a rathole carrier never changes user services, tokens, or paths.
 
 ![Transport modes](docs/assets/transport-modes.svg)
 
@@ -65,7 +65,7 @@ The same tunnel can be carried **five** ways (plus a game/SNI L4 mode, direct-IP
 - **kcp** — parallel UDP+FEC path for lossy links (looks like QUIC on UDP/443).
 - **plain** — no-TLS websocket to a separate HTTP listener (lighter, unencrypted).
 - **noise** — encrypted transport (Noise/X25519) on a second rathole instance, no TLS/cert.
-- **backhaul** *(v1.6)* — a separate Go core (`Musixal/Backhaul`, patched with uTLS Chrome fingerprint since v1.8) beside rathole that multiplexes many user connections onto one stream via **SMUX**; nginx proxies the hardcoded `/channel` + `/tunnel` paths to it on the same 443, so single-port/single-domain holds.
+- **backhaul** *(v1.9)* — a separate Go core (`Musixal/Backhaul`, patched with a uTLS Chrome fingerprint) beside rathole that multiplexes user connections via **SMUX**. It uses the separate `bh-services.conf` registry and can run as a dual-core lane alongside `rathole-client`; nginx proxies the hardcoded `/channel` + `/tunnel` paths on the same 443.
 - **game / SNI** — L4 passthrough on 443; TLS terminates on the node (VLESS+TLS+Vision).
 - **direct-IP** *(ingress, not a tunnel carrier)* — a separate HTTP listener where node selection comes from a hidden header (`X-Cdn-Id: <node_name>`) instead of URL path; users connect to the raw server IP, no domain/TLS required.
 - **proxy** *(ingress)* — a `/<name>/` path on the same 443 that `proxy_pass`es to any upstream without going through rathole.
@@ -76,20 +76,20 @@ Details: [`docs/transport-modes.md`](docs/transport-modes.md).
 
 ## Quick start
 
-**One command from GitHub** (downloads the latest release bundle, then runs the installer). Defaults to `loopy-iri/RatholeEngine` — override with `RATHOLE_GH` to use a fork:
+**One command from GitHub** (downloads the latest release bundle, then runs the installer). Defaults to `loopy-iri/tunnelplus` — override with `RATHOLE_GH` to use a fork:
 
 ```bash
 # Fully interactive (asks panel/node + details)
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash
 
 # Iran server (panel), non-interactive:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --panel \
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --panel \
   --domain panel.example.ir \
   --fullchain /root/cert/panel.example.ir/fullchain.pem \
   --key       /root/cert/panel.example.ir/privkey.pem
 
 # Foreign node, non-interactive:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --node -- \
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --node -- \
   --server panel.example.ir:443 --name trk01 --token <T> --inbound-port 2087
 ```
 
@@ -98,10 +98,10 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/instal
 Install a **specific released version** with `--release` (run with no arguments and it asks; Enter = latest):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --release v1.8.0 --panel --domain panel.example.ir --fullchain /path/fullchain.pem --key /path/privkey.pem
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v1.9.2 --panel --domain panel.example.ir --fullchain /path/fullchain.pem --key /path/privkey.pem
 ```
 
-`--beta` takes the newest pre-release, `--stable` the newest stable. From an installed server: `ratholectl update v1.8.0` / `ratholenode update v1.8.0`. Note `RATHOLE_RELEASE=... curl ... | sudo bash` does **not** work — the variable goes to `curl` and `sudo` strips it; use the flag.
+`--beta` takes the newest pre-release, `--stable` the newest stable. From an installed server: `ratholectl update v1.9.2` / `ratholenode update v1.9.2`. Note `RATHOLE_RELEASE=... curl ... | sudo bash` does **not** work — the variable goes to `curl` and `sudo` strips it; use the flag.
 
 Offline / local bundle (no download) still works via `bootstrap.sh` directly — see [`docs/README.fa.md`](docs/README.fa.md).
 
@@ -130,7 +130,7 @@ Updates take a **full snapshot** (CLI + configs + systemd units) into `/var/back
 
 ```bash
 # Update in place (auto-detects panel/node/hub; snapshot + health-check + auto-rollback)
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --update
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --update
 #   or, from an installed tree:  sudo bash /opt/rathole-manager/update.sh
 
 sudo bash update.sh --list-backups        # list snapshots
@@ -157,7 +157,7 @@ TLS certs are never removed. The shared `common.sh` is removed only when no othe
 
 | Doc | Contents |
 |-----|----------|
-| [**GitHub Wiki**](https://github.com/loopy-iri/RatholeEngine/wiki) | **Complete GitHub Wiki** (Getting Started, CLI Reference, Adaptive Filtering, Hub, Troubleshooting). |
+| [**GitHub Wiki**](https://github.com/loopy-iri/tunnelplus/wiki) | **Complete GitHub Wiki** (Getting Started, CLI Reference, Adaptive Filtering, Hub, Troubleshooting). |
 | [`docs/architecture.md`](docs/architecture.md) | Three roles, state→regenerate→reload principle, path==name==map==inbound invariant. |
 | [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [`fa`](docs/transport-modes.md) | All transport and ingress modes with commands (English · فارسی). |
 | [`docs/traffic-flow.md`](docs/traffic-flow.md) | Layer-by-layer packet path incl. direct-IP and proxy (Mermaid + SVG). |

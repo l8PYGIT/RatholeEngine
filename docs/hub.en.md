@@ -28,7 +28,7 @@ sudo ratholectl hub on [port]
 sudo bash rathole-manager/ratholehub/install-hub.sh
 
 # From GitHub:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --hub
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --hub
 ```
 
 ---
@@ -61,15 +61,19 @@ ssh-copy-id -i /root/.ssh/id_ed25519.pub root@<node_ip>
 
 ---
 
-## UI Pages
+## UI (v1.9.1)
+
+The Hub UI is a static asset tree under `ratholehub/ui/`, served by the stdlib backend. It has no frontend build step or runtime dependency. It is bilingual (Persian/English), switches RTL/LTR direction, supports light/dark themes, responsive desktop/mobile layouts, accessible dialogs, keyboard focus management, and reduced-motion preferences. Language and theme are stored locally in the browser.
+
+The dashboard supports grid and list views. Refresh is page-aware (default 20 seconds), while routing provides both a draggable SVG topology graph and a console/table view. Long command output opens in a copyable modal; collected logs can also be downloaded as text.
 
 | Page | Hash | Content |
 |------|------|---------|
-| **Dashboard** | `#/dashboard` | Server card per server (role, availability status, version badge, quick buttons). Add server form + Provision. **Update All** button. |
-| **Server page** | `#/server/<name>` | Iran server: node table + **"available carriers"** switches (each carrier — kcp/plain/noise/backhaul — has its own independent listener/core), and per-node an **exclusive "tunnel carrier" select** (`ws`/`kcp`/`plain`/`noise`/`backhaul`) that coordinates both sides. Status, Update, version badge. |
-| **Routing / Console** | `#/routing` | Visual traffic flow: user ingress vs node tunnel transport, clickable SVG diagram (each node links to its server page). |
-| **Logs / Audit** | `#/audit` | History of all operations (who, which server, which action, rc). Every server action is logged via `audit_log`. |
-| **Settings** | `#/settings` | Hub config (language, auto-refresh, SSH key, repo slug, API token) + selected Iran server config (domain/cert). |
+| **Dashboard** | `#/dashboard` | Server cards, grid/list toggle, availability/version badges, add-server and Provision forms, Update All progress. |
+| **Server page** | `#/server/<name>` | Overview, domain/certificates, ports/paths, rathole carriers, ingress modes, node/service tables, game/SNI, Backhaul lane, status/details/log actions. |
+| **Routing / Console** | `#/routing` | Ingress versus tunnel lanes, draggable SVG graph, console/table view, and direct links to server pages. |
+| **Activity** | `#/audit` | Authenticated audit history with time, user, server, action, and return code. |
+| **Settings** | `#/settings` | Listen/API-token hint, API-token rotation, and admin-password change. |
 
 ### Ports Section (in server page)
 
@@ -81,12 +85,16 @@ ssh-copy-id -i /root/.ssh/id_ed25519.pub root@<node_ip>
 | `internal` | Display only | Internal panel port (behind SNI) |
 | `hub`, `plain`, `noise`, `backhaul`, `direct` | Display only | Port of each listener/core |
 
+The `sub-path` and `hub-path` path segments are editable too. Carrier-owned ports are display-only because enabling/disabling that carrier owns their lifecycle.
+
 ### Key Buttons
 
 - **"Update All"** — updates all servers one by one over SSH. Live progress bar: queued → updating → ✓ new version or ✗ (rc=N). The server running the hub itself is included; if the hub service restarts mid-update, that one row may show incomplete while the rest finish.
 - **Version badge** — green = up to date, yellow `vX→vY` = needs update. Version is read from `ratholectl/ratholenode version` and compared against `latest_version` from `GET /api/hubstatus` (which reads `MANAGER_VERSION` from `common.sh` in the deployed bundle).
 - **"Wire to node"** — registers an Iran node (name/token/inbound) as a service on a foreign node or upstream. The hub fetches the actual token/inbound via `GET /api/servers/<iran>/nodeconnect/<node>` (masked in `ls`), then runs `add_svc` (or `upstream_add_svc`) on the target.
 - **"Set main tunnel"** — links a foreign node to a registered Iran server by setting `SERVER=host:443` (action `set_server`). The provision form also has an "Iran server" select; if the server being provisioned has role `node`, the hub sets its main tunnel automatically after a successful deploy.
+- **Backhaul lane services** — node pages expose a separate table backed by `bh-services.conf`; adding/removing Backhaul services does not stop the normal rathole client.
+- **Theme/language controls** — icon buttons switch theme, language, refresh, and logout, with accessible labels and tooltips.
 
 ---
 
@@ -100,11 +108,21 @@ POST   /api/login                             {"password":"..."} → {token}
 GET    /api/hubstatus                          Hub status + latest_version
 GET    /api/servers                            List servers
 POST   /api/servers                            {name, role(iran|node), host, ssh_user, ssh_port}
+PUT    /api/servers/<name>                     Edit inventory record
 DELETE /api/servers/<name>
 POST   /api/provision                          Auto-install (SSH key + deploy + register)
 GET    /api/servers/<name>/status              Server status (JSON)
+GET    /api/servers/<name>/discover            Iran node discovery
+GET    /api/servers/<name>/overview            Compact overview + version
+GET    /api/servers/<name>/details             Detailed diagnostics
+GET    /api/servers/<name>/{kcp,noise,backhaul}connect  Carrier autofill data
+GET    /api/servers/<name>/mainconnect         Main-tunnel autofill data
 POST   /api/servers/<name>/action             {"action":"...", "args":{...}}
 GET    /api/servers/<iran>/nodeconnect/<node>  Real token/inbound of an Iran node (for wire-to-node)
+GET    /api/config                             Redacted Hub configuration
+POST   /api/config                             Rotate token/change admin settings
+GET    /api/audit?limit=100                    Recent audit records (max 500)
+POST   /api/ip-tls/prepare                     Prepare IP-TLS data for a node
 ```
 
 **Example:**
@@ -171,7 +189,7 @@ Files are served with a **filename whitelist** (no path joining, so path travers
 
 ## See also
 
-- [CLI Reference (Wiki)](https://github.com/loopy-iri/RatholeEngine/wiki/CLI-Reference) — `ratholectl hub` and all related commands
-- [Hub Management (Wiki)](https://github.com/loopy-iri/RatholeEngine/wiki/Hub-Management) — Persian wiki version of this page
+- [CLI Reference (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — `ratholectl hub` and all related commands
+- [Hub Management (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/Hub-Management) — Persian wiki version of this page
 - [`hub.md`](hub.md) — Persian version of this document
 - [`architecture.md`](architecture.md) — System architecture overview

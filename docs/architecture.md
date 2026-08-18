@@ -23,7 +23,7 @@
 ![چرخه state→regenerate→reload](assets/state-regenerate-reload.svg)
 
 - **ratholectl**: state در `/etc/rathole-manager/state.json` (با jq). دستورها state را تغییر می‌دهند، سپس `regenerate()` → `gen_server_toml()` + `gen_nginx_conf()` → `nginx -t` → reload. کانفیگ‌ها **در جای خود** (با حفظ inode) نوشته می‌شوند تا `config_watcher` در rathole بدون قطع تونل‌های فعال hot-reload کند. اگر `nginx -t` شکست بخورد، به `.rathole-good.bak` برمی‌گردد.
-- **ratholenode**: state در `/etc/rathole/node.env` + `/etc/rathole/services.conf`. `gen_client()` فایل `client.toml` را می‌سازد؛ `reload_svc` hot-reload را به restart ترجیح می‌دهد (restart فقط برای تغییر transport مثل روشن/خاموش‌کردن kcp).
+- **ratholenode**: state پایه در `/etc/rathole/node.env` است؛ `/etc/rathole/services.conf` سرویس‌های lane رتهول و `/etc/rathole/bh-services.conf` سرویس‌های lane بک‌هال را نگه می‌دارند. `gen_client()` و `gen_backhaul_client_toml()` کانفیگ‌های مستقل را می‌سازند؛ hot-reload برای رتهول ترجیح دارد و تغییر core/transport فقط unit مربوط را restart می‌کند.
 
 ## path == نام نود == نگاشت nginx == inbound Xray
 
@@ -31,13 +31,13 @@
 
 ## حالت‌های transport
 
-همان تونل می‌تواند ترافیک را **پنج جور** حمل کند (websocket+TLS پیش‌فرض، kcp، plain، noise، backhaul) به‌علاوه‌ی حالت game/SNI و دو ورودی کاربری (direct-IP، proxy). جزئیات کامل: [`transport-modes.md`](transport-modes.md).
+lane اصلی rathole چهار حامل دارد (websocket+TLS پیش‌فرض، KCP، plain و Noise). Backhaul یک lane مستقل SMUX با registry و unitهای جداست و می‌تواند برای سرویس‌های دیگر هم‌زمان با rathole اجرا شود. game/SNI و دو ورودی کاربری direct-IP و proxy جدا از carrier هستند. جزئیات کامل: [`transport-modes.md`](transport-modes.md).
 
 ## ورودی‌های کاربری (Ingress)
 
 علاوه بر مسیریابی استاندارد با path روی ۴۴۳، دو ورودی جایگزین برای کاربر وجود دارد:
 
-- **direct-IP:** یک پورت HTTP جداگانه (پیش‌فرض ۸۰۸۱) که کاربر مستقیم به IP سرور وصل می‌شود. انتخاب نود با یک هدر استتارشده (`X-Cdn-Id: <node_name>`) انجام می‌شود — نه path. مسیر تونل ایران↔نود دست‌نخورده می‌ماند.
+- **direct-IP:** یک پورت HTTP جداگانه (پیش‌فرض ۸۰۸۱) که کاربر مستقیم به IP سرور وصل می‌شود. انتخاب نود با یک هدر استتارشده (`X-Cdn-Id: <node_name>`) انجام می‌شود — نه path. مسیر تونل ایران↔نود دست‌نخورده می‌ماند. direct-IP بک‌هال، اگر فعال شود، یک exposure جدا برای خودِ lane بک‌هال است.
 - **proxy:** یک `/<name>/` روی همان ۴۴۳ که به یک upstream دلخواه proxy می‌شود — **بدون عبور از rathole**. برای سرویس‌های مستقل که نمی‌خواهی یک تونل جداگانه باز کنی.
 
 ## چند دامنه و گواهی IP
@@ -67,5 +67,5 @@ ratholenode set-main <ip>:443 <ip> /path/to/cert   # ثبت trusted root روی 
 - [`README.fa.md`](README.fa.md) — مرجع کامل CLI و روش‌های نصب.
 - [`install-manual.fa.md`](install-manual.fa.md) — نصب دستی گام‌به‌گام (فارسی)
 - [`install-manual.md`](install-manual.md) — Manual install walkthrough (English)
-- [**Wiki — مرجع کامل دستورات**](https://github.com/loopy-iri/RatholeEngine/wiki/CLI-Reference)
+- [**Wiki — مرجع کامل دستورات**](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference)
 - [`../rathole-multilocation-pasargad.md`](../rathole-multilocation-pasargad.md) — سند طراحی/عیب‌یابی تفصیلی اصلی.

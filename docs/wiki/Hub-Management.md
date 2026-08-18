@@ -1,6 +1,6 @@
 # مدیریت مرکزی با پنل وب Hub
 
-**RatholeHub** یک پنل وب تک‌فایلی (Python 3 stdlib، بدون pip) است که مدیریت چندین سرور ایران و نود خارج را از طریق SSH (بدون agent روی سرورها) متمرکز می‌کند.
+**RatholeHub** یک پنل وب Python 3 stdlib (بدون pip و بدون build فرانت‌اند) است که مدیریت چندین سرور ایران و نود خارج را از طریق SSH، بدون agent روی سرورها، متمرکز می‌کند. backend در `hub.py`/`hubcmds.py` و UI در پوشه‌ی `ui/` قرار دارد.
 
 ![معماری هاب](../assets/hub-architecture.svg)
 
@@ -17,7 +17,7 @@ sudo ratholectl hub on [port]
 sudo bash rathole-manager/ratholehub/install-hub.sh
 
 # نصب از GitHub:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --hub
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --hub
 ```
 
 ---
@@ -54,11 +54,13 @@ ssh-copy-id -i /root/.ssh/id_ed25519.pub root@<server_ip>
 
 | صفحه | آدرس | محتوا |
 |------|------|-------|
-| **داشبورد** | `#/dashboard` | کارت هر سرور با نقش، وضعیت، badge نسخه؛ فرم افزودن سرور و Provision؛ دکمه «آپدیت همه» |
-| **صفحه سرور** | `#/server/<name>` | سرور ایران: جدول نودها + سوییچ‌های حامل‌های در دسترس + select انحصاری حامل تونل هر نود |
-| **مسیریابی / کنسول** | `#/routing` | نمای گرافیکی مسیر ترافیک: ingress کاربر در برابر transport تونل، دیاگرام SVG قابل‌کلیک |
-| **لاگ‌ها / Audit** | `#/audit` | تاریخچه‌ی همه عملیات (چه کسی، کدام سرور، کدام action، rc) |
-| **تنظیمات** | `#/settings` | زبان، رفرش، کلید SSH، slug مخزن، توکن API؛ پیکربندی سرور ایران انتخاب‌شده |
+| **داشبورد** | `#/dashboard` | کارت سرورها، grid/list، وضعیت و badge نسخه؛ افزودن/Provision؛ آپدیت همه با progress |
+| **صفحه سرور** | `#/server/<name>` | overview، دامنه/گواهی، پورت/path، carrierها، ingress، سرویس‌های rathole و Backhaul، game و log |
+| **مسیریابی / کنسول** | `#/routing` | نمودار SVG قابل جابه‌جایی و نمای console/table برای ingress و lane تونل |
+| **فعالیت** | `#/audit` | تاریخچه‌ی عملیات (زمان، کاربر، سرور، action، rc) |
+| **تنظیمات** | `#/settings` | hint listen/token، چرخش API token و تغییر رمز مدیر |
+
+UI نسخه ۱.۹.۱ برای موبایل/دسکتاپ ریسپانسیو است، تم روشن/تیره و RTL/LTR دارد، وضعیت focus و dialogهای keyboard-accessible را رعایت می‌کند و از `prefers-reduced-motion` پشتیبانی می‌کند. زبان و تم در مرورگر ذخیره می‌شوند.
 
 ### بخش Ports در صفحه سرور
 
@@ -76,6 +78,8 @@ ssh-copy-id -i /root/.ssh/id_ed25519.pub root@<server_ip>
 - **Badge نسخه** — سبز = به‌روز، زرد `vX→vY` = نیاز به آپدیت.
 - **«Wire to node»** — یک نود ایران را به‌عنوان سرویس روی یک نود خارج ثبت می‌کند (token/inbound واقعی را خودکار دریافت می‌کند).
 - **«Set main tunnel»** — نود خارج را به یک سرور ایران ثبت‌شده در هاب وصل می‌کند.
+- **سرویس‌های Backhaul lane** — جدول مستقل مبتنی بر `bh-services.conf`؛ اضافه/حذف سرویس Backhaul، lane رتهول را خاموش نمی‌کند.
+- **Log و خروجی** — خروجی بلند در modal قابل کپی باز می‌شود و log جمع‌آوری‌شده به فایل متن دانلود می‌شود.
 
 ---
 

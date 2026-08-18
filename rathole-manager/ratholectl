@@ -1119,7 +1119,7 @@ regenerate(){
 print_node_install(){
   need_bin jq; ensure_state
   local name="$1" domain ctrl node token inbound aib at
-  local gh="${RATHOLE_GH:-loopy-iri/RatholeEngine}" ref="${RATHOLE_REF:-main}"
+  local gh="${RATHOLE_GH:-loopy-iri/tunnelplus}" ref="${RATHOLE_REF:-main}"
   domain="$(s_get '.domain')"
   node="$(jq -c --arg n "$name" '.nodes[]|select(.name==$n)' "$STATE")"
   [ -n "$node" ] || die "node '$name' peyda nashod."
@@ -2706,24 +2706,31 @@ cmd_doctor(){
   need_bin jq; ensure_state
   local domain ctrl fake ok=0 bad=0
   domain="$(s_get '.domain')"; ctrl="$(s_get '.control_port')"; fake="$(s_get '.fake_port')"
-  chk(){ if eval "$2" >/dev/null 2>&1; then printf '  %s %s\n' "$(c_g 'OK ')" "$1"; ok=$((ok+1)); else printf '  %s %s\n' "$(c_r 'FAIL')" "$1"; bad=$((bad+1)); fi; }
+  chk(){
+    local label="$1"; shift
+    if "$@" >/dev/null 2>&1; then
+      printf '  %s %s\n' "$(c_g 'OK ')" "$label"; ok=$((ok+1))
+    else
+      printf '  %s %s\n' "$(c_r 'FAIL')" "$label"; bad=$((bad+1))
+    fi
+  }
+  check_active(){ systemctl is-active --quiet "$1"; }
+  check_nginx(){ nginx -t; }
+  check_listen(){ ss -ltnH "sport = :$1" | grep -q .; }
 
   echo "$(c_g '== barresi serviceha ==')"
-  chk "rathole-server faal ast"        "systemctl is-active --quiet $RATHOLE_SVC"
-  chk "nginx faal ast"                  "systemctl is-active --quiet nginx"
-  chk "config nginx motabar ast (nginx -t)" "nginx -t"
+  chk "rathole-server faal ast" check_active "$RATHOLE_SVC"
+  chk "nginx faal ast" check_active nginx
+  chk "config nginx motabar ast (nginx -t)" check_nginx
 
   echo "$(c_g '== barresi pvrthai lvkal ==')"
-  chk "kntrl rathole rooye 127.0.0.1:$ctrl gvsh midahad" \
-      "ss -ltnH 'sport = :$ctrl' | grep -q ."
-  chk "sait fik rooye 127.0.0.1:$fake gvsh midahad" \
-      "ss -ltnH 'sport = :$fake' | grep -q ."
+  chk "kntrl rathole rooye 127.0.0.1:$ctrl gvsh midahad" check_listen "$ctrl"
+  chk "sait fik rooye 127.0.0.1:$fake gvsh midahad" check_listen "$fake"
   local bhp
   bhp="$(jq -r '.backhaul_port // empty' "$STATE" 2>/dev/null)"
   if [ -n "$bhp" ] && [ "$bhp" != null ]; then
-    chk "backhaul-server faal ast" "systemctl is-active --quiet $BH_SVC"
-    chk "backhaul rooye 127.0.0.1:$bhp gvsh midahad" \
-        "ss -ltnH 'sport = :$bhp' | grep -q ."
+    chk "backhaul-server faal ast" check_active "$BH_SVC"
+    chk "backhaul rooye 127.0.0.1:$bhp gvsh midahad" check_listen "$bhp"
   fi
   jq -r '.nodes[] | [.name,(.port|tostring)] | @tsv' "$STATE" |
   while IFS=$'\t' read -r n p; do
@@ -2934,7 +2941,7 @@ menu(){
 cmd_update(){
   need_root
   command -v curl >/dev/null 2>&1 || die "curl lazem ast (apt install -y curl)."
-  local gh="${RATHOLE_GH:-loopy-iri/RatholeEngine}" rel="${RATHOLE_RELEASE:-latest}"
+  local gh="${RATHOLE_GH:-loopy-iri/tunnelplus}" rel="${RATHOLE_RELEASE:-latest}"
   # 'ratholectl update beta' → kanal-e pre-release. chon releases/latest/download pre-release ha
   # ra nadide migirad, aval bayad tag-e daghigh ra az atom peyda konim.
   case "${1:-}" in

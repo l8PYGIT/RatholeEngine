@@ -27,7 +27,7 @@ Every mutation follows this pattern — **never hand-edit generated configs**; c
 ![State→Regenerate→Reload cycle](assets/state-regenerate-reload.svg)
 
 - **ratholectl:** state is `/etc/rathole-manager/state.json` (jq-manipulated). Commands mutate state, then call `regenerate()` → `gen_server_toml()` + `gen_nginx_conf()` → `nginx -t` → reload. Configs are written **in place (inode preserved)** so rathole's `config_watcher` hot-reloads without dropping active tunnels. Auto-reverts to `.rathole-good.bak` if `nginx -t` fails.
-- **ratholenode:** state is `/etc/rathole/node.env` + `/etc/rathole/services.conf`. `gen_client()` builds `client.toml`; `reload_svc` prefers hot-reload over restart (restart only for transport changes like kcp on/off).
+- **ratholenode:** base state is `/etc/rathole/node.env`; `/etc/rathole/services.conf` owns rathole-lane services and `/etc/rathole/bh-services.conf` owns Backhaul-lane services. `gen_client()` and `gen_backhaul_client_toml()` build their independent configs. `reload_svc` prefers hot-reload for rathole; transport/core changes restart only the affected unit.
 
 ---
 
@@ -39,7 +39,7 @@ A node's `name` is simultaneously its URL path, its nginx `map` entry, and the X
 
 ## Transport Modes
 
-The same tunnel can carry traffic **five** ways (websocket+TLS default, kcp, plain, noise, backhaul) plus game/SNI mode and two user ingress modes (direct-IP, proxy). Full details: [`transport-modes.en.md`](transport-modes.en.md).
+The rathole lane has four carriers (websocket+TLS default, KCP, plain, Noise). Backhaul is a separate SMUX lane with its own service registry and client/server units; both lanes may run together for different services. Game/SNI plus direct-IP and proxy are ingress modes. Full details: [`transport-modes.en.md`](transport-modes.en.md).
 
 ---
 
@@ -47,7 +47,7 @@ The same tunnel can carry traffic **five** ways (websocket+TLS default, kcp, pla
 
 Beyond standard path-routing on 443, two alternative user entry points exist:
 
-- **direct-IP:** a separate HTTP port (default 8081) where users connect directly to the Iran server IP. Node selection uses a hidden header (`X-Cdn-Id: <node_name>`) instead of URL path. The tunnel between Iran↔node is untouched.
+- **direct-IP:** a separate HTTP port (default 8081) where users connect directly to the Iran server IP. Node selection uses a hidden header (`X-Cdn-Id: <node_name>`) instead of URL path. The tunnel between Iran↔node is untouched. Backhaul also has an optional direct-IP exposure, which is separate from this user ingress.
 - **proxy:** a `/<name>/` path on the same 443 that `proxy_pass`es to any upstream — **without going through rathole**. For independent services that don't need a tunnel.
 
 ---
@@ -78,4 +78,4 @@ ratholenode set-main <ip>:443 <ip> /path/to/cert    # Node: trust the cert
 - [`performance.en.md`](performance.en.md) — tuning beyond the tunnel
 - [`README.fa.md`](README.fa.md) — full CLI reference and install flows (Persian)
 - [`install-manual.md`](install-manual.md) — full manual install walkthrough (English)
-- [Wiki — CLI Reference](https://github.com/loopy-iri/RatholeEngine/wiki/CLI-Reference)
+- [Wiki — CLI Reference](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference)

@@ -1,8 +1,8 @@
 # حالت‌های Transport — یک تونل، چند حامل
 
-همان تونل معکوس می‌تواند ترافیک را از **پنج مسیر** حمل کند (به‌علاوه‌ی حالت ویژه‌ی game/SNI). سوییچ بین حالت‌ها **هیچ‌وقت** سرویس‌ها، توکن‌ها یا مسیر (path) کاربران را عوض نمی‌کند — فقط *حاملِ* تونل تغییر می‌کند.
+lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و Noise. Backhaul یک lane مستقل SMUX است که می‌تواند کنار rathole روی همان نود اجرا شود. game/SNI، direct-IP و proxy ورودی کاربر هستند، نه حامل تونل.
 
-> **حامل هر نود انحصاری است.** پنج دستورِ transport روی نود همگی **یک** متغیر واحد (`TUNNEL` در `node.env`) را می‌نویسند و آخرین دستور برنده است — ترکیب‌شدنی نیستند. به همین دلیل هاب (v1.6) حامل هر نود را با **یک select انحصاری** نشان می‌دهد که تعویضش هر دو سمت را هماهنگ می‌کند؛ سمت ایران سوییچ‌ها فقط می‌گویند کدام حامل‌ها *در دسترس*‌اند.
+> **قانون مالکیت:** `services.conf` برای lane رتهول و `bh-services.conf` برای lane بک‌هال است. هر سرویس/مسیر روی یک سرور ایران باید فقط در یکی از این دو lane باشد، ولی هر دو client می‌توانند برای سرویس‌های متفاوت هم‌زمان روشن بمانند.
 
 ![حالت‌های transport](assets/transport-modes.svg)
 
@@ -10,7 +10,7 @@
 
 ## ۱) websocket + TLS (پیش‌فرض)
 - کلاینت به `wss://domain:443` وصل می‌شود.
-- nginx ریشه‌ی `/` را با `$http_upgrade` بین **سایت فیک** و **کانال کنترلی rathole** تقسیم می‌کند (rathole همیشه از `/` برای کنترل استفاده می‌کند؛ path در rathole قابل‌تنظیم نیست).
+- nginx مسیر مخفی کانال کنترل (`/_rh/<32 hex>`) را به rathole می‌دهد و درخواست‌های دیگر را روی مسیرهای فیک/دیتا نگه می‌دارد؛ `/` هنگام rotate برای سازگاری موقت باقی می‌ماند.
 - TLS روی nginx خاتمه می‌یابد (گواهی Let's Encrypt).
 
 ## ۲) kcp (UDP+FEC)
@@ -44,7 +44,7 @@
 - **نگاشت پورت:** `"127.0.0.1:<port_ایران>=<inbound_port_نود>"` — یعنی همان پورتی که `map $uri` در nginx به آن اشاره می‌کند دست‌نخورده می‌ماند، پس **مسیر کاربران عوض نمی‌شود**. سرویس `<name>_api` هم اگر باشد اضافه می‌شود.
 - **پروفایل mux** (`balanced`/`lossy`/`aggressive` در `common.sh:backhaul_mux_profile`) باید **دو طرف یکی** باشد. `mux_con` فقط سمت سرور و `connection_pool` فقط سمت کلاینت معنا دارد.
 - **توکن مشترک** (`openssl rand -hex 20`) جای گواهی را می‌گیرد؛ secret است و فقط به نودهای backhaul داده می‌شود.
-- روشن‌کردن: `ratholectl backhaul on [port] [transport] [profile]` سپس `ratholectl backhaul node <name> on`؛ نود: `ratholenode backhaul on <domain> <token> [transport] [profile]` (خروجی `ratholectl backhaul show` خط آماده می‌دهد و hub آن را autofill می‌کند).
+- روشن‌کردن پشت nginx: `ratholectl backhaul on [port] [ws|wsmux] [profile] nginx_tls` سپس `ratholectl backhaul node <name> on`؛ نود: `ratholenode backhaul on <domain> <token> [wss|wssmux] [profile]`. برای dual-core سرویس‌ها را با `ratholenode backhaul add-svc <name> <token> <inbound>` در registry بک‌هال ثبت کنید. خروجی `ratholectl backhaul show` پارامترهای آماده را می‌دهد و Hub آن‌ها را خودکار پر می‌کند.
 
 ## ۶) game / SNI (لایه ۴ passthrough)
 - وقتی هر نودی `sni` داشته باشد، پورت ۴۴۳ به حالت **stream/SNI** در nginx (passthrough لایه ۴) می‌رود و vhost لایه ۷ (path/WS) به یک پورت داخلی (`internal_port`، پیش‌فرض ۸۴۴۳) منتقل می‌شود.
@@ -87,20 +87,20 @@
 
 ## همچنین ببینید
 
-- [مرجع کامل دستورات CLI (ویکی)](https://github.com/loopy-iri/RatholeEngine/wiki/CLI-Reference) — syntax کامل همه دستورات
-- [راهنماهای عملی (ویکی)](https://github.com/loopy-iri/RatholeEngine/wiki/Workflow-Guides) — راه‌اندازی direct-IP، مهاجرت به backhaul، چند دامنه، multi-upstream
+- [مرجع کامل دستورات CLI (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — syntax کامل همه دستورات
+- [راهنماهای عملی (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/Workflow-Guides) — راه‌اندازی direct-IP، مهاجرت به backhaul، چند دامنه، multi-upstream
 - [`transport-modes.en.md`](transport-modes.en.md) — نسخه انگلیسی همین سند
 - [`architecture.md`](architecture.md) — معماری کلی سیستم
 
 > یک لایه‌ی **خودکار** بالای حالت‌های ۱–۵. حاملِ فعال را بدون دخالت اپراتور عوض می‌کند.
 
-- **probe‌های bounded:** هر بازه (پیش‌فرض ۳۰ ثانیه) یک WebSocket RFC 6455 به `WS_PATH` می‌فرستد؛ طبقه‌بندی مستقیم:
+- **probe‌های bounded:** هر بازه (پیش‌فرض ۳۰ ثانیه) یک WebSocket RFC 6455 به `CONTROL_PATH` می‌فرستد؛ طبقه‌بندی مستقیم:
   `dns_failed` → `tcp_timeout` → `tls_failed` → `ws_rejected` → `ws_timeout` → `healthy`
 - **threshold/hysteresis:** پس از `ADAPTIVE_FAILURES` (پیش‌فرض ۳) شکست متوالی سوییچ؛ پس از `ADAPTIVE_RECOVERIES` (پیش‌فرض ۵) بازگشت سالم + اتمام cooldown.
 - **cooldown:** `ADAPTIVE_COOLDOWN` (پیش‌فرض ۳۰۰ ثانیه) بین سوییچ‌های متوالی.
 - **حامل‌های اولویت‌دار:** `ws` → `kcp` (و در صورت `ALLOW_INSECURE=1`: `plain`). plain هرگز بدون اجازه‌ی صریح انتخاب نمی‌شود.
 - **rollback خودکار:** اگر probe پس از سوییچ هم fail باشد، config قبلی بازیابی می‌شود.
-- **state sanitize:** `/etc/rathole/adaptive-state.json` (mode 0600) فقط فیلدهای `time`, `current`, `classification`, `latency_ms`, `consecutive_failures` دارد — هیچ token/key/WS_PATH در JSON نیست.
+- **state sanitize:** `/etc/rathole/adaptive-state.json` (mode 0600) فقط فیلدهای `time`, `current`, `classification`, `latency_ms`, `consecutive_failures` دارد — هیچ token/key/CONTROL_PATH در JSON نیست.
 - روشن‌کردن: `ratholenode adaptive on [--interval N] [--failures N] [--recoveries N]`، خاموش: `off`، وضعیت: `status`، تست: `test [--json]`.
 
 ## ۹) secret WebSocket control path (v1.5.0+)
@@ -109,8 +109,8 @@
 
 - **nginx:** فقط `location = /_rh/<secret>` از `$http_upgrade` به control port می‌رود؛ همه‌ی مسیرهای دیگر رفتار fake/data خود را حفظ می‌کنند.
 - **مدیریت:** `ratholectl control-path show` نشان‌دهنده، `rotate` مسیر جدید می‌سازد و grace period برای به‌روزرسانی نودها فراهم می‌کند.
-- **نود:** `WS_PATH` در `node.env` ذخیره می‌شود و در `client.toml` به‌عنوان `path = "/_rh/..."` درج می‌شود (patch‌ی از core روی `WebsocketConfig.path`).
-- **نمایش:** `cmd_show` مقدار `WS_PATH=<masked>` چاپ می‌کند — هیچ secret کامل در لاگ پدیدار نمی‌شود.
+- **نود:** `CONTROL_PATH` در `node.env` ذخیره می‌شود و در `client.toml` به‌عنوان `path = "/_rh/..."` درج می‌شود (patch‌ی از core روی `WebsocketConfig.path`).
+- **نمایش:** `cmd_show` مقدار `CONTROL_PATH=<masked>` چاپ می‌کند — هیچ secret کامل در لاگ پدیدار نمی‌شود.
 
 ---
 

@@ -38,15 +38,15 @@ ssh -L 8088:127.0.0.1:8088 root@<rp01_ip>
 
 ## رابط کاربری (UI)
 
-از نسخه‌ی **۱.۶**، UI دیگر یک رشته‌ی درون `hub.py` نیست؛ در پوشه‌ی **`ratholehub/ui/`** کنار `hub.py` زندگی می‌کند (`index.html`، `app.css`، `app.js`، `i18n.js`) و با **لیست‌سفید نام فایل** (بدون پیوستن مسیر، پس path traversal ممکن نیست) از دیسک سرو می‌شود. قید «فقط stdlib، بدون pip» حفظ شده؛ `install-hub.sh` و `update.sh` هر دو کل درخت (`hub.py` + `hubcmds.py` + `ui/`) را نصب/به‌روز می‌کنند. ساختار: **sidebar + hash-router** (پس زیر `/hub/` هم کار می‌کند)، دوزبانه‌ی **فارسی/انگلیسی**، ریسپانسیو، با رفرش خودکار هوشمند (هر ۲۰ ثانیه فقط داده‌ی صفحه‌ی فعال؛ قابل خاموش‌کردن).
+از نسخه‌ی **۱.۶**، UI دیگر یک رشته‌ی درون `hub.py` نیست؛ در پوشه‌ی **`ratholehub/ui/`** کنار `hub.py` زندگی می‌کند (`index.html`، `app.css`، `app.js`، `i18n.js`) و با **لیست‌سفید نام فایل** سرو می‌شود. نسخه‌ی ۱.۹.۱ این UI را برای دسکتاپ/موبایل بازطراحی کرد: فارسی/انگلیسی با RTL/LTR، تم روشن/تیره، layout ریسپانسیو، دیالوگ‌های قابل‌دسترس با focus و Escape، validation درون‌خطی و `prefers-reduced-motion`. هیچ build step یا وابستگی pip ندارد؛ `install-hub.sh` و `update.sh` کل درخت (`hub.py` + `hubcmds.py` + `ui/`) را نصب/به‌روز می‌کنند. refresh هوشمند فقط صفحه‌ی فعال را (پیش‌فرض هر ۲۰ ثانیه) می‌خواند.
 
 | صفحه | محتوا |
 |------|-------|
-| **داشبورد** (`#/dashboard`) | کارت هر سرور (ایران/نود) با نقش، وضعیت دسترس‌پذیری، badge نسخه و دکمه‌های سریع. فرم **افزودن سرور** و **نصب خودکار** (provision)، و دکمه‌ی **«آپدیت همه»** (پایینِ توضیحات). |
-| **صفحه سرور** (`#/server/<name>`) | نمای کاملِ یک سرور: برای سرور ایران جدول نودها + سوییچ‌های **«حامل‌های در دسترس»** (هر حامل — kcp/plain/noise/backhaul — listener/core مستقل خودش را دارد)، و برای هر نود یک **select انحصاریِ «حامل تونل»** (`ws`/`kcp`/`plain`/`noise`/`backhaul`) که هر دو سمت را هماهنگ می‌کند. دکمه‌های **وضعیت**، **آپدیت** و badge نسخه اینجا هم هستند. |
-| **مسیریابی / کنسول** (`#/routing`) | نمای گرافیکی مسیر ترافیک: ورودی کاربر (ingress) در برابر تانل نود (transport)، با دیاگرام SVG قابل‌کلیک (هر نود به صفحه‌ی خودش لینک می‌شود). |
-| **لاگ‌ها / audit** (`#/audit`) | تاریخچه‌ی همه‌ی عملیات انجام‌شده روی سرورها (چه کسی، کدام سرور، کدام action، rc). هر عمل روی سرور از طریق `audit_log` ثبت می‌شود. |
-| **تنظیمات** (`#/settings`) | پیکربندی هاب (زبان، رفرش خودکار، کلید SSH، slug مخزن، توکن API) **+ پیکربندی سرور ایرانِ انتخاب‌شده**: دامنه/گواهی. |
+| **داشبورد** (`#/dashboard`) | کارت سرورها، نمای grid/list، وضعیت دسترس‌پذیری و badge نسخه، فرم افزودن/Provision و progress آپدیت همه. |
+| **صفحه سرور** (`#/server/<name>`) | overview، دامنه/گواهی، پورت و path، carrierهای rathole، ingressها، جدول نود/سرویس، game/SNI، lane بک‌هال و دکمه‌های status/details/log. |
+| **مسیریابی / کنسول** (`#/routing`) | نمودار SVG قابل جابه‌جایی + نمای console/table برای تفکیک ingress و lane تونل؛ هر نود به صفحه‌ی خودش لینک دارد. |
+| **فعالیت** (`#/audit`) | تاریخچه‌ی احرازشده‌ی عملیات (زمان، کاربر، سرور، action، rc). |
+| **تنظیمات** (`#/settings`) | hint پورت/توکن API، چرخش توکن و تغییر رمز مدیر. زبان/تم از دکمه‌های نوار کناری کنترل می‌شوند. |
 
 ### بخش پورت‌ها (Ports)
 
@@ -64,15 +64,17 @@ ssh -L 8088:127.0.0.1:8088 root@<rp01_ip>
 | `backhaul` | ❌ فقط نمایش | پورت backhaul (SMUX) |
 | `direct` | ❌ فقط نمایش | پورت direct-IP |
 
-برای ویرایش: روی **«Manage»** در بخش **Ports** کلیک کنید. مودال باز شده مقدار فعلی هر پورت را نشان می‌دهد و امکان تغییر آن را می‌دهد (با هشدار تداخل پورت پیش از ارسال).
+برای ویرایش: روی **«Manage»** در بخش **Ports** کلیک کنید. `sub-path` و `hub-path` هم قابل ویرایش‌اند؛ پورت‌های متعلق به carrier فقط نمایش داده می‌شوند چون lifecycle آن‌ها با روشن/خاموش‌شدن carrier کنترل می‌شود.
 
-## قابلیت‌های تازه (v1.6.0)
+## قابلیت‌های فعلی (v1.9.1)
 
-- **مدل دو سطحیِ حامل‌ها** — پنج دستور transport روی نود همگی **یک** متغیر واحد (`TUNNEL`) را می‌نویسند؛ یعنی حامل هر نود ذاتاً انحصاری است. UI جدید همین را منعکس می‌کند: سمت ایران سوییچ «کدام حامل‌ها در دسترس‌اند»، و روی هر نود **یک select انحصاری** با پنج گزینه. دیگر پنج جفت دکمه‌ی on/off مستقل که آخرین‌شان بی‌صدا برنده می‌شد وجود ندارد.
+- **مدل دو سطحیِ carrier و lane** — سمت ایران carrierهای رتهول و هسته‌ی بک‌هال جدا کنترل می‌شوند. روی نود جدول سرویس‌های `services.conf` و `bh-services.conf` جداست؛ Backhaul دیگر rathole-client را خاموش نمی‌کند.
 - **تعیین حاملِ هدایت‌شده** — انتخاب حامل برای یک نود یک عمل واحد است: اگر سمت ایران آن حامل فعال نباشد اول فعالش می‌کند، برای `noise`/`backhaul` نود را سمت ایران به آن مسیر می‌برد، سمت نود را با پارامترهای **گرفته‌شده‌ی خودکار از سرور ایران** ست می‌کند (همان الگوی `noiseconnect`/`backhaulconnect`)، و حامل قبلی را سمت ایران پاک می‌کند تا state ناسازگار نماند.
 - **صفحه‌ی تنظیماتِ کامل‌تر** — `fake-port`، `sub-port` و `control-port` حالا از UI قابل ویرایش‌اند (بک‌اند `set_config` از قبل پشتیبانی می‌کرد؛ فقط سطحش نبود).
 - **ریورس‌پروکسی غیرتونلی (`proxy`)** — اکشن‌های `proxy_add`/`proxy_rm`/`proxy_ls` برای ساختن مسیر `/<name>/` روی همان ۴۴۳ که به یک upstream دلخواه (غیر از rathole) proxy می‌شود. مرجع CLI: بخش «۲.۸) proxy» در [`README.fa.md`](README.fa.md).
 - **تقسیم فایل** — نقشه‌ی امنیتی action→argv به **`hubcmds.py`** منتقل شد (ماژول کوچک و قابل‌مرور، بدون وابستگی به بقیه‌ی هاب) و UI به `ui/`؛ ویرایش JS حالا با هایلایت و لینت واقعی است.
+- **رابط ۱.۹.۱** — تم روشن/تیره، RTL/LTR، grid/list، نمودار routing قابل جابه‌جایی، console view، modal خروجی قابل کپی، دانلود log، validation و کنترل‌های keyboard/accessibility اضافه شد.
+- **Backhaul dual-core** — جدول مستقل سرویس‌های lane بک‌هال و actionهای `add_bh_svc`/`rm_bh_svc`/`backhaul_status`/`backhaul_logs` اضافه شد.
 
 ## قابلیت‌های تازه (v1.4.5–v1.4.7)
 
@@ -96,11 +98,23 @@ POST   /api/login                            {"password":"..."} → {token}
 GET    /api/hubstatus                         وضعیت هاب + latest_version (آخرین نسخه‌ی bundle)
 GET    /api/servers                           لیست سرورها
 POST   /api/servers                           {name,role(iran|node),host,ssh_user,ssh_port}
+PUT    /api/servers/<name>                    ویرایش رکورد inventory
 DELETE /api/servers/<name>
 POST   /api/provision                         نصب خودکار (کلید SSH + deploy + ثبت)
 GET    /api/servers/<name>/status             وضعیت (doctor/kcp/upstreamها)
+GET    /api/servers/<name>/discover           کشف نودهای تعریف‌شده روی ایران
+GET    /api/servers/<name>/overview           خلاصه + نسخه
+GET    /api/servers/<name>/details            جزئیات تشخیصی
+GET    /api/servers/<name>/kcpconnect         داده‌ی autofill برای KCP
+GET    /api/servers/<name>/noiseconnect       داده‌ی autofill برای Noise
+GET    /api/servers/<name>/backhaulconnect    داده‌ی autofill برای Backhaul
+GET    /api/servers/<name>/mainconnect        داده‌ی autofill تونل اصلی
 POST   /api/servers/<name>/action             {"action":"...","args":{...}}
 GET    /api/servers/<iran>/nodeconnect/<node> token/inbound واقعی نود ایران (برای wire-to-node)
+GET    /api/config                            پیکربندی redact‌شده‌ی Hub
+POST   /api/config                            چرخش توکن/تغییر رمز مدیر
+GET    /api/audit?limit=100                   لاگ فعالیت (حداکثر ۵۰۰ رکورد)
+POST   /api/ip-tls/prepare                    آماده‌سازی IP-TLS برای نود
 ```
 
 نمونه:
@@ -121,5 +135,5 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST $B/api/servers/rp01/action \
 - **iran**: `ls`, `doctor`, `status`, `regen`, مدیریت transport (`kcp_*`, `plain_*`, `noise_*`, `backhaul_*`, `direct_*`)، مدیریت game (`game_*` — `game_cert` گواهی Let's Encrypt می‌گیرد و خروجی شامل **کلید خصوصی** است؛ فقط از هابِ احرازشده استفاده کن و لاگ نگه ندار)، مدیریت نود (`add_node`, `rm_node`, `show_node`)، و ریورس‌پروکسی غیرتونلی (`proxy_add{name,upstream}`, `proxy_rm{name}`, `proxy_ls`).
 - **node**: `show`, `ls`, `upstream_ls`, `set_server`, مدیریت سرویس (`add_svc`, `rm_svc`, `upstream_add`, `upstream_add_svc`)، transport (`kcp_*`, `upstream_kcp_*`, `noise_*`, `backhaul_*`) و `apply`.
 - روی `127.0.0.1` می‌شنود (پشت nginx زیر `/hub/` یا SSH-forward)؛ هیچ پورت عمومی جدیدی باز نمی‌شود.
-- `deploy_to_server` (دکمه‌ی «آپدیت»/«آپدیت همه») روی خودِ سرور آخرین `install.sh` را از GitHub (از طریق حلقه‌ی mirror ghproxy) می‌گیرد و با `--update` اجرا می‌کند؛ slug مخزن از config (`gh_repo`، پیش‌فرض `loopy-iri/RatholeEngine`، اعتبارسنجی با `RE_SLUG`) می‌آید و تنها همان slugِ اعتبارسنجی‌شده در دستور ثابت `bash -c` جای‌گذاری می‌شود.
+- `deploy_to_server` (دکمه‌ی «آپدیت»/«آپدیت همه») روی خودِ سرور آخرین `install.sh` را از GitHub (از طریق حلقه‌ی mirror ghproxy) می‌گیرد و با `--update` اجرا می‌کند؛ slug مخزن از config (`gh_repo`، پیش‌فرض `loopy-iri/tunnelplus`، اعتبارسنجی با `RE_SLUG`) می‌آید و تنها همان slugِ اعتبارسنجی‌شده در دستور ثابت `bash -c` جای‌گذاری می‌شود.
 - هر عمل موفق/ناموفق در **audit log** ثبت می‌شود (کاربر، سرور، action، rc) — قابل‌مشاهده در صفحه‌ی `#/audit`.

@@ -56,6 +56,10 @@ jobs:
         run: |
           bash tests/test_stderr_visible.sh
 
+      - name: doctor checks must not eval shell strings
+        run: |
+          bash tests/test_doctor_no_eval.sh
+
       - name: interactive panel init must be able to ask for the domain
         run: |
           bash tests/test_init_interactive.sh

@@ -9,16 +9,16 @@
 _یک پورت (۴۴۳) · یک دامنه · یک گواهی · مسیریابی نودها با path_
 _ساخته‌شده برای تونل مقاومِ سانسور به داخل ایران._
 
-[![CI](https://github.com/loopy-iri/RatholeEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/loopy-iri/RatholeEngine/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/loopy-iri/RatholeEngine?sort=semver&color=7c3aed)](https://github.com/loopy-iri/RatholeEngine/releases/latest)
-[![License](https://img.shields.io/github/license/loopy-iri/RatholeEngine?color=blue)](../LICENSE)
-[![Stars](https://img.shields.io/github/stars/loopy-iri/RatholeEngine?style=flat&color=16a34a)](https://github.com/loopy-iri/RatholeEngine/stargazers)
+[![CI](https://github.com/loopy-iri/tunnelplus/actions/workflows/ci.yml/badge.svg)](https://github.com/loopy-iri/tunnelplus/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/loopy-iri/tunnelplus?sort=semver&color=7c3aed)](https://github.com/loopy-iri/tunnelplus/releases/latest)
+[![License](https://img.shields.io/github/license/loopy-iri/tunnelplus?color=blue)](../LICENSE)
+[![Stars](https://img.shields.io/github/stars/loopy-iri/tunnelplus?style=flat&color=16a34a)](https://github.com/loopy-iri/tunnelplus/stargazers)
 <br/>
 ![shell](https://img.shields.io/badge/shell-bash-4EAA25?logo=gnubash&logoColor=white)
 ![python](https://img.shields.io/badge/python-stdlib%20only-3776AB?logo=python&logoColor=white)
 ![tunnel](https://img.shields.io/badge/tunnel-rathole%20%2B%20nginx-7c3aed)
 
-[**English**](../README.md) · [**فارسی**](#این-چیست) · [**ویکی جامع (Wiki)**](https://github.com/loopy-iri/RatholeEngine/wiki) · [شروع سریع](#شروع-سریع) · [Telegram](https://t.me/l8PY4NET)
+[**English**](../README.md) · [**فارسی**](#این-چیست) · [**ویکی جامع (Wiki)**](https://github.com/loopy-iri/tunnelplus/wiki) · [شروع سریع](#شروع-سریع) · [Telegram](https://t.me/l8PY4NET)
 
 </div>
 
@@ -81,7 +81,7 @@ ratholectl doctor                      # بررسی سلامت
 ratholectl version                     # نسخهٔ manager + rathole (manager_version=/rathole_version=)
 ratholectl update                      # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholectl update beta                 # کانال بتا: آخرین pre-release (آزمایشی)
-ratholectl update v1.8.0               # آپدیت به نسخه‌ی خاص
+ratholectl update v1.9.2               # آپدیت به نسخه‌ی خاص
 ratholectl menu                        # منوی تعاملی کامل
 ```
 
@@ -110,7 +110,7 @@ ratholectl ip-cert-off                 # حذف vhost IP TLS
 
 > **نکتهٔ دستور نصب نود:** بعد از `ratholectl add <name> <inbound>` (و `ratholectl show <name>`)، **اول** یک دستور نصب آمادهٔ کپی به شکل curl یک‌خطی چاپ می‌شود که مستقیم روی نود خارج اجرا می‌شود، سپس شکل محلی `install-node.sh`:
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --node -- \
+> curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --node -- \
 >   --server <panel>:443 --name <name> --token <T> --inbound-port <inbound>
 > ```
 > اگر دامنه‌ای ست نشده باشد (حالت تانل با IP)، `--server` با IP عمومی سرور پر می‌شود.
@@ -157,7 +157,7 @@ ratholenode backup [file]              # snapshot از node.env + services + ups
 ratholenode restore <file>             # بازگردانی + بازتولید config + restart
 ratholenode update                     # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholenode update beta                # کانال بتا: آخرین pre-release (آزمایشی)
-ratholenode update v1.8.0              # آپدیت به نسخه‌ی خاص
+ratholenode update v1.9.2              # آپدیت به نسخه‌ی خاص
 ratholenode version                    # نسخهٔ manager + rathole
 ratholenode status | logs | apply
 ```
@@ -299,8 +299,10 @@ ratholectl backhaul off                      # خاموشی کامل: همه ن�
 
 # روی نود: دقیقاً همان خطی که «show» بالا چاپ کرد
 ratholenode backhaul on <DOMAIN> <TOKEN> wssmux balanced
+ratholenode backhaul add-svc <name> <TOKEN> <inbound_port>
+ratholenode backhaul ls
 ratholenode backhaul status
-ratholenode backhaul off                     # برگشت به websocket/443
+ratholenode backhaul off                     # خاموش‌کردن lane بک‌هال؛ lane رتهول مستقل می‌ماند
 ```
 
 نکات کلیدی:
@@ -308,7 +310,7 @@ ratholenode backhaul off                     # برگشت به websocket/443
 - **transport دو طرف عمداً یکی نیست.** چون TLS را فقط nginx ترمینیت می‌کند، سرور همیشه واریانت **بدون TLS** می‌گیرد (`ws`/`wsmux`) و کلاینت واریانت **TLS‌دار** (`wss`/`wssmux`) — دقیقاً همان قاعده‌ی rathole. هر دو سمت ورودی اشتباه را با پیام راهنما رد می‌کنند.
 - **`tcpmux` پشتیبانی نمی‌شود**؛ TCP خام است و از nginx لایه ۷ رد نمی‌شود.
 - **profile باید دو طرف یکی باشد** (`balanced`/`lossy`/`aggressive`). `mux_con` فقط سمت سرور و `connection_pool` فقط سمت کلاینت معنا دارد.
-- **هر نود دقیقاً یک حامل دارد.** `backhaul` یک مقدار از `.transport` نود است (مثل `noise`)؛ نودِ backhaul از `server.toml` خارج می‌شود و به `ports` در `backhaul-server.toml` می‌رود. اگر این نبود، `rathole-server` و `backhaul-server` هر دو `127.0.0.1:<port>` را bind می‌کردند و دومی بالا نمی‌آمد. روی نود هم `rathole-client` عمداً متوقف و disable می‌شود.
+- **dual-core است.** روی ایران، هر مسیر فقط در یکی از `server.toml` یا mapping بک‌هال قرار می‌گیرد تا bind تکراری نشود. روی نود، `services.conf` برای rathole و `bh-services.conf` برای Backhaul است و هر دو client می‌توانند هم‌زمان سرویس‌های متفاوت را حمل کنند.
 - **نگاشت پورت `"127.0.0.1:<port_ایران>=<inbound_port_نود>"`** است، یعنی همان پورتی که `map $uri` در nginx به آن اشاره می‌کند دست‌نخورده می‌ماند — **مسیر کاربران هرگز عوض نمی‌شود**. سرویس `<name>_api` هم اگر وجود داشته باشد اضافه می‌شود.
 - توکن مشترک (`openssl rand -hex 20`) جای گواهی را می‌گیرد؛ **secret است** و فقط به نودهای backhaul داده می‌شود. در پنل وب دکمه‌های backhaul با **پرکردن خودکار دامنه و توکن** از سرور ایران موجود است.
 
@@ -366,24 +368,24 @@ ratholectl proxy rm mysvc
 
 ### نصب تک‌کامانده از گیت‌هاب (curl | sudo bash)
 
-ساده‌ترین راه؛ آخرین بسته‌ی release را از گیت‌هاب می‌گیرد و نصاب را اجرا می‌کند. پیش‌فرض روی `loopy-iri/RatholeEngine` است — برای fork خودت متغیر `RATHOLE_GH` را ست کن:
+ساده‌ترین راه؛ آخرین بسته‌ی release را از گیت‌هاب می‌گیرد و نصاب را اجرا می‌کند. پیش‌فرض روی `loopy-iri/tunnelplus` است — برای fork خودت متغیر `RATHOLE_GH` را ست کن:
 
 ```bash
 # کاملاً تعاملی (حالت پنل/نود و اطلاعات را می‌پرسد)
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash
 
 # سرور ایران (پنل) غیرتعاملی:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --panel \
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --panel \
   --domain panel.example.ir \
   --fullchain /root/cert/panel.example.ir/fullchain.pem \
   --key       /root/cert/panel.example.ir/privkey.pem
 
 # نود خارج غیرتعاملی:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --node -- \
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --node -- \
   --server panel.example.ir:443 --name trk01 --token <T> --inbound-port 2087
 
 # آپدیت کامل (تشخیص خودکار پنل/نود/هاب، با snapshot + رولبک خودکار):
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --update
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --update
 ```
 
 > `install.sh` فایل‌های `rathole-manager.zip` و `bootstrap.sh` را از آخرین GitHub Release (که workflowِ release می‌سازد) دانلود می‌کند و بعد به `bootstrap.sh` تحویل می‌دهد. برای تغییر مخزن: `RATHOLE_GH="you/repo"`.
@@ -391,10 +393,10 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/instal
 > **نصب یک نسخه‌ی خاص:** با فلگ `--release` (اگر بدون آرگومان اجرا کنی، خودش می‌پرسد؛ Enter = آخرین نسخه):
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --release v1.8.0 --panel --domain ... --fullchain ... --key ...
+> curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v1.9.2 --panel --domain ... --fullchain ... --key ...
 > ```
 >
-> `--beta` آخرین pre-release و `--stable` آخرین نسخه‌ی پایدار را می‌گیرد. از روی سرورِ نصب‌شده: `ratholectl update v1.8.0` یا `ratholenode update v1.8.0`.
+> `--beta` آخرین pre-release و `--stable` آخرین نسخه‌ی پایدار را می‌گیرد. از روی سرورِ نصب‌شده: `ratholectl update v1.9.2` یا `ratholenode update v1.9.2`.
 > دقت کن `RATHOLE_RELEASE=... curl ... | sudo bash` کار **نمی‌کند** (آن متغیر به `curl` می‌چسبد و `sudo` هم پاکش می‌کند) — از فلگ استفاده کن.
 >
 > **در ایران (فیلترینگ گیت‌هاب):** اگر دانلود مستقیم گیت‌هاب کار نکرد، بسته را روی سرور خارج بگیر و از روش «بسته‌ی محلی» زیر (`bootstrap.sh --local`) استفاده کن.

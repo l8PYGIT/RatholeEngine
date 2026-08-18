@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         **First:** run `sudo ratholectl doctor` on the Iran server and `sudo ratholenode status` on the node.
-        Check the [Troubleshooting wiki](https://github.com/loopy-iri/RatholeEngine/wiki/Troubleshooting) before filing.
+        Check the [Troubleshooting wiki](https://github.com/loopy-iri/tunnelplus/wiki/Troubleshooting) before filing.
   - type: dropdown
     id: transport
     attributes:

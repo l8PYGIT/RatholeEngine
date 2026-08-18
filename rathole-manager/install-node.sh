@@ -101,6 +101,11 @@ Restart=always
 RestartSec=2
 Environment=RUST_LOG=info
 LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

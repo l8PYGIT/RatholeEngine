@@ -17,10 +17,10 @@
 ---
 
 ### 📜 لایسنس
-- 📄 **[AGPL-3.0](https://github.com/loopy-iri/RatholeEngine/blob/main/LICENSE)**
+- 📄 **[AGPL-3.0](https://github.com/loopy-iri/tunnelplus/blob/main/LICENSE)**
 
 ---
 
 ### 💬 ارتباط و پشتیبانی
 - 📢 **[کانال تلگرام](https://t.me/l8PY4NET)**
-- 🐙 **[مخزن گیت‌هاب](https://github.com/loopy-iri/RatholeEngine)**
+- 🐙 **[مخزن گیت‌هاب](https://github.com/loopy-iri/tunnelplus)**

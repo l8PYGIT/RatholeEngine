@@ -23,19 +23,19 @@ The system has three distinct runtime roles. Read the file for the role you're t
 Every mutation follows the same pattern — **never hand-edit the generated configs**; change state and regenerate:
 
 - **ratholectl**: state is `/etc/rathole-manager/state.json` (jq-manipulated via `state_set`/`s_get`). Commands mutate state, then call `regenerate()` → `gen_server_toml()` + `gen_nginx_conf()` → `nginx -t` → reload. Configs are written **in place (preserving inode)** so rathole's `config_watcher` hot-reloads without dropping active tunnels. `regenerate` keeps a `.rathole-good.bak` and auto-reverts nginx if `nginx -t` fails.
-- **ratholenode**: state is `/etc/rathole/node.env` (key=value, via `env_set`/`load_env`) + `/etc/rathole/services.conf` (`name|token|inbound` lines). `gen_client()` builds `client.toml`; `reload_svc` prefers hot-reload over restart (`restart_svc` only for transport changes like kcp on/off).
+- **ratholenode**: base state is `/etc/rathole/node.env`; `/etc/rathole/services.conf` owns the rathole lane and `/etc/rathole/bh-services.conf` owns the Backhaul lane. `gen_client()` and `gen_backhaul_client_toml()` build separate configs; both clients can run together for different services.
 
 ## Transport modes (the core complexity)
 
-The same tunnel can carry traffic five ways; switching modes never changes user-facing services/tokens/paths — only the transport. Key invariant: **TLS is terminated only by nginx** — rathole server transport is always `tls = false`; the default client uses `tls = true` over websocket to nginx/443.
+The rathole lane has four carriers (websocket, kcp, plain, noise). Backhaul is a separate SMUX lane; moving a service between lanes keeps its public path and Iran-side port stable. Key invariant for the default path: **TLS is terminated only by nginx** — rathole server transport is always `tls = false`; the default client uses `tls = true` over websocket to nginx/443.
 
 - **websocket + TLS** (default): client connects `wss://domain:443`, nginx splits root `/` between the fake site and the rathole control channel using `$http_upgrade` (rathole always uses `/` for control; path isn't configurable in rathole).
 - **kcp** (`cmd_kcp` both sides): parallel UDP+FEC path via kcptun for lossy links (TCP-over-TCP mitigation). Additive — doesn't touch server/nginx/443. Profiles (`balanced`/`lossy`/`aggressive`) must match on both ends; defined in `common.sh:kcp_profile`. Multi-Iran nodes run independent kcp per upstream (`rathole-kcp-up-<id>`, local ports from 29901).
 - **plain** (`cmd_plain` both sides): no-TLS websocket to a separate HTTP listener port (default 8880). Lighter, unencrypted tunnel path.
 - **backhaul** (`cmd_backhaul` both sides, `gen_backhaul_server_toml`): a **separate Go core** (`Musixal/Backhaul`) beside rathole that multiplexes many user connections onto one stream via **SMUX** — for busy/lossy links where rathole has no mux. `backhaul-server` listens on `127.0.0.1:<backhaul_port>` (default 3080) and nginx proxies the **hardcoded** `/channel` (control) and `/tunnel` (data) paths to it on the same 443, so single-port/single-domain holds. Three invariants to preserve:
   1. **Server transport is always the non-TLS variant** (`ws`/`wsmux`) and the client always the TLS one (`wss`/`wssmux`) — same rule as rathole; `backhaul_client_transport` maps between them and both sides reject the wrong variant. `tcpmux` cannot traverse the L7 nginx at all.
-  2. **`backhaul` is a value of a node's `.transport`** (like `noise`), never a separate flag. `gen_server_toml` skips `noise|backhaul` nodes — otherwise rathole-server and backhaul-server both bind `127.0.0.1:<node.port>` and the second one dies. On the node, `ratholenode backhaul on` stops and disables `rathole-client` for the same reason.
-  3. **Port mapping is `"127.0.0.1:<iran_port>=<node_inbound_port>"`**, keeping the port the nginx `map $uri` points at unchanged — so user routing never moves. The mux profile must match on both ends (`mux_con` is server-only, `connection_pool` client-only).
+  2. On Iran, `backhaul` remains the node record's `.transport` so `gen_server_toml` skips that service and avoids a duplicate local bind. On the foreign node, Backhaul is an independent lane: `ratholenode backhaul on` keeps `rathole-client` running when `services.conf` has entries; Backhaul services live in `bh-services.conf`.
+  3. **Port mapping is `"127.0.0.1:<iran_port>=<node_inbound_port>"`**, keeping the port the nginx `map $uri` points at unchanged. Each Iran path belongs to one lane only; the mux profile must match on both ends (`mux_con` server-only, `connection_pool` client-only).
 
 - **game / SNI** (`ratholectl game`, `gen_stream_conf`): when any node has an `sni`, port 443 switches to nginx **stream/SNI** mode (L4 passthrough) and the L7 path/WS vhost moves to an internal port (`internal_port`, default 8443). TLS for game traffic terminates on the **node** (real cert, VLESS+TLS+Vision). This is why `gen_nginx_conf` branches on `sni_count`.
 
@@ -45,9 +45,9 @@ A node's `name` is simultaneously its URL path, its nginx `map` entry, and the X
 
 ## Hub (hub.py) specifics
 
-- Single-file stdlib HTTP server; all UI (HTML/JS/CSS) and i18n (fa/en dicts) are inline. `Handler` is the router; `main()` serves `ThreadingHTTPServer`.
+- Stdlib HTTP server split into `hub.py` (router/state/SSH), `hubcmds.py` (validated action→argv map), and static assets under `ui/` (`index.html`, `app.css`, `app.js`, `i18n.js`). `Handler` is the API/router; `main()` serves `ThreadingHTTPServer`.
 - **Security-critical:** it never runs raw strings on servers. `build_iran_cmd` / `build_node_cmd` map an `action` + validated args (via the `RE_*` regexes) to an **argv list**, executed over SSH with each arg passed separately (`run_on_server` → `_ssh_base`). When adding a server action, add it to the right `build_*_cmd` **and** the allow-list of actions, and validate every arg with a regex — do not interpolate user input into a shell string.
-- `deploy_to_server` (the hub "update" button) fetches the latest Release `install.sh` **on the server itself** (over SSH, via the ghproxy mirror loop) and runs it with `--update` — so servers pull from GitHub and no longer depend on the hub's local `bundle_dir` being fresh. The repo slug comes from config `gh_repo` (default `loopy-iri/RatholeEngine`, validated by `RE_SLUG`); the remote command is a fixed `bash -c` script with only that validated slug interpolated. `provision_server` bootstraps SSH key auth.
+- `deploy_to_server` (the hub "update" button) fetches the latest Release `install.sh` **on the server itself** (over SSH, via the ghproxy mirror loop) and runs it with `--update` — so servers pull from GitHub and no longer depend on the hub's local `bundle_dir` being fresh. The repo slug comes from config `gh_repo` (default `loopy-iri/tunnelplus`, validated by `RE_SLUG`); the remote command is a fixed `bash -c` script with only that validated slug interpolated. `provision_server` bootstraps SSH key auth.
 
 ## Commands
 
@@ -67,8 +67,8 @@ RATHOLEHUB_MOCK=1 RATHOLEHUB_CONF=/tmp/hub-conf.json RATHOLEHUB_INV=/tmp/hub-inv
 bash package.sh                                     # → rathole-manager.zip (bundles rathole-manager/ + docs/; falls back to tar.gz)
 
 # One-command install from GitHub (fetches the latest Release bundle, then runs bootstrap):
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/RatholeEngine/main/install.sh | sudo bash -s -- --panel --domain ... --fullchain ... --key ...
-#   install.sh: defaults to loopy-iri/RatholeEngine; RATHOLE_GH="owner/repo" overrides the repo slug; RATHOLE_RELEASE="vX" pins a version.
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --panel --domain ... --fullchain ... --key ...
+#   install.sh: defaults to loopy-iri/tunnelplus; RATHOLE_GH="owner/repo" overrides the repo slug; RATHOLE_RELEASE="vX" pins a version.
 
 # Local install on a fresh server (no download; bundle already present):
 sudo bash bootstrap.sh                              # interactive; asks panel/node/update/rollback
@@ -79,7 +79,7 @@ sudo bash bootstrap.sh --local ./rathole-manager.zip --panel --domain ... --full
 
 `update.sh` is the safe upgrade path (auto-detects panel/node/hub). Before touching anything it takes a **full snapshot** (CLI + configs + systemd units, per role) into `/var/backups/rathole-manager/pre-update-<ts>/` (`manifest.txt` + `backup.tar.gz`), applies the update, runs a per-role **health check** (`rathole-server`/`rathole-client`/`ratholehub` active + `nginx -t`), and **auto-rolls-back** to the snapshot on failure. Retention = last 7 (env `RATHOLE_BACKUP_RETENTION`).
 
-- **From the server itself:** `ratholectl update` / `ratholenode update` (new subcommands) download the latest Release `install.sh` from GitHub — through the ghproxy mirror loop so it works from inside Iran — and run it with `--update` (which reaches this same `update.sh` via `bootstrap.sh --local`). The hub "update" button (`deploy_to_server`) does the identical thing remotely over SSH. Slug from `RATHOLE_GH` (default `loopy-iri/RatholeEngine`), version from `RATHOLE_RELEASE` (default `latest`).
+- **From the server itself:** `ratholectl update` / `ratholenode update` (new subcommands) download the latest Release `install.sh` from GitHub — through the ghproxy mirror loop so it works from inside Iran — and run it with `--update` (which reaches this same `update.sh` via `bootstrap.sh --local`). The hub "update" button (`deploy_to_server`) does the identical thing remotely over SSH. Slug from `RATHOLE_GH` (default `loopy-iri/tunnelplus`), version from `RATHOLE_RELEASE` (default `latest`).
 
 - Manual: `update.sh --list-backups`, `update.sh --rollback [<ts>]`, `update.sh --no-rollback`. `bootstrap.sh` forwards `--rollback`/`--list-backups` (and menu entries 5/6) to `update.sh`, using a local `update.sh` without re-downloading when possible.
 - This complements the narrower `.rathole-good.bak` (nginx rollback inside `regenerate`) and `ratholectl backup`/`ratholenode backup` (state-only tarballs). The rathole binary is not changed by `update.sh`, so it is intentionally excluded from snapshots.

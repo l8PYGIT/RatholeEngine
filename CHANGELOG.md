@@ -9,6 +9,12 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-08-15
+
+### Changed
+- **همگام‌سازی مستندات و انتشار:** راهنماها با dual-core Backhaul، دستورهای واقعی CLI و رابط Hub نسخه‌ی ۱.۹.۱ تطبیق داده شدند.
+- **مخزن پیش‌فرض:** لینک‌ها، نصاب‌ها و Hub به مخزن فعلی `loopy-iri/tunnelplus` منتقل شدند تا نصب یک‌خطی و آپدیت از Release درست کار کند.
+
 ## [1.9.1] - 2026-08-14
 
 ### Changed

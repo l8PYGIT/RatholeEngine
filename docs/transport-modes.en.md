@@ -1,8 +1,8 @@
 # Transport Modes — one tunnel, many carriers
 
-The same reverse tunnel can carry traffic **five** different ways (plus game/SNI L4, direct-IP ingress, and proxy ingress). Switching modes **never** changes user services, tokens, or URL paths — only the *carrier* between the Iran server and foreign node changes.
+The rathole lane has **four carriers**: WebSocket/TLS, KCP, plain WebSocket, and Noise. Backhaul is a separate SMUX lane that can run beside rathole on the same foreign node. Game/SNI, direct-IP, and proxy are ingress modes rather than tunnel carriers.
 
-> **Each node's carrier is exclusive.** All five transport commands write the same single variable (`TUNNEL` in `node.env`), so the last command wins — they don't stack. The hub reflects this with a single exclusive select per node that coordinates both sides.
+> **Ownership rule:** `services.conf` belongs to the rathole lane and `bh-services.conf` belongs to the Backhaul lane. A service/path on an Iran server must be assigned to exactly one lane, while both client processes may stay active for different services.
 
 ![Transport modes](assets/transport-modes.svg)
 
@@ -13,8 +13,8 @@ The same reverse tunnel can carry traffic **five** different ways (plus game/SNI
 ## 1) WebSocket + TLS (default)
 
 - Client connects to `wss://domain:443`.
-- nginx splits root `/` with `$http_upgrade` between the **fake site** and the **rathole control channel** (rathole always uses `/` for control; the path is not configurable in rathole).
-- TLS terminates on nginx (Let's Encrypt cert). The actual WebSocket control path is `/_rh/<32 hex>` (secret control path, v1.5.0+) — only that exact path routes to rathole; everything else falls through to fake/data behavior.
+- nginx sends the configured secret WebSocket control path (`/_rh/<32 hex>`) to rathole and leaves unrelated requests on the fake/data routes.
+- TLS terminates on nginx (Let's Encrypt cert). The patched bundled core supports the configured control path; `/` remains a compatibility fallback during rotations.
 
 ---
 
@@ -83,7 +83,8 @@ A **separate Go binary** (`Musixal/Backhaul`, patched with uTLS Chrome fingerpri
 **Key invariants:**
 - Server transport is always the non-TLS variant (`ws`/`wsmux`); client always TLS (`wss`/`wssmux`). `backhaul_client_transport` in `common.sh` maps between them; both sides reject the wrong variant.
 - `tcpmux` is **not supported** — it's raw TCP and cannot traverse the L7 nginx.
-- `backhaul` is a node's `.transport` value (like `noise`) — never a separate flag. A backhaul node is removed from `server.toml`; otherwise both rathole-server and backhaul-server try to bind the same `127.0.0.1:<port>` and the second one dies.
+- On the Iran server, assigning a node with `ratholectl backhaul node <name> on` removes that service from `server.toml` and puts its port mapping in Backhaul. The two servers must never bind the same local port.
+- On the foreign node, `rathole-client` and `backhaul-client` can run together. Register Backhaul services in `/etc/rathole/bh-services.conf`; the normal `/etc/rathole/services.conf` remains owned by rathole.
 - Port mapping: `"127.0.0.1:<iran_port>=<node_inbound_port>"` — keeps the port that `map $uri` points at unchanged, so user routing never moves.
 - The mux profile (`balanced`/`lossy`/`aggressive`) must match on both ends. `mux_con` is server-only; `connection_pool` is client-only.
 - **uTLS (v1.8+):** the patched binary sends a Chrome JA3/JA4 TLS fingerprint instead of the Go stdlib fingerprint. ALPN is forced to `http/1.1` — the Chrome profile also advertises `h2` which would cause nginx to negotiate HTTP/2, breaking the HTTP/1.1 WebSocket Upgrade.
@@ -91,13 +92,16 @@ A **separate Go binary** (`Musixal/Backhaul`, patched with uTLS Chrome fingerpri
 ```bash
 # Iran server
 ratholectl backhaul on [port] [transport] [profile]
-# transport: wsmux (default) | wssmux (for direct-IP backhaul)
+# default mode: nginx_tls; server transport: wsmux (default) | ws
+# direct-IP: ratholectl backhaul on <port> <ws|wsmux|wss|wssmux> <profile> direct_ip
 ratholectl backhaul node <name> on    # move this node to backhaul
 ratholectl backhaul node <name> off
 ratholectl backhaul off | status | show   # show prints the ready ratholenode command
 
 # Foreign node (use the line from `ratholectl backhaul show`)
 ratholenode backhaul on <domain> <token> [transport] [profile]
+ratholenode backhaul add-svc <name> <token> <inbound_port>
+ratholenode backhaul rm-svc <name> | ls
 ratholenode backhaul off | status
 ```
 
@@ -154,14 +158,14 @@ ratholectl proxy rm <name> | ls
 
 ## 9) Adaptive Failover (v1.5.0+)
 
-An **automatic layer** on top of modes 1–5. Switches the active carrier without operator intervention.
+An automatic controller for the main rathole lane. It currently switches between WebSocket and KCP without operator intervention; Backhaul health can be probed when it is the legacy selected mode, but dual-core service ownership is not moved automatically.
 
-- **Bounded probes:** every `ADAPTIVE_INTERVAL` seconds (default 30), one WebSocket RFC 6455 probe to `WS_PATH`. Classification: `dns_failed` → `tcp_timeout` → `tls_failed` → `ws_rejected` → `ws_timeout` → `healthy`.
+- **Bounded probes:** every `ADAPTIVE_INTERVAL` seconds (default 30), one WebSocket RFC 6455 probe to `CONTROL_PATH`. Classification: `dns_failed` → `tcp_timeout` → `tls_failed` → `ws_rejected` → `ws_timeout` → `healthy`.
 - **Threshold/hysteresis:** switch after `ADAPTIVE_FAILURES` (default 3) consecutive failures; return after `ADAPTIVE_RECOVERIES` (default 5) consecutive successes + cooldown.
 - **Cooldown:** `ADAPTIVE_COOLDOWN` (default 300 s) between consecutive switches.
 - **Priority order:** `ws` → `kcp`. `plain` is only considered with `ALLOW_INSECURE=1` in `node.env`.
 - **Auto-rollback:** if the probe fails after switching too, the previous config is restored.
-- **State sanitization:** `/etc/rathole/adaptive-state.json` (mode 0600) only stores `time`, `current`, `classification`, `latency_ms`, `consecutive_failures` — no token/key/WS_PATH.
+- **State sanitization:** `/etc/rathole/adaptive-state.json` (mode 0600) only stores `time`, `current`, `classification`, `latency_ms`, `consecutive_failures` — no token/key/CONTROL_PATH.
 
 ```bash
 ratholenode adaptive on [--interval N] [--failures N] [--recoveries N]
@@ -177,7 +181,7 @@ The rathole control channel moved from `/` to `/_rh/<32 hex>` so DPI cannot dist
 
 - nginx: only `location = /_rh/<secret>` with `$http_upgrade` routes to the control port; all other paths keep their fake/data behavior.
 - Management: `ratholectl control-path show` (masked) / `rotate` (generates new path, grace period for nodes to update).
-- Node: `WS_PATH` in `node.env`, inserted as `path = "/_rh/..."` in `client.toml`.
+- Node: `CONTROL_PATH` in `node.env`, inserted as `path = "/_rh/..."` in `client.toml`.
 
 ```bash
 ratholectl control-path show
@@ -186,13 +190,13 @@ ratholectl control-path rotate
 
 ---
 
-**Key rule:** in modes 1–5, services/tokens/user paths remain untouched; only the tunnel carrier changes. For packet-level traffic flow details, see [`traffic-flow.md`](traffic-flow.md).
+**Key rule:** changing a rathole carrier leaves services/tokens/user paths untouched. Moving a service between rathole and Backhaul changes lane ownership on both ends, but keeps the public URL path and Iran-side local port stable. For packet-level traffic flow details, see [`traffic-flow.md`](traffic-flow.md).
 
 ---
 
 ## See also
 
-- [CLI Reference (Wiki)](https://github.com/loopy-iri/RatholeEngine/wiki/CLI-Reference) — full command signatures
-- [Workflow Guides (Wiki)](https://github.com/loopy-iri/RatholeEngine/wiki/Workflow-Guides) — step-by-step: direct-IP setup, backhaul migration, multi-domain, multi-upstream
+- [CLI Reference (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — full command signatures
+- [Workflow Guides (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/Workflow-Guides) — step-by-step: direct-IP setup, backhaul migration, multi-domain, multi-upstream
 - [`transport-modes.md`](transport-modes.md) — Persian version of this document
 - [`hub.en.md`](hub.en.md) — Hub panel documentation (English)

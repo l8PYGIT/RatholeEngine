@@ -39,7 +39,39 @@ if ! declare -F rth_commit_config >/dev/null 2>&1; then
   exit 1
 fi
 
-load_env(){ [ -f "$ENV_FILE" ] || die "node.env peyda nshd; aval install-node.sh ra ejra kon."; set -a; . "$ENV_FILE"; set +a; }
+NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN"
+
+load_env_file(){
+  local file="$1" line key val old_key
+  [ -f "$file" ] || return 1
+  for old_key in $NODE_ENV_KEYS; do unset "$old_key"; done
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in ''|\#*) continue ;; esac
+    if [[ "$line" != *=* ]]; then
+      err "config-e env namotabar ast: $file"
+      return 1
+    fi
+    key="${line%%=*}"; val="${line#*=}"
+    case " $NODE_ENV_KEYS " in *" $key "*) ;; *)
+      err "kelid-e env gheyre-mojaz ast: $key"
+      return 1
+      ;;
+    esac
+    case "$key" in
+      ''|*[!A-Za-z0-9_]*|[0-9]*) err "kelid-e env namotabar ast: $key"; return 1 ;;
+    esac
+    printf '%s' "$val" | grep -qE '[$` ;\\|&<>()]' \
+      && { err "meghdar-e env namotabar ast: $key"; return 1; }
+    printf -v "$key" '%s' "$val"
+    export "$key"
+  done < "$file"
+}
+
+load_env(){
+  [ -f "$ENV_FILE" ] || die "node.env peyda nshd; aval install-node.sh ra ejra kon."
+  load_env_file "$ENV_FILE" || die "khvandn-e node.env shekast khord."
+}
 
 # barresi tadakhol port inbound ba nginx node + sair servicehaye tunnel
 check_inbound(){
@@ -230,11 +262,11 @@ cmd_ls(){
   [ -f "$SVC_FILE" ] || { warn "hich srvisi nist."; return; }
   load_env
   echo "tunnel be: $(c_y "${SERVER:-?}")  (hame serviceha rooye yek channel kontroli)"
-  printf '%-16s %-10s %s\n' "SERVICE" "INBOUND" "TOKEN"
-  printf '%s\n' "-------------------------------------------"
+  printf '%-16s %s\n' "SERVICE" "INBOUND"
+  printf '%s\n' "---------------------------"
   while IFS='|' read -r name token inbound; do
     [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
-    printf '%-16s %-10s %s\n' "$name" "$inbound" "${token:0:8}…"
+    printf '%-16s %s\n' "$name" "$inbound"
   done < "$SVC_FILE"
 }
 
@@ -285,7 +317,7 @@ cmd_set_main(){
 
 cmd_show(){
   load_env
-  echo "$(c_g '== node.env ==')"; cat "$ENV_FILE"
+  rth_file_dump "node.env" "$ENV_FILE" 120
   echo; echo "$(c_g '== services ==')"; cmd_ls
 }
 _unit_active(){ systemctl is-active --quiet "$1" 2>/dev/null && echo yes || echo no; }
@@ -429,6 +461,11 @@ ExecStart=${KCP_CLI_BIN} -r ${remote} -l ${local_ep} -key ${key} -crypt aes-128 
 Restart=always
 RestartSec=2
 LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
@@ -641,6 +678,11 @@ Type=simple
 ExecStart=/usr/local/bin/backhaul-client -c ${BH_TOML}
 Restart=always
 RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
@@ -685,11 +727,11 @@ cmd_bh_rm_svc(){
 
 cmd_bh_ls(){
   [ -f "$BH_SVC_FILE" ] || { warn "hich backhaul service-i nist."; return; }
-  printf '%-16s %-10s %s\n' "SERVICE" "INBOUND" "TOKEN"
-  printf '%s\n' "-------------------------------------------"
+  printf '%-16s %s\n' "SERVICE" "INBOUND"
+  printf '%s\n' "---------------------------"
   while IFS='|' read -r name token inbound; do
     [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
-    printf '%-16s %-10s %s\n' "$name" "$inbound" "${token:0:8}…"
+    printf '%-16s %s\n' "$name" "$inbound"
   done < "$BH_SVC_FILE"
 }
 
@@ -879,6 +921,11 @@ Restart=always
 RestartSec=2
 Environment=RUST_LOG=info
 LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
@@ -889,9 +936,9 @@ UNIT
 gen_up_client(){
   local id="$1"
   [ -f "$(up_env "$id")" ] || die "upstream '$id' vojood nadarad."
-  local SERVER HOST TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH toml
+  local SERVER HOST TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH toml
   unset SERVER HOST TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH
-  set -a; . "$(up_env "$id")"; set +a
+  load_env_file "$(up_env "$id")" || die "khvandn-e config upstream '$id' shekast khord."
   HOST="${HOST:-${SERVER%%:*}}"
   toml="$(up_toml "$id")"
   local mode="${TUNNEL:-ws}" remote tls
@@ -982,6 +1029,11 @@ ExecStart=${KCP_CLI_BIN} -r ${remote} -l ${local_ep} -key ${key} -crypt aes-128 
 Restart=always
 RestartSec=2
 LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
@@ -1284,6 +1336,8 @@ cmd_watchdog(){
 wd_on(){
   local interval="${1:-60}"
   echo "$interval" | grep -qE '^[0-9]+$' || die "baze bayad adad (sanie) bashad."
+  [ "$interval" -ge 5 ] && [ "$interval" -le 3600 ] \
+    || die "baze bayad beyn-e 5 ta 3600 sanie bashad."
   printf 'INTERVAL=%s\nWD_WINDOW=%s\nWD_FAILS=%s\n' "$interval" "${WD_WINDOW:-75}" "${WD_FAILS:-8}" > "$WD_ENV"
   cat > "$WD_SVC" <<UNIT
 [Unit]
@@ -1340,6 +1394,15 @@ wd_check_one(){ # $1=rathole-svc  $2=kcp-unit(ekhtiari)  $3=label
     [ "${fails:-0}" -ge "${WD_FAILS:-8}" ] && bad=1
   else
     fails=0
+    # service ممکن است active باشد اما tunnel عملاً handshake نکند؛
+    # probe فقط برای lane اصلی اجرا می‌شود تا watchdog با upstreamها تداخل نکند.
+    if [ "$svc" = "$SVC" ] && [ "${WD_PROBE:-1}" = 1 ] && declare -F adaptive_run_probe >/dev/null 2>&1; then
+      local probe_cls
+      probe_cls="$(ADAPTIVE_WRITE_STATE=0 adaptive_run_probe 2>/dev/null || echo probe_failed)"
+      if [ "$probe_cls" != "healthy" ]; then
+        bad=1; fails=1
+      fi
+    fi
   fi
   if [ "$bad" -eq 1 ]; then
     logger -t rathole-watchdog "restart tunnel '$label' (svc=$svc up=$svc_up fails=$fails)" 2>/dev/null || true
@@ -1386,6 +1449,7 @@ wd_run(){
     [ -f "$e" ] || continue; id="$(basename "$e" .env)"
     wd_check_one "rathole-client@${id}" "rathole-kcp-up-${id}" "$id"
   done
+  [ -f "$BH_CLI_UNIT" ] && wd_check_one "$BH_CLI_SVC" "" "backhaul"
   # failover agar main ghat va upstream faal bashad
   wd_failover
 }
@@ -1397,6 +1461,10 @@ cmd_backup(){
   local items=()
   [ -f "$ENV_FILE" ] && items+=("${ENV_FILE#/}")
   [ -f "$SVC_FILE" ] && items+=("${SVC_FILE#/}")
+  [ -f "$BH_SVC_FILE" ] && items+=("${BH_SVC_FILE#/}")
+  [ -f "$ADAPTIVE_ENV" ] && items+=("${ADAPTIVE_ENV#/}")
+  [ -f "$ADAPTIVE_STATE" ] && items+=("${ADAPTIVE_STATE#/}")
+  [ -f "$WD_ENV" ] && items+=("${WD_ENV#/}")
   load_env
   [ -n "${TLS_TRUSTED_ROOT:-}" ] && [ -f "$TLS_TRUSTED_ROOT" ] && items+=("${TLS_TRUSTED_ROOT#/}")
   [ -d "$UP_DIR" ] && items+=("${UP_DIR#/}")
@@ -1409,7 +1477,33 @@ cmd_restore(){
   need_root
   local f="${1:-}"
   [ -n "$f" ] && [ -f "$f" ] || die "file backup peyda nashod: $f"
-  tar -xzf "$f" -C / 2>/dev/null || die "baz kardan backup shekast khord."
+  local tmp; tmp="$(rth_mktempd)" || die "sakht-e temp baraye restore shekast khord."
+  tar -tzf "$f" >/dev/null 2>&1 || { rm -rf "$tmp"; die "backup-e gzip namotabar ast."; }
+  while IFS= read -r entry; do
+    case "$entry" in
+      /*|../*|*/../*|*:*|'' ) rm -rf "$tmp"; die "masir-e khatarnaak dar backup: $entry" ;;
+    esac
+  done < <(tar -tzf "$f")
+  tar -xzf "$f" -C "$tmp" 2>/dev/null || { rm -rf "$tmp"; die "baz kardan backup shekast khord."; }
+  if find "$tmp" \( -type l -o -type b -o -type c -o -type p \) -print -quit 2>/dev/null | grep -q .; then
+    rm -rf "$tmp"
+    die "backup file-e vizhe ya symlink darad va pazirofte nemishavad."
+  fi
+  for entry in etc/rathole/node.env etc/rathole/services.conf etc/rathole/bh-services.conf \
+               etc/rathole/adaptive.env etc/rathole/adaptive-state.json etc/rathole/watchdog.env; do
+    [ -f "$tmp/$entry" ] || continue
+    mkdir -p "/$(dirname "$entry")"
+    install -m 600 "$tmp/$entry" "/$entry"
+  done
+  load_env
+  if [ -d "$tmp/etc/rathole/upstreams" ]; then
+    mkdir -p /etc/rathole
+    cp -a "$tmp/etc/rathole/upstreams" /etc/rathole/
+    find /etc/rathole/upstreams -type f -exec chmod 600 {} +
+  fi
+  if [ -n "${TLS_TRUSTED_ROOT:-}" ] && [ -f "$tmp/${TLS_TRUSTED_ROOT#/}" ]; then
+    install -m 600 "$tmp/${TLS_TRUSTED_ROOT#/}" "$TLS_TRUSTED_ROOT"
+  fi
   log "restore shod. baztolid configha va rahandazi..."
   # restart (na hot-reload): backup mumken ast TUNNEL-e motafavet (kcp/plain/noise) dashte
   # bashad va rathole taghir-e transport ra ba hot-reload emal nemikonad — pas restart lazem ast.
@@ -1422,6 +1516,16 @@ cmd_restore(){
     local e id
     for e in "$UP_DIR"/*.env; do [ -f "$e" ] || continue; id="$(basename "$e" .env)"; up_restart "$id"; done
   fi
+  if [ -f "$BH_SVC_FILE" ]; then
+    load_env
+    if [ -n "${BH_REMOTE_ADDR:-${BH_REMOTE:-}}" ] && [ -n "${BH_TOKEN:-}" ]; then
+      gen_backhaul_client_toml
+      gen_backhaul_client_unit
+      systemctl enable "$BH_CLI_SVC" >/dev/null 2>&1 || true
+      systemctl restart "$BH_CLI_SVC" 2>/dev/null || warn "restart backhaul client nashod."
+    fi
+  fi
+  rm -rf "$tmp"
   log "restore node kamel shod."
 }
 
@@ -1509,7 +1613,7 @@ cmd_migrate(){
 cmd_update(){
   need_root
   command -v curl >/dev/null 2>&1 || die "curl lazem ast (apt install -y curl)."
-  local gh="${RATHOLE_GH:-loopy-iri/RatholeEngine}" rel="${RATHOLE_RELEASE:-latest}"
+  local gh="${RATHOLE_GH:-loopy-iri/tunnelplus}" rel="${RATHOLE_RELEASE:-latest}"
   # 'ratholenode update beta' → kanal-e pre-release (releases/latest/download an ra nadide migirad).
   case "${1:-}" in
     beta)
@@ -1692,13 +1796,14 @@ adaptive_run_probe(){
   local now; now="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '')"
   if [ "$cls" = "healthy" ]; then failures=0; else failures=$(( failures + 1 )); fi
 
-  # neveshtan state (bedoon secret-ha)
-  local tmp; tmp="$(mktemp)"
-  printf '{"time":"%s","current":"%s","classification":"%s","latency_ms":%s,"consecutive_failures":%d}\n' \
-    "$now" "$mode" "$cls" "$ms" "$failures" > "$tmp"
-  chmod 600 "$tmp"
-  mkdir -p "$(dirname "$ADAPTIVE_STATE")"
-  mv "$tmp" "$ADAPTIVE_STATE"
+  if [ "${ADAPTIVE_WRITE_STATE:-1}" = 1 ]; then
+    local tmp; tmp="$(mktemp)"
+    printf '{"time":"%s","current":"%s","classification":"%s","latency_ms":%s,"consecutive_failures":%d}\n' \
+      "$now" "$mode" "$cls" "$ms" "$failures" > "$tmp"
+    chmod 600 "$tmp"
+    mkdir -p "$(dirname "$ADAPTIVE_STATE")"
+    mv "$tmp" "$ADAPTIVE_STATE"
+  fi
   echo "$cls"
 }
 

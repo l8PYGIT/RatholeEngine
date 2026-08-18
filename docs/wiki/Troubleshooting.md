@@ -38,7 +38,7 @@ sudo journalctl -u rathole-backhaul-client -n 50 --no-pager
 
 | نشانه | علت | راه‌حل |
 |-------|-----|---------|
-| نود log `retrying` دائمی دارد | آدرس/پورت اشتباه، یا control-path ناهماهنگ | `ratholenode show` → `SERVER` را بررسی کن؛ `ratholectl control-path show` با مقدار `WS_PATH` در نود تطبیق بده |
+| نود log `retrying` دائمی دارد | آدرس/پورت اشتباه، یا control-path ناهماهنگ | `ratholenode show` → `SERVER` را بررسی کن؛ `ratholectl control-path show` با مقدار `CONTROL_PATH` در نود تطبیق بده |
 | `nginx -t` خطا می‌دهد | config دستی ویرایش شده یا regenerate ناقص | `sudo ratholectl regen` → اگر باز هم خطا: `ratholectl recover` |
 | نود وصل است ولی ترافیک نمی‌رسد | `map $uri` یا `inbound_port` اشتباه | `ratholectl ls` → port نود با config Xray/VLESS تطبیق بده |
 
@@ -46,12 +46,12 @@ sudo journalctl -u rathole-backhaul-client -n 50 --no-pager
 
 | نشانه | علت | راه‌حل |
 |-------|-----|---------|
-| `control channel` مدام قطع/وصل | دو نود با یک token، یا profile ناهماهنگ | فقط یک نود به ازای هر توکن؛ profile دو طرف را یکی کن |
+| `control channel` مدام قطع/وصل | دو ماشین با یک token، یا profile ناهماهنگ | هر سرور ایران یک Backhaul client خارجی می‌خواهد؛ profile دو طرف را یکی کن |
 | کلاینت backhaul وصل نمی‌شود | transport اشتباه | سرور `ws`/`wsmux` و نود `wss`/`wssmux` — عمداً متفاوتند |
-| `rathole-client` روی نود backhaul خطا | طبیعی است | سرویس عمداً متوقف است؛ backhaul جایگزین است |
+| `rathole-client` روی نود backhaul فعال است | طبیعی است | در dual-core هر دو client می‌توانند فعال باشند؛ سرویس‌ها در `services.conf` و `bh-services.conf` قاطی نشوند |
 | port bind نمی‌شود | نود هنوز در `server.toml` مانده | `ratholectl backhaul node <name> on` → `regen` |
-| سرویس بالا نمی‌آید، لاگ `Usage: ... -c` | نسخه‌ی قدیمی یونیت | آپدیت به ≥ v1.6.0 |
-| دو نود backhaul با همان inbound_port | backhaul 1:1 است — دو ماشین جداگانه نمی‌توانند | هر سرور ایران فقط یک ماشین خارجی می‌تواند backhaul داشته باشد |
+| سرویس بالا نمی‌آید، لاگ `Usage: ... -c` | نسخه‌ی قدیمی یونیت | آپدیت به `v1.9.2` و اجرای دوباره‌ی `ratholenode backhaul on ...` |
+| دو نود backhaul با همان inbound_port | mapping محلی تکراری | روی یک سرور ایران فقط یک ماشین خارجی به Backhaul وصل شود و inboundها را یکتا نگه دار |
 
 ### Direct-IP
 
@@ -74,7 +74,7 @@ sudo journalctl -u rathole-backhaul-client -n 50 --no-pager
 |-------|-----|---------|
 | adaptive سوئیچ نمی‌کند | `kcp` روی سرور ایران فعال نیست | `ratholectl kcp on` روی ایران + `ratholenode kcp on` روی نود |
 | adaptive مدام سوئیچ می‌کند | threshold خیلی پایین یا cooldown کم | `ratholenode adaptive on --failures 5 --recoveries 8 --interval 45` |
-| وضعیت `ws_rejected` | control-path ناهماهنگ | `ratholectl control-path show` و مقایسه با `node.env/WS_PATH` |
+| وضعیت `ws_rejected` | control-path ناهماهنگ | `ratholectl control-path show` و مقایسه با `node.env/CONTROL_PATH` |
 
 ### چند دامنه (domain)
 
@@ -133,4 +133,3 @@ sudo ratholectl recover    # حذف همه دامنه‌های اضافی + با
 - **[مرجع کامل CLI](CLI-Reference)** — syntax دقیق همه دستورات
 - **[راهنماهای عملی](Workflow-Guides)** — گام‌به‌گام: direct-IP، backhaul، چند دامنه، multi-upstream
 ```
-

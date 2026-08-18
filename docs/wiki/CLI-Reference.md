@@ -22,7 +22,7 @@
 
 ```bash
 ratholectl status            # وضعیت سرویس‌ها، پورت‌ها، transport فعال
-ratholectl status --json     # همان، به‌صورت JSON
+ratholectl status --json     # داشبورد JSON (برای Hub)
 ratholectl version           # نسخه‌ی ratholectl و باینری rathole
 ratholectl ls                # لیست نودها با پورت و transport
 ratholectl show <name>       # جزئیات و دستور نصب یک نود
@@ -86,7 +86,7 @@ ratholectl recover
 
 ### حامل‌های تونل (Transport)
 
-هر حامل یک listener/core مستقل است؛ روشن/خاموش‌شان سرویس‌ها و مسیر کاربران را عوض نمی‌کند.
+چهار carrier اول lane رتهول را کنترل می‌کنند؛ Backhaul core و registry جدا دارد. تغییر carrier مسیر عمومی کاربر را عوض نمی‌کند.
 
 ```bash
 # KCP — مسیر موازی UDP+FEC
@@ -108,8 +108,10 @@ ratholectl noise node <name> on      # انتقال این نود به transport
 ratholectl noise node <name> off     # برگرداندن نود به transport پیش‌فرض
 
 # Backhaul — مالتی‌پلکس SMUX (هسته‌ی Go جدا، پشت همان nginx/443)
-ratholectl backhaul on [port] [transport] [profile]
-# transport: wsmux (پیش‌فرض) | wssmux (برای backhaul-e direct-IP)
+ratholectl backhaul on [port] [transport] [profile] [mode]
+# mode: nginx_tls (پیش‌فرض) | direct_ip
+# nginx_tls: server transport = ws|wsmux، node = wss|wssmux
+# direct_ip: ws|wsmux بدون TLS یا wss|wssmux با گواهی ip-cert
 # profile: balanced | lossy | aggressive
 ratholectl backhaul off
 ratholectl backhaul status
@@ -147,14 +149,15 @@ ratholectl game add <name> <node_tls_port> <sni>
 # node_tls_port = پورتی که Xray/VLESS+TLS روی نود گوش می‌دهد
 ratholectl game rm <name>
 ratholectl game ls
-ratholectl game cert <name>      # نمایش public cert گواهی نود (برای pin کردن)
+ratholectl game cert <sni>       # دریافت/نمایش گواهی Let's Encrypt برای SNI
 ```
 
 ### مسیر کنترلی مخفی
 
 ```bash
 ratholectl control-path show     # مسیر /_rh/<hex> جاری (masked در لاگ)
-ratholectl control-path rotate   # مسیر جدید تولید می‌کند؛ نودها باید آپدیت شوند
+ratholectl control-path rotate [--dry-run] # مسیر جدید؛ سپس نودها باید آپدیت شوند
+ratholectl control-path clear    # بازگشت سازگار به /
 ```
 
 ### چند دامنه
@@ -188,8 +191,10 @@ ratholectl hub status      # وضعیت service و port، هشدار اگر port
 ### سیستم
 
 ```bash
-ratholectl fakeweb on [port]   # سایت فیک روی پورت HTTP داخلی (پیش‌فرض ۸۰۸۰)
-ratholectl fakeweb off
+ratholectl fakeweb start [port] # سایت فیک روی پورت HTTP داخلی (پیش‌فرض ۸۰۸۰)
+ratholectl fakeweb stop
+ratholectl fakeweb rm
+ratholectl fakeweb status
 
 ratholectl tune                # اعمال تنظیمات sysctl برای عملکرد بهتر (BBR، buffer، ...)
 
@@ -197,7 +202,7 @@ ratholectl restart             # ری‌استارت rathole-server (همه تا
 
 ratholectl update              # آپدیت به آخرین نسخه‌ی پایدار
 ratholectl update beta         # آخرین نسخه‌ی pre-release
-ratholectl update v1.7.0       # آپدیت به یک نسخه‌ی خاص
+ratholectl update v1.9.2       # آپدیت به یک نسخه‌ی خاص
 ```
 
 ---
@@ -208,7 +213,6 @@ ratholectl update v1.7.0       # آپدیت به یک نسخه‌ی خاص
 
 ```bash
 ratholenode status           # transport فعال، endpoint، وضعیت service
-ratholenode status --json    # همان، JSON
 ratholenode version          # نسخه‌ی ratholenode
 ratholenode show             # محتوای node.env + لیست سرویس‌ها
 ratholenode ls               # لیست سرویس‌های ثبت‌شده
@@ -251,9 +255,12 @@ ratholenode noise on <ip:port> <pubkey> [pattern]
 ratholenode noise off
 ratholenode noise status
 
-ratholenode backhaul on <domain> <token> [transport] [profile]
+ratholenode backhaul on <domain|host:port> <token> [transport] [profile]
 # transport: wssmux (پیش‌فرض، TLS) | wss | wsmux | ws
 # دستور آماده را از ratholectl backhaul show بگیرید
+ratholenode backhaul add-svc <name> <token> <inbound_port>
+ratholenode backhaul rm-svc <name>
+ratholenode backhaul ls
 ratholenode backhaul off
 ratholenode backhaul status
 ```
@@ -321,12 +328,14 @@ ratholenode check
 
 ```bash
 ratholenode tune             # اعمال sysctl برای بهینه‌سازی (BBR، buffer، ...)
-ratholenode fakeweb on [port]
-ratholenode fakeweb off
+ratholenode fakeweb start [port]
+ratholenode fakeweb stop
+ratholenode fakeweb rm
+ratholenode fakeweb status
 ratholenode restart          # ری‌استارت rathole-client (همه tunnelها لحظه‌ای قطع می‌شوند)
 ratholenode update           # آپدیت به آخرین نسخه‌ی پایدار
 ratholenode update beta      # آخرین pre-release
-ratholenode update v1.7.0    # آپدیت به نسخه‌ی خاص
+ratholenode update v1.9.2    # آپدیت به نسخه‌ی خاص
 ```
 
 ---
@@ -337,7 +346,6 @@ ratholenode update v1.7.0    # آپدیت به نسخه‌ی خاص
 
 **transport دو طرف backhaul عمداً متفاوت است:** سرور ایران `ws`/`wsmux` (بدون TLS) و نود `wss`/`wssmux` (با TLS) می‌گیرد. `tcpmux` از nginx لایه ۷ عبور نمی‌کند.
 
-**هر نود دقیقاً یک transport دارد.** آخرین دستور برنده است — قبل از سوئیچ، transport قبلی را `off` کنید.
+**lane رتهول یک transport فعال دارد** (`ws`/`kcp`/`plain`/`noise`). Backhaul lane و registry جدا دارد؛ یک ماشین می‌تواند هر دو client را برای سرویس‌های متفاوت هم‌زمان اجرا کند.
 
-**آپدیت همیشه قبل از تغییر یک snapshot کامل می‌گیرد.** در صورت خرابی: `ratholectl update --rollback` یا `update.sh --rollback`.
-
+**آپدیت همیشه قبل از تغییر یک snapshot کامل می‌گیرد.** در صورت خرابی از `update.sh --rollback` یا `bootstrap.sh --rollback` استفاده کنید؛ `ratholectl update` فقط channel/tag می‌گیرد و مسیر امن update را اجرا می‌کند.

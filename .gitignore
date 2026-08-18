@@ -38,3 +38,7 @@ scratch_confirmed.txt
 opencode.json
 .worktrees/
 گزارش-*.md
+
+# ---- config abzarha ----
+.agents/
+.vscode/

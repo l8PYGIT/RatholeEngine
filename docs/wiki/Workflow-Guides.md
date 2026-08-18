@@ -44,9 +44,9 @@ sudo ratholectl direct show trk01
 
 ## ۲. مهاجرت به Backhaul (SMUX)
 
-**هدف:** یک نود را از WebSocket به backhaul (مالتی‌پلکس SMUX) منتقل کنید — برای لینک‌های شلوغ/پرافت.
+**هدف:** سرویس `trk01` را روی lane بک‌هال (مالتی‌پلکس SMUX) قرار دهید، در حالی که lane رتهول می‌تواند برای سرویس‌های دیگر همان ماشین روشن بماند.
 
-**پیش‌نیاز:** فقط یک نود خارج می‌تواند به یک سرور ایران از طریق backhaul وصل باشد (backhaul 1:1 است).
+**پیش‌نیاز:** Backhaul هر سرور ایران یک client خارجی دارد (کنترل 1:1)، اما همان client می‌تواند چند سرویس را از `bh-services.conf` حمل کند.
 
 ### روی سرور ایران:
 
@@ -54,7 +54,7 @@ sudo ratholectl direct show trk01
 # ۱. هسته backhaul را فعال کن
 sudo ratholectl backhaul on 3080 wsmux balanced
 
-# ۲. نود را به backhaul منتقل کن
+# ۲. مالکیت مسیر trk01 را به backhaul بده
 sudo ratholectl backhaul node trk01 on
 
 # ۳. دستور آماده نود را ببین
@@ -67,19 +67,27 @@ sudo ratholectl backhaul show
 ```bash
 # دقیقاً همان خطی که 'show' چاپ کرد:
 sudo ratholenode backhaul on <domain> <token> wssmux balanced
+
+# همان سرویس را در registry مستقل Backhaul ثبت کن؛ token باید BH_TOKEN باشد:
+sudo ratholenode backhaul add-svc trk01 <token> <inbound_port>
+
+# سرویس‌های باقی‌مانده در services.conf همچنان از rathole-client عبور می‌کنند.
 ```
 
 **چک‌لیست پس از مهاجرت:**
 ```bash
 sudo ratholectl backhaul status   # ایران: سرویس فعال؟
-sudo ratholenode backhaul status  # نود: transport=backhaul؟
+sudo ratholenode backhaul status  # نود: client و تعداد سرویس‌های lane
+sudo ratholenode backhaul ls      # registry بک‌هال
 sudo journalctl -u rathole-backhaul-client -n 20   # نود: خطای اتصال؟
 ```
 
 **برگشت به WebSocket:**
 ```bash
 sudo ratholectl backhaul node trk01 off   # ایران
-sudo ratholenode backhaul off              # نود (برگشت به ws خودکار)
+sudo ratholenode backhaul rm-svc trk01      # حذف از lane بک‌هال روی نود
+# اگر سرویس دیگری در بک‌هال نیست:
+sudo ratholenode backhaul off
 ```
 
 ---

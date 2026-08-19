@@ -6,6 +6,11 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-08-19
+
+### Changed
+- **Maintenance release:** installation bundles and multi-architecture cores are rebuilt and published by the current Release workflow so stable assets come from the latest repository state.
+
 ## [1.9.2] - 2026-08-15
 
 ### Changed

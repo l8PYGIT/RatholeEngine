@@ -81,7 +81,7 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.s
 
 برای pin کردن نسخه‌ی مشخص:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v1.9.2 --update
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v1.9.3 --update
 ```
 
 ⚠️ نسخه‌ی بتا آزمایشی است. چون آپدیت پیش از هر تغییر اسنپ‌شات کامل می‌گیرد، در صورت مشکل با `ratholectl update` یا `update.sh --rollback` برمی‌گردید.

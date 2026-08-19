@@ -9,6 +9,11 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-08-19
+
+### Changed
+- **بازانتشار نگهداری:** بسته‌های نصب و coreهای چندمعماری با Release workflow فعلی دوباره ساخته و منتشر می‌شوند تا دارایی‌های نسخه‌ی پایدار از آخرین وضعیت مخزن تولید شوند.
+
 ## [1.9.2] - 2026-08-15
 
 ### Changed

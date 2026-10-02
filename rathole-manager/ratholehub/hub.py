@@ -67,6 +67,10 @@ def save_json(path, data):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        os.chmod(tmp, 0o600)
+    except Exception:
+        pass
     os.replace(tmp, path)
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -408,9 +412,11 @@ def provision_server(d):
     remote = ("set -e; umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; "
               "chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys; "
               "grep -qF %s ~/.ssh/authorized_keys || printf '%%s\\n' %s >> ~/.ssh/authorized_keys" % (q, q))
+    ssh_env = os.environ.copy()
+    ssh_env["SSHPASS"] = pw
     try:
-        r = subprocess.run(["sshpass", "-p", pw, "ssh"] + opts + ["-p", port, target, remote],
-                           capture_output=True, text=True, timeout=45)
+        r = subprocess.run(["sshpass", "-e", "ssh"] + opts + ["-p", port, target, remote],
+                           capture_output=True, text=True, timeout=45, env=ssh_env)
     except subprocess.TimeoutExpired:
         return {"rc": 124, "out": "", "err": "timeout dar atesal ba ramz (host/port/firewall?)"}
     except Exception as e:

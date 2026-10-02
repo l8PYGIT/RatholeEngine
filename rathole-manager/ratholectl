@@ -67,6 +67,7 @@ detect_ip(){
 
 ensure_state(){
   [ -f "$STATE" ] || die "hnvz init nashode. aval ejra kon: ratholectl init"
+  chmod 600 "$STATE" 2>/dev/null || true
 }
 
 gen_token(){ openssl rand -hex 16; }
@@ -233,6 +234,7 @@ cmd_init(){
 
   # pishfrzha
   [ -n "$domain" ] || die "damnh lazem ast (--domain ...)."
+  echo "$domain" | grep -qE '^[A-Za-z0-9_.-]+$' || die "damnh namotabar."
   cert_fc="${cert_fc:-/root/cert/${domain}/fullchain.pem}"
   cert_key="${cert_key:-/root/cert/${domain}/privkey.pem}"
   nconf="${nconf:-$NGINX_CONF}"
@@ -257,6 +259,7 @@ cmd_init(){
   fi
 
   mkdir -p "$(dirname "$STATE")"
+  chmod 700 "$(dirname "$STATE")" 2>/dev/null || true
   jq -n \
     --arg d "$domain" --arg fc "$cert_fc" --arg key "$cert_key" --arg nc "$nconf" \
     --argjson ctrl "$ctrl" --argjson fake "$fake" --argjson sub "$sub" \
@@ -264,6 +267,7 @@ cmd_init(){
     '{domain:$d, cert_fullchain:$fc, cert_key:$key, nginx_conf:$nc, control_port:$ctrl,
       fake_port:$fake, sub_port:$sub, data_port_start:$ds, api_port_start:$apst, nodes:[]}' \
     > "$STATE"
+  chmod 600 "$STATE" 2>/dev/null || true
   # masir-e makhfi control WebSocket ra dar state bayaz mikonim (state_set zir set -uo darad)
   ensure_control_path > /dev/null
   log "state sakhte shod: $STATE (nginx → $nconf)"
@@ -393,21 +397,18 @@ gen_server_toml(){
       echo "[server.services]"
       echo
     fi
-    jq -r '.nodes[] | @base64' "$STATE" | while read -r row; do
-      _j(){ echo "$row" | base64 -d | jq -r "$1"; }
-      local name port token aport atoken
-      name="$(_j '.name')"; port="$(_j '.port')"; token="$(_j '.token')"
-      # node-haye noise/backhaul service-eshan tooye toml-e khodeshan mirvad (na inja) —
-      # vagarna do prose yek bind_addr (127.0.0.1:port) ra bind mikonand va dovomi bala nemiayad.
-      case "$(_j '.transport // empty')" in noise|backhaul) continue ;; esac
+    jq -r '.nodes[] | select((.transport // "") != "noise" and (.transport // "") != "backhaul") |
+      [.name, (.port|tostring), .token, ((.api_local_port // "")|tostring), ((.api_token // "")|tostring)] | @tsv' "$STATE" 2>/dev/null |
+    while IFS=$'\t' read -r name port token aport atoken; do
+      name="${name%$'\r'}"; port="${port%$'\r'}"; token="${token%$'\r'}"
+      aport="${aport%$'\r'}"; atoken="${atoken%$'\r'}"
+      [ -n "$name" ] && [ -n "$port" ] || continue
       echo "[server.services.${name}]"
       echo "token = \"${token}\""
       echo "bind_addr = \"127.0.0.1:${port}\""
       echo "type = \"tcp\""
       echo
-      aport="$(_j '.api_local_port // empty')"
       if [ -n "$aport" ]; then
-        atoken="$(_j '.api_token')"
         echo "[server.services.${name}_api]"
         echo "token = \"${atoken}\""
         echo "bind_addr = \"127.0.0.1:${aport}\""
@@ -685,6 +686,8 @@ PXB
     echo "    ~^/${sub_seg}/      ${sub};"
     jq -r '.nodes[] | select(.sni == null) | [.name,(.port|tostring)] | @tsv' "$STATE" |
     while IFS=$'\t' read -r n p; do
+      n="${n%$'\r'}"; p="${p%$'\r'}"
+      [ -n "$n" ] && [ -n "$p" ] || continue
       printf '    "~^/%s($|/)"   %s;\n' "$n" "$p"
     done
     echo "}"
@@ -747,6 +750,8 @@ CTRLLOC
       echo "    default      \"\";"
       jq -r '.nodes[] | select(.sni == null) | [.name,(.port|tostring)] | @tsv' "$STATE" |
       while IFS=$'\t' read -r n p; do
+        n="${n%$'\r'}"; p="${p%$'\r'}"
+        [ -n "$n" ] && [ -n "$p" ] || continue
         printf '    "%s"   %s;\n' "$n" "$p"
       done
       echo "}"
@@ -958,6 +963,9 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 ${hub_block}
+${bh_block}
+${proxy_block}
+${ctrl_path_block}
     location = / {
         proxy_pass http://127.0.0.1:\$root_backend;
         proxy_http_version 1.1;
@@ -1052,8 +1060,10 @@ regenerate(){
   gen_server_toml
   gen_nginx_conf
   log "configha tvlid shdnd ($SERVER_TOML , $out)."
+  local ng_err=""
   if command -v nginx >/dev/null 2>&1; then
-    if nginx -t 2>/tmp/nginx_test.log; then
+    ng_err="$(rth_mktemp)"
+    if nginx -t 2>"$ng_err"; then
       systemctl reload nginx || systemctl restart nginx
       log "nginx reload shod."
       cp -a "$out" "$out.rathole-good.bak" 2>/dev/null || true
@@ -1061,7 +1071,7 @@ regenerate(){
       # agar stream hazf shode (bedoon SNI), backup-e bayat ra ham pak kon
       [ -f "$STREAM_CONF" ] || rm -f "$STREAM_CONF.rathole-good.bak" 2>/dev/null
     else
-      err "nginx -t khata dad; reload nashod:"; cat /tmp/nginx_test.log >&2
+      err "nginx -t khata dad; reload nashod:"; cat "$ng_err" >&2
       # rollback-e har DO file (http + stream) be akharin halat-e known-good
       local restored=0
       if [ -n "$pre_http_bak" ] && [ -f "$pre_http_bak" ]; then cp -a "$pre_http_bak" "$out"; restored=1
@@ -1080,7 +1090,7 @@ regenerate(){
       fi
     fi
   fi
-  rm -f "$pre_http_bak" "$pre_stream_bak" 2>/dev/null || true
+  rm -f "$pre_http_bak" "$pre_stream_bak" "$ng_err" 2>/dev/null || true
   if systemctl is-active --quiet "$RATHOLE_SVC"; then
     log "server.toml berooz shd; rathole khodesh hot-reload mikonad (tunnelhaye faal ghat nmishvnd)."
   else
@@ -1179,14 +1189,20 @@ cmd_set(){
   local key="${1:-}" val="${2:-}"
   [ -n "$key" ] && [ -n "$val" ] || die "estefade: ratholectl set <domain|fullchain|key|nginx-conf|fake-port|sub-port|control-port|sub-path|hub-path> <value>"
   case "$key" in
-    domain)        state_set '.domain' "$val" str ;;
+    domain)
+      echo "$val" | grep -qE '^[A-Za-z0-9_.-]+$' || die "damnh namotabar."
+      state_set '.domain' "$val" str
+      ;;
     fullchain)     state_set '.cert_fullchain' "$val" str ;;
     key)           state_set '.cert_key' "$val" str ;;
     nginx-conf)    state_set '.nginx_conf' "$val" str ;;
     fake-port)     state_set '.fake_port' "$val" num ;;
     sub-port)      state_set '.sub_port' "$val" num ;;
     control-port)  state_set '.control_port' "$val" num ;;
-    control-path) state_set '.control_path' "$val" str ;;
+    control-path)
+      [ "$val" = "/" ] || echo "$val" | grep -qE '^/[A-Za-z0-9_./-]{1,120}$' || die "control-path namotabar."
+      state_set '.control_path' "$val" str
+      ;;
     sub-path)      state_set '.sub_path' "$(normalize_path_seg "$val")" str ;;
     hub-path)      state_set '.hub_path' "$(normalize_path_seg "$val")" str ;;
     *) die "kelid nashenakhte: $key" ;;
@@ -2886,6 +2902,7 @@ cmd_logs(){
 
 # ---------- mnvi taamoli ----------
 menu(){
+  local ch="" n="" ib="" ap="" k="" v="" args=()
   while true; do
     echo
     echo "$(c_g '==== rathole-manager ====')"

@@ -64,7 +64,7 @@ load_env_file(){
     printf '%s' "$val" | grep -qE '[$` ;\\|&<>()]' \
       && { err "meghdar-e env namotabar ast: $key"; return 1; }
     printf -v "$key" '%s' "$val"
-    export "$key"
+    export "${key?}"
   done < "$file"
 }
 
@@ -326,7 +326,7 @@ cmd_status(){
   local as_json=0; [ "${1:-}" = "--json" ] && as_json=1
   load_env
   local mode="${TUNNEL:-ws}" remote="${SERVER:-}" tls_host="${TLS_HOSTNAME:-${SERVER%%:*}}"
-  local tls=yes encrypted=yes unit="$SVC" bh_remote="${BH_REMOTE_ADDR:-}" trusted_root="${TLS_TRUSTED_ROOT:-}"
+  local tls=yes encrypted=yes unit="$SVC" trusted_root="${TLS_TRUSTED_ROOT:-}"
   case "$mode" in
     plain) remote="${PLAIN_REMOTE:-$remote}"; tls=no; encrypted=no ;;
     noise) remote="${NOISE_REMOTE:-$remote}"; tls=no; encrypted=yes ;;
@@ -697,7 +697,7 @@ cmd_bh_add_svc(){
   valid_svc_name "$name" || die "name namotabar."
   valid_svc_token "$token" || die "token namotabar (faghat [A-Za-z0-9._=+/-] mjaz ast)."
   echo "$inbound" | grep -qE '^[0-9]+$' || die "port bayad adad bashad."
-  check_port_conflict "$inbound" "backhaul service '$name'" || die "tadakhol port â€” meghdar digari entekhab kon."
+  check_port_conflict "$inbound" "backhaul service '$name'" || die "tadakhol port -- meghdar digari entekhab kon."
   if [ -n "${BH_TOKEN:-}" ] && [ "$token" != "$BH_TOKEN" ]; then
     die "token service bayad ba BH_TOKEN-e moshterak yeksan bashad."
   fi
@@ -936,7 +936,7 @@ UNIT
 gen_up_client(){
   local id="$1"
   [ -f "$(up_env "$id")" ] || die "upstream '$id' vojood nadarad."
-  local SERVER HOST TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH toml
+  local SERVER HOST TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH toml
   unset SERVER HOST TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH
   load_env_file "$(up_env "$id")" || die "khvandn-e config upstream '$id' shekast khord."
   HOST="${HOST:-${SERVER%%:*}}"
@@ -1440,9 +1440,9 @@ wd_failover(){
 }
 
 wd_run(){
-  local main_bad=0 mkcp=""
+  local mkcp=""
   [ -f "$KCP_CLI_UNIT" ] && mkcp="rathole-kcp-client"
-  wd_check_one "$SVC" "$mkcp" "main" || main_bad=1
+  wd_check_one "$SVC" "$mkcp" "main" || true
   # upstreamha
   local e id
   for e in "$UP_DIR"/*.env; do
@@ -1777,14 +1777,17 @@ adaptive_run_probe(){
   [ -f "$ADAPTIVE_STATE" ] && failures="$(python3 -c "import json; d=json.load(open('$ADAPTIVE_STATE')); print(d.get('consecutive_failures',0))" 2>/dev/null || echo 0)"
 
   case "$mode" in
-    ws)   result="$(adaptive_probe_ws_tls "$host" "$port" "/" "" "$tls_host" "$tls_trust" 2>/dev/null)" ;;
-    plain) result="$(adaptive_probe_ws_plain "$host" "${PLAIN_REMOTE##*:}" "/" 2>/dev/null)" ;;
+    ws)   result="$(adaptive_probe_ws_tls "$host" "$port" "${CONTROL_PATH:-/}" "" "$tls_host" "$tls_trust" 2>/dev/null)" ;;
+    plain)
+      local pr="${PLAIN_REMOTE:-$SERVER}"
+      result="$(adaptive_probe_ws_plain "${pr%%:*}" "${pr##*:}" "/" 2>/dev/null)" ;;
     kcp)  result="$(adaptive_probe_kcp 2>/dev/null)" ;;
     # backhaul: control channel-e client rooye '/channel' hardcode ast (na '/') va nginx haman
     # masir ra be backhaul-server proxy mikonad — pas probe bayad be '/channel' beravad.
     # token HATMAN lazem ast vagarna backhaul ba 401 rad mikonad. TLS/direct az transport miayad.
     backhaul)
-      local bhr="${BH_REMOTE_ADDR:-${BH_REMOTE:-$host}:443}" bhh="${bhr%%:*}" bhp="${bhr##*:}"
+      local bhr="${BH_REMOTE_ADDR:-${BH_REMOTE:-$host}:443}"
+      local bhh="${bhr%%:*}" bhp="${bhr##*:}"
       case "${BH_TRANSPORT:-wssmux}" in
         ws|wsmux) result="$(adaptive_probe_ws_plain "$bhh" "$bhp" "/channel" "Authorization: Bearer ${BH_TOKEN}"$'\r\n' 2>/dev/null)" ;;
         *) result="$(adaptive_probe_ws_tls "$bhh" "$bhp" "/channel" "Authorization: Bearer ${BH_TOKEN}"$'\r\n' 2>/dev/null)" ;;

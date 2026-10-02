@@ -118,6 +118,7 @@ rth_commit_config(){
     [ "$held" -eq 1 ] && rmdir "$d" 2>/dev/null
     [ "$rc" -eq 0 ] || return 1
   fi
+  chmod 600 "$dst" 2>/dev/null || true
   rm -f "$src"
 }
 

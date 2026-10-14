@@ -112,6 +112,40 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 - **نود:** `CONTROL_PATH` در `node.env` ذخیره می‌شود و در `client.toml` به‌عنوان `path = "/_rh/..."` درج می‌شود (patch‌ی از core روی `WebsocketConfig.path`).
 - **نمایش:** `cmd_show` مقدار `CONTROL_PATH=<masked>` چاپ می‌کند — هیچ secret کامل در لاگ پدیدار نمی‌شود.
 
+## ۱۰) FRP (هسته‌ی ریورس تونل مستقل fatedier/frp)
+
+> یک **هسته‌ی مجزا و بالغ (`fatedier/frp`)** کنار rathole و backhaul. مناسب برای شرایطی که نیاز به مالتی‌پلکسینگ پیشرفته TCP/QUIC/KCP/WebSocket با قابلیت‌های احراز هویت توکن مشترک و نگاشت مستقیم پورت‌های لوکال است.
+
+- **ساختار:** روی ایران سرویس `frps` و روی نود سرویس `frpc` فعال می‌شود.
+- **پروتکل‌های ارتباطی:** پشتیبانی از ۴ حامل `tcp`, `kcp`, `quic`, `websocket`.
+- **نگاشت پورت:** نگاشت مستقیم پورت لوکال ایران (مانند پورت‌های رتهول) به سرویس اینباند نود خارجی.
+- **دستورات ایران:**
+  - `ratholectl frp on [bind_port] [transport] [token]` (پیش‌فرض پورت ۷۰۰۰، tcp)
+  - `ratholectl frp off`
+  - `ratholectl frp status`
+  - `ratholectl frp show`
+- **دستورات نود:**
+  - `ratholenode frp on <remote_ip:port> <token> [transport]`
+  - `ratholenode frp off`
+  - `ratholenode frp status`
+
 ---
 
-**نکته‌ی کلیدی:** در حالت‌های ۱ تا ۵، سرویس‌ها/توکن‌ها/مسیر کاربران دست‌نخورده می‌مانند؛ فقط حاملِ تونل عوض می‌شود. برای جزئیات مسیر بسته لایه‌به‌لایه: [`traffic-flow.md`](traffic-flow.md).
+## ۱۱) GRE (تونل لایه ۳ کرنل لینوکس — ip tunnel)
+
+> تونل **شبکه لایه ۳ نقطه به نقطه (Generic Routing Encapsulation)** مبتنی بر کرنل لینوکس، مناسب برای شبکه‌سازی مستقیم IP بین سرور ایران و سرور خارج بدون نیاز به هیچ باینری واسط.
+
+- **ویژگی‌ها:** راه‌اندازی اینترفیس مجازی `gre1` با ساب‌نت `/30` (مثلاً `10.10.10.1/30` ایران و `10.10.10.2/30` خارج).
+- **بهینه‌سازی شبکه:** تنظیم خودکار `MTU 1476` و اعمال قانون `TCPMSS clamping` در iptables جهت جلوگیری از تکه‌تکه شدن (fragmentation) بسته‌های TCP بر بستر اینترنت ایران.
+- **دستورات ایران:**
+  - `ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]` (پیش‌فرض ۱۰.۱۰.۱۰.۱/۳۰)
+  - `ratholectl gre off [gre_name]`
+  - `ratholectl gre status [gre_name]`
+- **دستورات نود:**
+  - `ratholenode gre on <remote_ip> [tunnel_ip] [gre_name]` (پیش‌فرض ۱۰.۱۰.۱۰.۲/۳۰)
+  - `ratholenode gre off [gre_name]`
+  - `ratholenode gre status [gre_name]`
+
+---
+
+**نکته‌ی کلیدی:** در حالت‌های ۱ تا ۵ و ۱۰، سرویس‌ها/توکن‌ها/مسیر کاربران دست‌نخورده می‌مانند؛ فقط حاملِ تونل عوض می‌شود. برای جزئیات مسیر بسته لایه‌به‌لایه: [`traffic-flow.md`](traffic-flow.md).

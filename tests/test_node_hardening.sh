@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1091,SC2016,SC2329
 set -euo pipefail
 
 ok(){ echo "ok - $*"; }
@@ -19,6 +20,7 @@ ADAPTIVE_STATE="$ROOT/adaptive-state.json"
 ADAPTIVE_ENV="$ROOT/adaptive.env"
 WD_ENV="$ROOT/watchdog.env"
 UP_DIR="$ROOT/upstreams"
+export BH_SVC_FILE ADAPTIVE_STATE ADAPTIVE_ENV WD_ENV UP_DIR
 need_root(){ :; }
 rth_commit_config(){ cp "$1" "$2"; }
 
@@ -53,20 +55,35 @@ RESTARTED=0
 systemctl(){
   case "${1:-} ${2:-}" in
     'is-active --quiet') return 0 ;;
-    'restart '*|'restart') RESTARTED=1; return 0 ;;
+    'restart '*) RESTARTED=1; return 0 ;;
   esac
   return 0
 }
 adaptive_run_probe(){ echo ws_rejected; return 0; }
 SVC=main
 WD_PROBE=1
+export SVC WD_PROBE
+
+# Bar-e aval-e probe-e kharab nabayad restart shavad (anti-flapping)
+wd_check_one main "" main || fail 'watchdog dar bar-e aval nabayad restart konad (anti-flapping)'
+[ "$RESTARTED" -eq 0 ] || fail 'watchdog ba yek khata restart kard'
+
+# Probe-e salem bayad counter-e khata ra pak konad
+adaptive_run_probe(){ echo healthy; return 0; }
+wd_check_one main "" main || fail 'watchdog dar probe-e healthy fail shod'
+[ ! -f "$ROOT/wd-probe-fails" ] || fail 'probe-e healthy counter-e khata ra pak nakard'
+
+# 3 bar khataye pey-dar-pey bayad tunnel-e gir-karde ra restart konad
+adaptive_run_probe(){ echo ws_rejected; return 0; }
+wd_check_one main "" main || fail 'bar-e aval-e probe-e kharab nabayad restart shavad'
+wd_check_one main "" main || fail 'bar-e dovom-e probe-e kharab nabayad restart shavad'
 if wd_check_one main "" main; then
-  fail 'watchdog tunnel-e active-vali-gir-karde ra fail tashkhis nadad'
+  fail 'watchdog baad az 3 khataye pey-dar-pey restart nakard'
 fi
 [ "$RESTARTED" -eq 1 ] || fail 'watchdog tunnel-e gir-karde ra restart نکرد'
-ok 'watchdog active-but-stuck ra probe mikonad'
+ok 'watchdog active-but-stuck ra probe mikonad va jeloye flapping ra migirad'
 
-grep -q '*/../*' "$REPO_ROOT/rathole-manager/ratholenode" \
+grep -F -q '*/../*' "$REPO_ROOT/rathole-manager/ratholenode" \
   || fail 'restore guard-e path traversal peyda nashod'
 ok 'restore guard-e path traversal dar code vojood darad'
 

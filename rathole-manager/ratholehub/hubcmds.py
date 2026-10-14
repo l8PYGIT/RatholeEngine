@@ -8,10 +8,9 @@
 #   2) HAR argument ra ba RE_* etebarsanji kon (hich interpolation-e shl),
 #   3) agar minevisad (na faghat mikhanad) be WRITE_ACTIONS ham ezafe kon.
 #
-# in module be hich chiz-e digar-e hub vabaste nist (faghat re/json) ta betavan
+# in module be hich chiz-e digar-e hub vabaste nist (faghat re) ta betavan
 # mostaghel test-esh kard.
 
-import json
 import re
 
 # ---------- aatbarsnji vrvdi (zd tzrigh) ----------
@@ -40,6 +39,8 @@ RE_BH_TOK  = re.compile(r"^[A-Fa-f0-9]{16,64}\Z")   # token-e moshtarak-e backha
 # in meghdar mostaghim be conf-e nginx miravad، pas har chiz-e digar rad mishavad.
 RE_UPSTREAM = re.compile(r"^https?://[A-Za-z0-9._-]{1,255}:[0-9]{1,5}\Z")
 RE_LINES    = re.compile(r"^[0-9]{1,4}\Z")   # tedad-e khat-e log (hadaksar 9999)
+RE_FRP_TR   = re.compile(r"^(tcp|kcp|quic|websocket)\Z")
+RE_IP       = re.compile(r"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\Z")
 
 
 # ---------- defense-in-depth: har dastoor-e tashkhisi ba `timeout` pichide mishavad ----------
@@ -204,6 +205,36 @@ def build_iran_cmd(action, a):
         if not RE_NAME.match(name): return None
         if not RE_UPSTREAM.match(up): return None
         return ["ratholectl", "proxy", "add", name, up]
+    # ---- frp: core-e reverse-tunnel-e fatedier/frp (frps) ----
+    if action == "frp_status": return ["ratholectl", "frp", "status"]
+    if action == "frp_show":   return ["ratholectl", "frp", "show"]
+    if action == "frp_off":    return ["ratholectl", "frp", "off"]
+    if action == "frp_on":
+        port      = str(a.get("port", "7000") or "7000")
+        token     = str(a.get("token", "") or "")
+        transport = str(a.get("transport", "tcp") or "tcp")
+        if not RE_PORT.match(port): return None
+        if token and not RE_KEY.match(token) and not RE_BH_TOK.match(token): return None
+        if not RE_FRP_TR.match(transport): return None
+        cmd = ["ratholectl", "frp", "on", port]
+        if token: cmd.append(token)
+        if transport: cmd.append(transport)
+        return cmd
+    # ---- gre: tunnel-e shabake-ye L3 Linux (ip tunnel) ----
+    if action == "gre_status": return ["ratholectl", "gre", "status"]
+    if action == "gre_off":
+        name = str(a.get("name", "") or "")
+        cmd = ["ratholectl", "gre", "off"]
+        if name:
+            if not RE_NAME.match(name): return None
+            cmd.append(name)
+        return cmd
+    if action == "gre_on":
+        rem = str(a.get("remote_ip", "") or "")
+        tip = str(a.get("tunnel_ip", "10.10.10.1") or "10.10.10.1")
+        name = str(a.get("name", "gre1") or "gre1")
+        if not RE_IP.match(rem) or not RE_IP.match(tip) or not RE_NAME.match(name): return None
+        return ["ratholectl", "gre", "on", rem, tip, name]
     # ---- service game (SNI rooye 443 + TLS rooye node) ----
 
     if action == "game_ls":   return ["ratholectl", "game", "ls"]
@@ -355,6 +386,32 @@ def build_node_cmd(action, a):
         name = a.get("name", "")
         if not RE_NAME.match(name): return None
         return ["ratholenode", "backhaul", "rm-svc", name]
+    # ---- frp: client-e reverse-tunnel (frpc) ----
+    if action == "frp_status": return ["ratholenode", "frp", "status"]
+    if action == "frp_off":    return ["ratholenode", "frp", "off"]
+    if action == "frp_on":
+        rem = str(a.get("remote", "") or "")
+        tok = str(a.get("token", "") or "")
+        tr  = str(a.get("transport", "tcp") or "tcp")
+        if not RE_IPPORT.match(rem): return None
+        if not RE_KEY.match(tok) and not RE_BH_TOK.match(tok): return None
+        if not RE_FRP_TR.match(tr): return None
+        return ["ratholenode", "frp", "on", rem, tok, tr]
+    # ---- gre: tunnel-e shabake-ye L3 Linux (ip tunnel) ----
+    if action == "gre_status": return ["ratholenode", "gre", "status"]
+    if action == "gre_off":
+        name = str(a.get("name", "") or "")
+        cmd = ["ratholenode", "gre", "off"]
+        if name:
+            if not RE_NAME.match(name): return None
+            cmd.append(name)
+        return cmd
+    if action == "gre_on":
+        rem  = str(a.get("remote_ip", "") or "")
+        tip  = str(a.get("tunnel_ip", "10.10.10.2") or "10.10.10.2")
+        name = str(a.get("name", "gre1") or "gre1")
+        if not RE_IP.match(rem) or not RE_IP.match(tip) or not RE_NAME.match(name): return None
+        return ["ratholenode", "gre", "on", rem, tip, name]
     if action == "migrate":     return ["ratholenode", "migrate"]
 
     if action == "tune":        return ["ratholenode", "tune"]
@@ -444,8 +501,6 @@ def build_node_cmd(action, a):
         return ["ratholenode", "watchdog", "on", iv]
     if action == "watchdog_off":    return ["ratholenode", "watchdog", "off"]
     if action == "watchdog_status": return ["ratholenode", "watchdog", "status"]
-    if action == "logs":
-        return ["ratholenode", "logs", "40"]
     # ---- mdirit service rooye node ----
     if action == "add_svc":
         name = a.get("name", ""); token = a.get("token", ""); inbound = str(a.get("inbound", ""))
@@ -500,6 +555,7 @@ WRITE_ACTIONS = {
     "noise_on", "noise_off", "noise_node_on", "noise_node_off",
     "backhaul_on", "backhaul_off", "backhaul_node_on", "backhaul_node_off",
     "proxy_add", "proxy_rm",
+    "frp_on", "frp_off", "gre_on", "gre_off",
 
     "backup", "enable", "regen_full", "regen",
     # node

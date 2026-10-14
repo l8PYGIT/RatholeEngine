@@ -17,6 +17,7 @@ state.json
 inventory.json
 node.env
 services.conf
+mock-*
 
 # ---- فایل‌های موقتِ توسعه ----
 _patch_*.py
@@ -42,3 +43,5 @@ opencode.json
 # ---- config abzarha ----
 .agents/
 .vscode/
+.hub_demo/
+scratch/

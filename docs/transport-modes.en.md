@@ -190,7 +190,46 @@ ratholectl control-path rotate
 
 ---
 
-**Key rule:** changing a rathole carrier leaves services/tokens/user paths untouched. Moving a service between rathole and Backhaul changes lane ownership on both ends, but keeps the public URL path and Iran-side local port stable. For packet-level traffic flow details, see [`traffic-flow.md`](traffic-flow.md).
+## 11) FRP Core — reverse tunnel via fatedier/frp
+
+A standalone reverse tunnel core (`fatedier/frp`) operating alongside rathole and Backhaul. Designed for advanced connection multiplexing over TCP, KCP, QUIC, or WebSocket with shared token authentication.
+
+- **Architecture:** `frps` runs on Iran and `frpc` on the Foreign Node.
+- **Supported Transports:** `tcp`, `kcp`, `quic`, `websocket`.
+- **Port Mapping:** Binds Iran local port directly to foreign inbound proxy port.
+
+```bash
+# Iran server
+ratholectl frp on [bind_port] [transport] [token]   # default: 7000, tcp
+ratholectl frp off | status | show
+
+# Foreign node
+ratholenode frp on <remote_ip:port> <token> [transport]
+ratholenode frp off | status
+```
+
+---
+
+## 12) GRE Tunnel — Linux L3 point-to-point network
+
+A kernel-level Layer 3 Generic Routing Encapsulation (GRE) point-to-point tunnel interface (`ip tunnel`) providing direct IP communication without intermediate proxies.
+
+- **Interface:** Configures `gre1` interface with `/30` point-to-point addressing (`10.10.10.1/30` on Iran, `10.10.10.2/30` on Node).
+- **Network Optimization:** Automatically configures `MTU 1476` and iptables `TCPMSS clamping` to prevent fragmentation across domestic networks.
+
+```bash
+# Iran server
+ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]   # default tunnel_ip: 10.10.10.1/30
+ratholectl gre off [gre_name] | status [gre_name]
+
+# Foreign node
+ratholenode gre on <remote_ip> [tunnel_ip] [gre_name]   # default tunnel_ip: 10.10.10.2/30
+ratholenode gre off [gre_name] | status [gre_name]
+```
+
+---
+
+**Key rule:** changing a rathole carrier leaves services/tokens/user paths untouched. Moving a service between rathole, Backhaul, or FRP changes lane ownership on both ends, but keeps the public URL path and Iran-side local port stable. For packet-level traffic flow details, see [`traffic-flow.md`](traffic-flow.md).
 
 ---
 

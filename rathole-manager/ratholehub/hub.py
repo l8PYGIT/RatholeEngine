@@ -6,11 +6,12 @@
 #
 # tanzimat:  /etc/ratholehub/config.json   , inventory: /etc/ratholehub/inventory.json
 # mtghirhai mhiti baraye tst lvkal: RATHOLEHUB_CONF, RATHOLEHUB_INV, RATHOLEHUB_MOCK=1
-import os, sys, json, hmac, hashlib, time, subprocess, re, secrets, threading, shlex, shutil
+import os, sys, json, hmac, hashlib, time, subprocess, re, secrets, threading, shlex, shutil, traceback
 
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+import urllib.request
 
 CONF_PATH = os.environ.get("RATHOLEHUB_CONF", "/etc/ratholehub/config.json")
 INV_PATH  = os.environ.get("RATHOLEHUB_INV",  "/etc/ratholehub/inventory.json")
@@ -28,11 +29,21 @@ _LOGIN_MAX = 5            # hdaksr tlashe namvfgh
 _LOGIN_WINDOW = 300       # pnjrhi sanihai
 _login_lock = threading.Lock()
 
+def _prune_login_fails(now):
+    # Prune expired entries to prevent memory leaks from scan traffic
+    expired = [ip for ip, fails in _LOGIN_FAILS.items() if not fails or now - fails[-1] >= _LOGIN_WINDOW]
+    for ip in expired:
+        _LOGIN_FAILS.pop(ip, None)
+
 def login_allowed(ip):
     now = time.time()
     with _login_lock:
+        _prune_login_fails(now)
         fails = [t for t in _LOGIN_FAILS.get(ip, []) if now - t < _LOGIN_WINDOW]
-        _LOGIN_FAILS[ip] = fails
+        if fails:
+            _LOGIN_FAILS[ip] = fails
+        else:
+            _LOGIN_FAILS.pop(ip, None)
         return len(fails) < _LOGIN_MAX
 
 def login_record_fail(ip):
@@ -41,6 +52,8 @@ def login_record_fail(ip):
         fails = [t for t in _LOGIN_FAILS.get(ip, []) if now - t < _LOGIN_WINDOW]
         fails.append(now)
         _LOGIN_FAILS[ip] = fails
+        if len(_LOGIN_FAILS) > 500:
+            _prune_login_fails(now)
 
 def login_reset(ip):
     with _login_lock:
@@ -82,6 +95,7 @@ def get_config():
         "api_token": _INSECURE_TOKEN,
         "admin_password_sha256": _INSECURE_PW_SHA,
         "listen_host": "127.0.0.1", "listen_port": 8088,
+        "proxy": "",
         "ssh_key_path": "", "ssh_opts": ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
                                           "-o", "StrictHostKeyChecking=accept-new"],
         "bundle_dir": "/opt/ratholehub/bundle",
@@ -89,6 +103,14 @@ def get_config():
     cfg["_insecure"] = (cfg.get("api_token") == _INSECURE_TOKEN
                         or cfg.get("admin_password_sha256") == _INSECURE_PW_SHA)
     return cfg
+
+def get_proxy(server=None):
+    if server and server.get("proxy"):
+        p = str(server.get("proxy", "")).strip()
+        return "" if p.lower() in ("direct", "none", "off") else p
+    cfg = get_config()
+    p = str(cfg.get("proxy", "")).strip()
+    return "" if p.lower() in ("direct", "none", "off") else p
 
 def get_inventory():
     inv = load_json(INV_PATH, [])
@@ -227,6 +249,7 @@ def hub_status():
                 svcs[u] = "unknown"
     st["services"] = svcs
     st["latest_version"] = hub_manager_version()
+    st["proxy"] = get_config().get("proxy", "")
     return st
 
 # ---------- aatbarsnji vrvdi + whitelist dstvrha ----------
@@ -239,8 +262,46 @@ from hubcmds import (  # noqa: F401  (nam-ha dar sartasar-e hub estefade mishava
     build_iran_cmd, build_node_cmd, build_cmd, WRITE_ACTIONS, _diag,
 )
 
-# ---------- ejra-ye az rah dvr (SSH) ----------
+# ---------- ejra-ye az rah dvr (Agent API ya SSH) ----------
+def build_agent_request(server, cmd_args, timeout=120):
+    url = (server.get("api_url") or "").rstrip("/") + "/api/exec"
+    token = server.get("api_token", "")
+    payload = json.dumps({"cmd": cmd_args, "timeout": timeout}).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    return urllib.request.Request(url, data=payload, headers=headers)
+
+def run_on_agent(server, cmd_args, timeout=120):
+    proxy = get_proxy(server)
+    handlers = []
+    if proxy:
+        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    opener = urllib.request.build_opener(*handlers)
+    req = build_agent_request(server, cmd_args, timeout=timeout)
+    try:
+        with opener.open(req, timeout=timeout + 5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return {
+                "rc": data.get("rc", 0),
+                "out": _strip_ansi(data.get("out", "")),
+                "err": _strip_ansi(data.get("err", ""))
+            }
+    except urllib.error.HTTPError as e:
+        err_msg = ""
+        try:
+            err_data = json.loads(e.read().decode("utf-8"))
+            err_msg = err_data.get("error", "")
+        except Exception:
+            err_msg = str(e)
+        return {"rc": e.code, "out": "", "err": f"HTTP {e.code}: {err_msg}"}
+    except Exception as e:
+        return {"rc": 1, "out": "", "err": f"Agent connection error: {e}"}
+
 def run_on_server(server, cmd_args, timeout=120):
+    if server.get("transport") == "api":
+        return run_on_agent(server, cmd_args, timeout=timeout)
     if MOCK:
         return mock_run(server, cmd_args)
     cfg = get_config()
@@ -255,6 +316,11 @@ def run_on_server(server, cmd_args, timeout=120):
 
 def _ssh_base(cfg, server):
     ssh = ["ssh"] + list(cfg.get("ssh_opts", []))
+    proxy = get_proxy(server)
+    if proxy:
+        bridge_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "ssh_proxy.py"))
+        py_bin = sys.executable or "python3"
+        ssh += ["-o", f'ProxyCommand="{py_bin}" "{bridge_script}" "{proxy}" %h %p']
     if cfg.get("ssh_key_path"):
         ssh += ["-i", cfg["ssh_key_path"]]
     ssh += ["-p", str(server.get("ssh_port", 22)),
@@ -443,7 +509,6 @@ def provision_server(d):
     elif role == "node" and not iran_host:
         logs.append("== [هشدار] server Iran-e main tanzim nashod — dar safhe-ye node ba «tanzim tunnel asli» vaslesh kon. ==")
     # 3) sabt dar inventory (hata agar deploy naghes bood, kelid nصب shode va etesal ba kelid barقarار ast)
-    # 3) sabt dar inventory (hata agar deploy naghes bood, kelid nصب shode va etesal ba kelid barقarار ast)
     update_inventory(lambda inv: inv + [server] if not any(s.get("name") == name for s in inv) else inv)
     logs.append("== be hub ezafe shod: %s (%s) — az in pas atesal ba kelid ast ==" % (name, role))
     note = "" if dep.get("rc") == 0 else "\n[هشدار] deploy kamel nashod (rc=%s)؛ mitavani baad dokme «apdit» ra bezani." % dep.get("rc")
@@ -462,9 +527,12 @@ def mock_run(server, cmd_args):
                 "NAME           PORT     INBOUND      API        TRANSPORT  SNI              USER PATH\n"
                 "--------------------------------------------------------------------------------\n"
                 "trk01          1005     8444         -          backhaul   -                https://d/trk01\n"
-                "trk02          1006     8445         9001       ws         -                https://d/trk02\n"
+                "trk02          1006     8445         9001       kcp        -                https://d/trk02\n"
                 "noisenode      1008     8447         -          noise      -                https://d/noisenode\n"
-                "gamenodetrk    1007     2101         7001       ws         gmtrk.l1t.ir     https://d/gamenodetrk", "err": ""}
+                "gamenodetrk    1007     2101         7001       ws         gmtrk.l1t.ir     https://d/gamenodetrk\n"
+                "plainnode      1009     8449         -          plain      -                https://d/plainnode\n"
+                "frpnode        1010     8450         -          frp        -                https://d/frpnode\n"
+                "grenode        1011     8451         -          gre        -                https://d/grenode", "err": ""}
     if cmd_args[:2] == ["ratholectl", "show"] and len(cmd_args) >= 3:
         nm = cmd_args[2]
         return {"rc": 0, "out":
@@ -481,23 +549,42 @@ def mock_run(server, cmd_args):
     if cmd_args[:2] == ["ratholectl", "ip-cert-show"]:
         return {"rc": 0, "out": "-----BEGIN CERTIFICATE-----\nTU9DSw==\n-----END CERTIFICATE-----\n", "err": ""}
     if j == "ratholectl status --json":
+        is_shz = server.get("name") == "iran-shiraz"
+        dom = "shz01.l1t.ir" if is_shz else "rp01.l1t.ir"
+        ip = server.get("host") or ("185.231.114.88" if is_shz else "5.202.4.40")
         return {"rc": 0, "out": json.dumps({
-            "domain": "rp01.l1t.ir", "public_ip": "5.202.4.40",
+            "domain": dom, "public_ip": ip,
             "transport": "websocket+TLS (443)",
             "ports": {"control": 2333, "fake": 8080, "sub": 2096, "internal": 8443,
-                      "plain": None, "direct": None, "hub": 8088, "noise": 2334,
-                      "backhaul": 3080},
+                      "plain": 8880, "direct": None, "hub": 8088, "noise": 2334,
+                      "backhaul": 3080, "frp": 7000},
             "direct_header": "X-Cdn-Id",
-            "cert": {"fullchain": "/etc/letsencrypt/live/rp01.l1t.ir/fullchain.pem",
-                     "key": "/etc/letsencrypt/live/rp01.l1t.ir/privkey.pem",
+            "cert": {"fullchain": f"/etc/letsencrypt/live/{dom}/fullchain.pem",
+                     "key": f"/etc/letsencrypt/live/{dom}/privkey.pem",
                      "exists": "yes", "expiry": "Oct 12 09:00:00 2026 GMT", "self_signed": "no"},
             "services": {"rathole_server": "yes", "nginx": "yes", "nginx_config_ok": "yes",
-                         "noise": "yes", "backhaul": "yes"},
-            "sni_count": 1, "node_count": 2,
-            "nodes": [{"name": "trk01", "port": 1005, "inbound_port": 8444, "api_local_port": None,
-                       "sni": None, "transport": "backhaul"},
-                      {"name": "gamenodetrk", "port": 1007, "inbound_port": 2101, "api_local_port": 7001,
-                       "sni": "gmtrk.l1t.ir", "transport": None}]
+                         "noise": "yes", "backhaul": "yes", "fakeweb": "yes", "frps": "yes"},
+            "features": {"fakeweb": {"configured": True, "active": True, "port": 8080},
+                         "direct": {"configured": True, "active": True, "port": 8443},
+                         "frp": {"configured": True, "active": True, "port": 7000},
+                         "gre": {"configured": True, "active": True, "name": "gre1"}},
+            "sni_count": 1, "node_count": 7,
+            "nodes": [
+                {"name": "trk01", "port": 1005, "inbound_port": 8444, "api_local_port": None,
+                 "sni": None, "transport": "backhaul"},
+                {"name": "trk02", "port": 1006, "inbound_port": 8445, "api_local_port": 9001,
+                 "sni": None, "transport": "kcp"},
+                {"name": "noisenode", "port": 1008, "inbound_port": 8447, "api_local_port": None,
+                 "sni": None, "transport": "noise"},
+                {"name": "gamenodetrk", "port": 1007, "inbound_port": 2101, "api_local_port": 7001,
+                 "sni": "gmtrk.l1t.ir", "transport": None},
+                {"name": "plainnode", "port": 1009, "inbound_port": 8449, "api_local_port": None,
+                 "sni": None, "transport": "plain"},
+                {"name": "frpnode", "port": 1010, "inbound_port": 8450, "api_local_port": None,
+                 "sni": None, "transport": "frp"},
+                {"name": "grenode", "port": 1011, "inbound_port": 8451, "api_local_port": None,
+                 "sni": None, "transport": "gre"}
+            ]
         }), "err": ""}
     if j == "ratholectl backhaul show":
         return {"rc": 0, "out":
@@ -527,8 +614,13 @@ def mock_run(server, cmd_args):
     if j == "ratholectl doctor":
         return {"rc": 0, "out": "OK rathole-server faal ast\nOK nginx faal ast\n"
                 "OK  node trk01 rooye port 1005 amade ast\n"
+                "OK  node trk02 rooye port 1006 amade ast\n"
+                "OK  node noisenode rooye port 1008 amade ast\n"
+                "OK  node plainnode rooye port 1009 amade ast\n"
+                "OK  node frpnode rooye port 1010 amade ast\n"
+                "OK  node grenode rooye port 1011 amade ast\n"
                 "WARN node gamenodetrk rooye port 1007 gvsh nmidhd (klaint node vsl nist?)\n"
-                "khlash: OK=3  FAIL=1", "err": ""}
+                "khlash: OK=7  FAIL=1", "err": ""}
     if cmd_args[:2] == ["ratholectl", "logs"] or cmd_args[:3] == ["ratholenode", "logs", "all"]:
         # nemune-ye kutah: sakhtar-e vaghei + neshan dadan-e inke token-ha REDACT shode-and.
         return {"rc": 0, "out":
@@ -541,9 +633,12 @@ def mock_run(server, cmd_args):
                 "\n===== payan =====" % ("panel (Iran)" if role == "iran" else "node (kharej)"),
                 "err": ""}
     if j == "ratholenode ls":
-        return {"rc": 0, "out": "tunnel be: rp01.l1t.ir:443  (hame serviceha rooye yek channel kontroli)\n"
-                "SERVICE          INBOUND    TOKEN\n-------------------------------------------\n"
-                "trk01            1101       a0370655…\ngamenodetrk      2101       32eb742b…", "err": ""}
+        s_nm = server.get("name", "trk01")
+        inb_map = {"trk01": "8444", "trk02": "8445", "noisenode": "8447", "gamenodetrk": "2101", "plainnode": "8449", "frpnode": "8450", "grenode": "8451"}
+        inb = inb_map.get(s_nm, "8444")
+        return {"rc": 0, "out": f"tunnel be: rp01.l1t.ir:443  (hame serviceha rooye yek channel kontroli)\n"
+                f"SERVICE          INBOUND    TOKEN\n-------------------------------------------\n"
+                f"{s_nm}            {inb}       a0370655…", "err": ""}
     if j == "ratholenode kcp status":
         return {"rc": 0, "out": "halat tunnel: kcp\n  local: 127.0.0.1:29900   remote(UDP): 5.202.4.40:443   profile: balanced\n"
                 "  estetar: UDP/443 ~ QUIC/HTTP3\n  kcp-client: active\n  rathole-client: active", "err": ""}
@@ -564,6 +659,18 @@ def mock_run(server, cmd_args):
     if j == "ratholectl direct status":
         return {"rc": 0, "out": "direct-IP (header-based): roshan   port 8081   header: X-Cdn-Id\n"
                 "  gvshdadn TCP:8081: blh\n  node-ha:  trk01 -> \"X-Cdn-Id: trk01\"", "err": ""}
+    if j == "ratholectl frp status":
+        return {"rc": 0, "out": "FRP (reverse tunnel): roshan  port 7000 (tcp)\n  gvshdadn :7000: blh\n  frps: active", "err": ""}
+    if j == "ratholectl frp show":
+        return {"rc": 0, "out": "──────── faalsazi FRP rooye node kharej ────────\n"
+                "  ratholenode frp on 5.202.4.40:7000 4e9c1f7a2b8d6053ae71cc94f20d3b68 tcp\n"
+                "───────────────────────────────────────────────", "err": ""}
+    if j == "ratholenode frp status":
+        return {"rc": 0, "out": "halat tunnel: frp\n  remote: 5.202.4.40:7000   transport: tcp\n  frpc: active", "err": ""}
+    if j == "ratholectl gre status":
+        return {"rc": 0, "out": "GRE tunnel: roshan  interface: gre1 (tunnel: 10.10.10.1/30, peer: 198.51.100.5)\n  link status: UP", "err": ""}
+    if j == "ratholenode gre status":
+        return {"rc": 0, "out": "GRE tunnel: roshan  interface: gre1 (tunnel: 10.10.10.2/30, peer: 5.202.4.40)\n  link status: UP", "err": ""}
     if j.startswith("ratholenode set SERVER "):
         return {"rc": 0, "out": "tanzim shod: SERVER = %s\n[mock] tunnel-e asli be-ruz shod." % cmd_args[-1], "err": ""}
     return {"rc": 0, "out": "[mock] %s → %s" % (role, j), "err": ""}
@@ -760,10 +867,9 @@ _ADAPTIVE_ALLOWED_KEYS = frozenset({
 
 def parse_adaptive_state(raw):
     """raw: string ya dict. -> dict ba field-haye motabar ya {'classification':'unknown'}."""
-    import json as _json
     try:
         if isinstance(raw, str):
-            d = _json.loads(raw)
+            d = json.loads(raw)
         elif isinstance(raw, dict):
             d = raw
         else:
@@ -934,9 +1040,12 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         p = path.replace("/hub", "", 1) if path.startswith("/hub/api") else path
         if p == "/api/login":
-            # kelid-e rate-limit ba X-Real-IP (mesl _user); posht-e nginx TCP-peer
-            # hamishe 127.0.0.1 ast pas yek bucket-e global mishavad va hame ra ghofl mikonad.
-            ip = self.headers.get("X-Real-IP") or (self.client_address[0] if self.client_address else "?")
+            peer_ip = self.client_address[0] if self.client_address else "127.0.0.1"
+            # Only trust X-Real-IP if peer is local reverse proxy (Nginx)
+            if peer_ip in ("127.0.0.1", "::1", "localhost"):
+                ip = self.headers.get("X-Real-IP") or peer_ip
+            else:
+                ip = peer_ip
             if not login_allowed(ip):
                 return self._send(429, {"error": "too many attempts; try later"})
             data = self._body_json()
@@ -1003,18 +1112,34 @@ class Handler(BaseHTTPRequestHandler):
 
     def _add_server(self, d):
         name = str(d.get("name", "")); role = str(d.get("role", ""))
-        host = str(d.get("host", "")); user = str(d.get("ssh_user", "root"))
-        port = str(d.get("ssh_port", "22"))
-        if not RE_NAME.match(name) or role not in ("iran", "node") or not RE_HOST.match(host) \
-           or not RE_NAME.match(user) or not RE_PORT.match(port):
-            return self._send(400, {"error": "invalid fields"})
+        transport = str(d.get("transport", "ssh")).lower()
+        if transport not in ("ssh", "api"):
+            transport = "ssh"
+        proxy = str(d.get("proxy", "")).strip()
+
+        if transport == "api":
+            api_url = str(d.get("api_url", "")).strip()
+            api_token = str(d.get("api_token", "")).strip()
+            if not RE_NAME.match(name) or role not in ("iran", "node") or not api_url or not api_token:
+                return self._send(400, {"error": "invalid fields for api transport"})
+            srv = {"name": name, "role": role, "transport": "api", "api_url": api_url, "api_token": api_token}
+            if proxy: srv["proxy"] = proxy
+        else:
+            host = str(d.get("host", "")); user = str(d.get("ssh_user", "root"))
+            port = str(d.get("ssh_port", "22"))
+            if not RE_NAME.match(name) or role not in ("iran", "node") or not RE_HOST.match(host) \
+               or not RE_NAME.match(user) or not RE_PORT.match(port):
+                return self._send(400, {"error": "invalid fields"})
+            srv = {"name": name, "role": role, "transport": "ssh", "host": host,
+                   "ssh_user": user, "ssh_port": int(port)}
+            if proxy: srv["proxy"] = proxy
+
         # check-and-append atomic zir-e yek ghofl ta do add-e hamzaman ham-digar ra pak nakonand.
         with _lock:
             inv = get_inventory()
             if any(s.get("name") == name for s in inv):
                 return self._send(409, {"error": "name exists"})
-            inv.append({"name": name, "role": role, "host": host,
-                        "ssh_user": user, "ssh_port": int(port)})
+            inv.append(srv)
             set_inventory(inv)
         return self._send(200, {"ok": True})
 
@@ -1035,6 +1160,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, {
             "listen_host": cfg.get("listen_host"),
             "listen_port": cfg.get("listen_port"),
+            "proxy": cfg.get("proxy", ""),
             "ssh_key_path": cfg.get("ssh_key_path"),
             "ssh_opts": cfg.get("ssh_opts"),
             "insecure": cfg.get("_insecure", False),
@@ -1062,6 +1188,8 @@ class Handler(BaseHTTPRequestHandler):
                 new_token = secrets.token_hex(24)
                 cfg["api_token"] = new_token
                 changed.append("api_token")
+            if "proxy" in d and isinstance(d["proxy"], str):
+                cfg["proxy"] = d["proxy"].strip(); changed.append("proxy")
             # ssh_key_path: masir-e file (reshte). ssh_opts: HATMAN list-e reshte
             # (chvn _ssh_base list(...)-esh mikonad; reshte be karaktr-ha shekaste mishavad).
             if "ssh_key_path" in d and isinstance(d["ssh_key_path"], str):
@@ -1200,11 +1328,11 @@ class Handler(BaseHTTPRequestHandler):
             # status --json hameye port-ha (fake/sub/control/internal/hub/plain/noise/
             # backhaul/direct) ra yekja midahad — UI baraye safhe-ye tanzimat va check-e
             # tadakhol-e port be an niaz darad. shekast-e parse nabayad overview ra bekoshad.
+            raw = ""
             try:
                 raw = R(["ratholectl", "status", "--json"]).get("out", "") or "{}"
                 ov["status"] = json.loads(raw)
             except Exception as e:
-                import traceback
                 print(f"[hub] status --json parse failed for {name}: {e}")
                 print(f"[hub] raw output: {raw[:200]}")
                 traceback.print_exc()

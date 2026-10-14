@@ -258,6 +258,8 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 .b-noise { background: var(--purple-soft); color: var(--purple); }
 .b-plain { background: var(--orange-soft); color: var(--orange); }
 .b-backhaul { background: var(--teal-soft); color: var(--teal); }
+.b-frp { background: rgba(249, 115, 22, 0.16); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.35); }
+.b-gre { background: rgba(16, 185, 129, 0.16); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
 .b-game { background: var(--pink-soft); color: var(--pink); }
 .b-role { background: var(--warning-soft); color: var(--warning); }
 
@@ -398,6 +400,41 @@ pre { max-height: 260px; margin: 8px 0 0; padding: 12px; overflow: auto; border:
 .recipe .cpy { min-height: 32px; margin-inline-start: auto; padding: 3px 9px; border-color: var(--border); background: transparent; color: var(--text-muted); font-size: 11px; }
 .rc-empty { padding: 10px 2px; color: var(--text-muted); font-size: 12.5px; }
 
+.preset-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; padding: 8px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
+.preset-title { color: var(--text-muted); font-size: 12px; font-weight: 650; margin-inline-end: 4px; }
+.diag-sec { margin-top: 14px; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: var(--surface-2); overflow: hidden; }
+.diag-sec.server-panel { margin: 0 0 18px; border-style: solid; border-color: var(--border); }
+.diag-sec.server-panel[open] { border-color: var(--border-strong); box-shadow: 0 4px 12px rgba(0, 0, 0, .06); }
+.diag-sec.server-panel summary { padding: 12px 16px; }
+.diag-sec summary { padding: 10px 14px; font-size: 13px; font-weight: 650; color: var(--text-muted); cursor: pointer; user-select: none; display: flex; align-items: center; gap: 8px; }
+.diag-sec summary:hover { color: var(--text); background: var(--surface-hover); }
+.diag-sec[open] summary { border-bottom: 1px solid var(--border); color: var(--text); }
+.diag-content { padding: 12px 14px; }
+.lane-pill { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-inline-end: 6px; }
+.lane-pill.standard { background: var(--info-soft); color: var(--info); }
+.lane-pill.mux { background: var(--teal-soft); color: var(--teal); }
+
+.hero-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 12px 0 16px; }
+.stat-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); transition: border-color .16s ease; }
+.stat-card:hover { border-color: var(--border-strong); }
+.stat-lbl { font-size: 11.5px; font-weight: 650; color: var(--text-muted); }
+.stat-val { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: var(--text); }
+
+.tab-bar { display: flex; align-items: center; gap: 6px; margin: 16px 0; padding: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; }
+.tab-btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid transparent; border-radius: calc(var(--radius) - 2px); background: transparent; color: var(--text-muted); font-size: 13px; font-weight: 650; cursor: pointer; white-space: nowrap; transition: all .16s ease; }
+.tab-btn:hover { color: var(--text); background: var(--surface-hover); }
+.tab-btn.active { background: var(--surface); color: var(--text); border-color: var(--border); box-shadow: 0 2px 6px rgba(0, 0, 0, .08); }
+
+.carrier-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 10px; }
+.carrier-card { display: flex; flex-direction: column; justify-content: space-between; padding: 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); transition: all .16s ease; }
+.carrier-card.active { border-color: color-mix(in srgb, var(--success) 45%, var(--border)); }
+.carrier-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.carrier-title { display: flex; flex-direction: column; gap: 3px; }
+.carrier-title b { font-size: 14px; color: var(--text); }
+.carrier-desc { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+.carrier-meta { margin: 10px 0; padding: 8px 10px; background: var(--bg); border-radius: 6px; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.carrier-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+
 @media (max-width: 1100px) {
   main#page { padding-inline: 20px; }
   .server-form { grid-template-columns: repeat(6, minmax(0, 1fr)); }
@@ -461,5 +498,192 @@ pre { max-height: 260px; margin: 8px 0 0; padding: 12px; overflow: auto; border:
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-  .flow { animation: none; }
+  .flow, .cable-flow { animation: none !important; }
 }
+
+/* ============ Visual Wiring Patch Panel ============ */
+.patch-board-wrap {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-top: 12px;
+  overflow-x: auto;
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, .2);
+}
+
+.patch-svg {
+  display: block;
+  width: 100%;
+  min-width: 880px;
+  height: auto;
+  user-select: none;
+}
+
+/* Cable paths */
+.cable-wire {
+  fill: none;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  cursor: pointer;
+  transition: stroke .2s, stroke-width .2s, opacity .25s, filter .2s;
+}
+
+.cable-wire:hover {
+  stroke-width: 5;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+.cable-wire.ws       { stroke: #38bdf8; }
+.cable-wire.kcp      { stroke: #818cf8; stroke-dasharray: 6 3; }
+.cable-wire.backhaul { stroke: #fbbf24; }
+.cable-wire.noise    { stroke: #c084fc; }
+.cable-wire.plain    { stroke: #fb923c; }
+.cable-wire.frp      { stroke: #f97316; stroke-dasharray: 8 3; }
+.cable-wire.gre      { stroke: #10b981; }
+.cable-wire.down     { stroke: #f43f5e; stroke-dasharray: 4 4; opacity: .7; }
+
+/* Pulse animations */
+@keyframes signalPulse {
+  from { stroke-dashoffset: 48; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.cable-flow {
+  stroke-dasharray: 8 4;
+  animation: signalPulse 1.4s linear infinite;
+}
+
+/* Highlight states */
+.patch-dim .cable-wire:not(.cable-active) {
+  opacity: 0.12;
+  filter: grayscale(85%);
+}
+
+.patch-dim .patch-socket:not(.socket-active) {
+  opacity: 0.25;
+}
+
+.cable-wire.cable-active {
+  stroke-width: 5.5;
+  filter: drop-shadow(0 0 10px currentColor);
+}
+
+/* Sockets */
+.patch-socket {
+  cursor: pointer;
+  transition: transform .2s, filter .2s;
+}
+
+.patch-socket:hover circle.pin {
+  filter: drop-shadow(0 0 8px var(--primary));
+}
+
+/* Circuit Inspector Floating Card */
+.circuit-inspector {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-2);
+  border: 1.5px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .65), 0 0 20px color-mix(in srgb, var(--primary) 25%, transparent);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 9999;
+  backdrop-filter: blur(14px);
+  animation: slideUp .2s ease-out;
+  max-width: 92vw;
+  flex-wrap: wrap;
+}
+
+.pin.patch-pin-draggable {
+  cursor: crosshair;
+  transition: transform .15s, r .15s;
+}
+.pin.patch-pin-draggable:hover {
+  r: 8px;
+  stroke: var(--primary) !important;
+  stroke-width: 3.5px;
+  filter: drop-shadow(0 0 8px var(--primary));
+}
+.pin.pin-selected {
+  r: 9px;
+  stroke: #f59e0b !important;
+  stroke-width: 4px;
+  animation: signalPulse 1s infinite;
+}
+.pin.pin-target-hover {
+  r: 10px;
+  stroke: #10b981 !important;
+  stroke-width: 4px;
+  filter: drop-shadow(0 0 12px #10b981);
+}
+.cable-wire.active-drag {
+  stroke: #f59e0b;
+  stroke-width: 3.5px;
+  stroke-dasharray: 6 3;
+  animation: signalPulse .8s linear infinite;
+  filter: drop-shadow(0 0 8px #f59e0b);
+  pointer-events: none;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.circuit-inspector .ci-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.circuit-inspector .ci-path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--primary);
+  direction: ltr;
+  text-align: left;
+}
+
+.circuit-inspector .ci-close {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+/* Mini wiring strip for server pages */
+.mini-wiring-strip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.mini-circuit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+}
+

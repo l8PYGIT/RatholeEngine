@@ -27,6 +27,8 @@ SVC_FILE="/etc/rathole/services.conf"
 BH_SVC_FILE="/etc/rathole/bh-services.conf"
 CLIENT_TOML="/etc/rathole/client.toml"
 SVC="rathole-client"
+FRP_CLI_TOML="/etc/frp/frpc.toml"
+FRP_CLI_SVC="frpc"
 
 # TAVAJOH: c_g/c_r/c_y/log/warn/err/die/need_root/kcp_profile inja DOBARE tarif NEMISHAVAND —
 # tanha manba-eshan common.sh ast (bala source shod). ghablan har se file copy dashtand va chon
@@ -39,7 +41,7 @@ if ! declare -F rth_commit_config >/dev/null 2>&1; then
   exit 1
 fi
 
-NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN"
+NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN FRP_REMOTE FRP_TOKEN FRP_TRANSPORT GRE_REMOTE GRE_TUNNEL_IP GRE_NAME"
 
 load_env_file(){
   local file="$1" line key val old_key
@@ -97,7 +99,7 @@ check_inbound(){
 # tanha tadakhol-e vaghei ba nginx-e node (80/443) ast ke check_inbound an ra migirad.
 # argument sevom (self) faghat baraye sazgari-ye emza negah dashte shode.
 check_port_conflict(){
-  local port="$1" label="$2" self="${3:-}"
+  local port="$1" label="$2" _self="${3:-}"
   check_inbound "$port" "$label" || return 1
   return 0
 }
@@ -823,6 +825,131 @@ cmd_backhaul(){
   esac
 }
 
+# ---------- FRP: core-e reverse-tunnel-e fatedier/frp (frpc) ----------
+gen_frp_client_toml(){
+  local server_ip="$1" server_port="$2" token="$3" transport="${4:-tcp}"
+  mkdir -p "$(dirname "$FRP_CLI_TOML")"
+  local tmp; tmp="$(rth_mktemp)"
+  {
+    echo "# tvlid khodkar tvst ratholenode — frp client"
+    echo "serverAddr = \"$server_ip\""
+    echo "serverPort = $server_port"
+    echo "auth.token = \"$token\""
+    echo "transport.protocol = \"$transport\""
+    echo "transport.tcpMux = true"
+    echo
+    if [ -f "$SVC_FILE" ]; then
+      while IFS='|' read -r name stoken inbound; do
+        [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
+        echo "[[proxies]]"
+        echo "name = \"$name\""
+        echo "type = \"tcp\""
+        echo "localIP = \"127.0.0.1\""
+        echo "localPort = $inbound"
+        echo "remotePort = $inbound"
+        echo
+      done < "$SVC_FILE"
+    fi
+  } > "$tmp"
+  rth_commit_config "$tmp" "$FRP_CLI_TOML"
+}
+
+cmd_frp(){
+  need_root
+  local sub="${1:-status}"; shift || true
+  case "$sub" in
+    on)   cmd_frp_on "$@" ;;
+    off)  cmd_frp_off ;;
+    status) cmd_frp_status ;;
+    *) die "estefade: ratholenode frp <on <iran_ip:port> <token> [transport]|off|status>" ;;
+  esac
+}
+
+cmd_frp_on(){
+  local remote="${1:-}" token="${2:-}" transport="${3:-tcp}"
+  [ -n "$remote" ] && [ -n "$token" ] || die "estefade: ratholenode frp on <iran_ip:port> <token> [transport]"
+  echo "$remote" | grep -qE '^[^:]+:[0-9]+$' || die "adres bayad be shkl IP:PORT bashad."
+  local sip sport
+  sip="${remote%:*}"
+  sport="${remote##*:}"
+  install_frp client
+  frp_systemd_unit client
+  gen_frp_client_toml "$sip" "$sport" "$token" "$transport"
+  systemctl enable "$FRP_CLI_SVC" >/dev/null 2>&1 || true
+  systemctl restart "$FRP_CLI_SVC" 2>/dev/null && log "$FRP_CLI_SVC start shod." || err "start-e $FRP_CLI_SVC nashod."
+  env_set TUNNEL frp
+  env_set FRP_REMOTE "$remote"
+  env_set FRP_TOKEN "$token"
+  env_set FRP_TRANSPORT "$transport"
+  log "tunnel be halat FRP ($transport) switch shod → $remote"
+}
+
+cmd_frp_off(){
+  systemctl disable --now "$FRP_CLI_SVC" 2>/dev/null || true
+  rm -f "$FRP_CLI_TOML"
+  env_set TUNNEL ws
+  gen_client
+  restart_svc
+  log "tunnel be halat websocket/443 bargasht."
+}
+
+cmd_frp_status(){
+  load_env
+  local mode="${TUNNEL:-ws}"
+  echo "halat tunnel: $(c_y "$mode")"
+  if [ "$mode" = "frp" ]; then
+    echo "  remote: ${FRP_REMOTE:-?}   transport: ${FRP_TRANSPORT:-tcp}"
+    systemctl is-active --quiet "$FRP_CLI_SVC" && echo "  $FRP_CLI_SVC: $(c_g 'active')" || echo "  $FRP_CLI_SVC: $(c_r 'inactive')"
+  fi
+}
+
+# ---------- GRE: tunnel-e shabake-ye L3 Linux (ip tunnel) ----------
+cmd_gre(){
+  need_root
+  local sub="${1:-status}"; shift || true
+  case "$sub" in
+    on)   cmd_gre_on "$@" ;;
+    off)  cmd_gre_off "${1:-}" ;;
+    status) cmd_gre_status ;;
+    *) die "estefade: ratholenode gre <on <iran_ip> [tunnel_ip] [gre_name]|off [gre_name]|status>" ;;
+  esac
+}
+
+cmd_gre_on(){
+  local iran_ip="${1:-}" tunnel_ip="${2:-10.10.10.2}" gre_name="${3:-gre1}"
+  [ -n "$iran_ip" ] || die "estefade: ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]"
+  echo "$iran_ip" | grep -qE '^[0-9.]+$' || die "iran_ip bayad IPv4 motabar bashad."
+  echo "$tunnel_ip" | grep -qE '^[0-9.]+$' || die "tunnel_ip bayad IPv4 motabar bashad (masalan 10.10.10.2)."
+  echo "$gre_name" | grep -qE '^[a-zA-Z0-9_-]{2,15}$' || die "gre_name namotabar ast."
+  local local_ip; local_ip="$(detect_ip)"
+  gre_setup_interface "$gre_name" "$local_ip" "$iran_ip" "$tunnel_ip" || die "rah-andazi GRE tunnel shekast khord."
+  env_set GRE_REMOTE "$iran_ip"
+  env_set GRE_TUNNEL_IP "$tunnel_ip"
+  env_set GRE_NAME "$gre_name"
+  log "GRE tunnel '$gre_name' faal shod (local: $local_ip, remote: $iran_ip, tunnel: $tunnel_ip/30)."
+}
+
+cmd_gre_off(){
+  local gre_name="${1:-}"
+  [ -n "$gre_name" ] || gre_name="${GRE_NAME:-gre1}"
+  gre_teardown_interface "$gre_name"
+  env_set GRE_REMOTE ""
+  env_set GRE_TUNNEL_IP ""
+  env_set GRE_NAME ""
+  log "GRE tunnel '$gre_name' khamoosh shod."
+}
+
+cmd_gre_status(){
+  load_env
+  local gn="${GRE_NAME:-}"
+  if [ -n "$gn" ]; then
+    echo "GRE tunnel: $(c_g 'roshan')  interface: $gn (tunnel: ${GRE_TUNNEL_IP:-?}/30, peer: ${GRE_REMOTE:-?})"
+    command -v ip >/dev/null 2>&1 && { ip link show "$gn" 2>/dev/null && echo "  link status: $(c_g 'UP')" || echo "  link status: $(c_r 'DOWN')"; }
+  else
+    echo "GRE tunnel: $(c_y 'khamoosh')"
+  fi
+}
+
 cmd_tune(){
 
   need_root
@@ -889,6 +1016,22 @@ UNIT
       ;;
     status) systemctl --no-pager status ${FAKEWEB_SVC} | sed -n '1,8p' || true ;;
     *) die "estefade: ratholenode fakeweb <start|stop|rm|status> [port]" ;;
+  esac
+}
+
+AGENT_SVC="rathole-agent"
+cmd_agent(){
+  need_root
+  local action="${1:-status}" port="${2:-8089}" token="${3:-}"
+  shift 2>/dev/null || true; shift 2>/dev/null || true; shift 2>/dev/null || true
+  case "$action" in
+    start)   systemctl start ${AGENT_SVC} 2>/dev/null && log "agent faal shod." || warn "shekast dar start agent." ;;
+    stop)    systemctl stop ${AGENT_SVC} 2>/dev/null && log "agent motevaghef shod." || warn "agent ejra nabood." ;;
+    restart) systemctl restart ${AGENT_SVC} 2>/dev/null && log "agent restart shod." || warn "shekast dar restart agent." ;;
+    status)  systemctl --no-pager status ${AGENT_SVC} 2>/dev/null | head -n8 || echo "agent nasb nist." ;;
+    token)   [ -f "/etc/rathole-agent/token" ] && cat /etc/rathole-agent/token || echo "token peyda nashod (/etc/rathole-agent/token)." ;;
+    install) bash "$(dirname "$0")/install-agent.sh" --port "$port" --token "$token" --role "node" ;;
+    *)       die "estefade: ratholenode agent <start|stop|restart|status|token|install> [port] [token]" ;;
   esac
 }
 cmd_check(){
@@ -1338,7 +1481,7 @@ wd_on(){
   echo "$interval" | grep -qE '^[0-9]+$' || die "baze bayad adad (sanie) bashad."
   [ "$interval" -ge 5 ] && [ "$interval" -le 3600 ] \
     || die "baze bayad beyn-e 5 ta 3600 sanie bashad."
-  printf 'INTERVAL=%s\nWD_WINDOW=%s\nWD_FAILS=%s\n' "$interval" "${WD_WINDOW:-75}" "${WD_FAILS:-8}" > "$WD_ENV"
+  printf 'INTERVAL=%s\nWD_WINDOW=%s\nWD_FAILS=%s\nWD_PROBE_FAILS=%s\n' "$interval" "${WD_WINDOW:-75}" "${WD_FAILS:-8}" "${WD_PROBE_FAILS:-3}" > "$WD_ENV"
   cat > "$WD_SVC" <<UNIT
 [Unit]
 Description=rathole watchdog (auto-restart stuck tunnels)
@@ -1369,6 +1512,7 @@ UNIT
 wd_off(){
   systemctl disable --now rathole-watchdog.timer 2>/dev/null || true
   rm -f "$WD_SVC" "$WD_TIMER"; systemctl daemon-reload 2>/dev/null || true
+  rm -f "${WD_PROBE_FAILS_FILE:-$(dirname "${WD_ENV:-/etc/rathole/watchdog.env}")/wd-probe-fails}" 2>/dev/null || true
   log "watchdog khamoosh shod."
 }
 
@@ -1382,6 +1526,7 @@ wd_status(){
 # check yek tunnel: agar service/kcp paiin bashad ya (dar hale-e paiin-boodan) log akhir pr az retry/khata bashad → restart
 wd_check_one(){ # $1=rathole-svc  $2=kcp-unit(ekhtiari)  $3=label
   local svc="$1" kcp="$2" label="$3" bad=0 fails svc_up=1
+  local probe_fail_file="${WD_PROBE_FAILS_FILE:-$(dirname "${WD_ENV:-/etc/rathole/watchdog.env}")/wd-probe-fails}"
   systemctl is-active --quiet "$svc" || { bad=1; svc_up=0; }
   if [ -n "$kcp" ] && [ -f "/etc/systemd/system/${kcp}.service" ]; then
     systemctl is-active --quiet "$kcp" || bad=1
@@ -1396,15 +1541,31 @@ wd_check_one(){ # $1=rathole-svc  $2=kcp-unit(ekhtiari)  $3=label
     fails=0
     # service ممکن است active باشد اما tunnel عملاً handshake نکند؛
     # probe فقط برای lane اصلی اجرا می‌شود تا watchdog با upstreamها تداخل نکند.
+    # baraye jelogiri az flapping dar asar-e jitter ya oft-e kotah-modat-e packet،
+    # hadeaghal WD_PROBE_FAILS (pishfarz: 3) khataye pey-dar-pey lazem ast ta restart shavad.
     if [ "$svc" = "$SVC" ] && [ "${WD_PROBE:-1}" = 1 ] && declare -F adaptive_run_probe >/dev/null 2>&1; then
       local probe_cls
       probe_cls="$(ADAPTIVE_WRITE_STATE=0 adaptive_run_probe 2>/dev/null || echo probe_failed)"
       if [ "$probe_cls" != "healthy" ]; then
-        bad=1; fails=1
+        local p_fails=0
+        if [ -f "$probe_fail_file" ]; then
+          p_fails="$(cat "$probe_fail_file" 2>/dev/null || echo 0)"
+          [[ "$p_fails" =~ ^[0-9]+$ ]] || p_fails=0
+        fi
+        p_fails=$((p_fails + 1))
+        echo "$p_fails" > "$probe_fail_file" 2>/dev/null || true
+        local max_fails="${WD_PROBE_FAILS:-3}"
+        if [ "$p_fails" -ge "$max_fails" ]; then
+          bad=1; fails="$p_fails"
+          rm -f "$probe_fail_file" 2>/dev/null || true
+        fi
+      else
+        rm -f "$probe_fail_file" 2>/dev/null || true
       fi
     fi
   fi
   if [ "$bad" -eq 1 ]; then
+    rm -f "$probe_fail_file" 2>/dev/null || true
     logger -t rathole-watchdog "restart tunnel '$label' (svc=$svc up=$svc_up fails=$fails)" 2>/dev/null || true
     [ -n "$kcp" ] && [ -f "/etc/systemd/system/${kcp}.service" ] && systemctl restart "$kcp" 2>/dev/null || true
     systemctl restart "$svc" 2>/dev/null || true
@@ -1679,6 +1840,7 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   control-path set <masir>       tanzim masir-e makhfi (masalan: /_rh/abc123...) + restart + rollback-e khodkar
                                  ⚠ FAGHAT vaghti server-e Iran az ghabl `ratholectl control-path rotate` zade
   control-path clear             bargasht be '/' (pishfarz) — tunnel-haye bedoon-e patch ham kar mikonand
+  agent <start|stop|restart|status|token|install> [port] [token]  modiriat agent daemon baraye API
   logs [n]                       log-e rathole-client
   logs all [n] [--bundle]        log-e HAME chiz (service-ha + config-ha) — token-ha redact mishavand; --bundle = file-e .txt.gz baraye scp
   show                           namayesh tanzimat (tokenha makhfi)
@@ -2031,6 +2193,8 @@ main(){
     plain)   shift; cmd_plain "$@" ;;
     noise)   shift; cmd_noise "$@" ;;
     backhaul) shift; cmd_backhaul "$@" ;;
+    frp)     shift; cmd_frp "$@" ;;
+    gre)     shift; cmd_gre "$@" ;;
     restart) need_root; restart_svc ;;
 
     watchdog) shift; cmd_watchdog "$@" ;;
@@ -2044,6 +2208,7 @@ main(){
     status)  cmd_status ;;
     update)  shift; cmd_update "${1:-}" ;;
     adaptive) shift; cmd_adaptive "$@" ;;
+    agent)   shift; cmd_agent "$@" ;;
     logs)    shift
              if [ "${1:-}" = all ]; then shift; cmd_logs_all "$@"; else cmd_logs "${1:-50}"; fi ;;
     version|--version|-V) print_version node ;;

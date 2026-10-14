@@ -90,7 +90,10 @@ bundle_version(){
 # do reshte-ye dot-jodashode (mesl "1.6.0" ya "beta.7") ra field-be-field moghayese mikonad.
 # echo mikonad: -1 (A<B), 0 (barabar), 1 (A>B). field-e adadi adadi (10>9)، gheyr-adadi rشته-i.
 _fields_cmp(){
-  local IFS=. ; local -a fa=($1) fb=($2); unset IFS
+  local IFS=. ; local -a fa=() fb=()
+  read -ra fa <<< "$1"
+  read -ra fb <<< "$2"
+  unset IFS
   local i n=${#fa[@]}; [ ${#fb[@]} -gt "$n" ] && n=${#fb[@]}
   for ((i=0; i<n; i++)); do
     local x="${fa[i]:-0}" y="${fb[i]:-0}"

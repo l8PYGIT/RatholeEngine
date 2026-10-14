@@ -48,8 +48,11 @@ rm -f /usr/local/bin/backhaul-client
 systemctl daemon-reload 2>/dev/null || true
 
 # ---------- hazf config va state ----------
-log "hazf client.toml va node.env..."
+log "hazf client.toml, node.env va service-ha..."
 rm -f /etc/rathole/client.toml /etc/rathole/node.env /etc/rathole/backhaul-client.toml
+rm -f /etc/rathole/services.conf /etc/rathole/bh-services.conf /etc/rathole/upstreams.conf
+rm -f /etc/rathole/watchdog.env /etc/rathole/failover.state /etc/rathole/adaptive.env /etc/rathole/adaptive-state.json /etc/rathole/wd-probe-fails
+rm -rf /etc/rathole/upstreams
 if [ -d /etc/rathole ] && [ -z "$(ls -A /etc/rathole 2>/dev/null)" ]; then rmdir /etc/rathole; fi
 
 # ---------- hazf abzar ----------

@@ -240,7 +240,7 @@ install_backhaul_core(){
     ( cd "$d" && sha256sum -c SHA256SUMS --ignore-missing --quiet ) 2>/dev/null || {
       err "checksum-e core-e backhaul motabar nist ($d) — rad shod."; continue; }
     want="$(sha256sum "$d/$target/backhaul" 2>/dev/null | cut -d' ' -f1)"
-    have=""; [ -x "$bin" ] && have="$(sha256sum "$bin" 2>/dev/null | cut -d' ' -f1)"
+    have=""; [ -f "$bin" ] && have="$(sha256sum "$bin" 2>/dev/null | cut -d' ' -f1)"
     [ -n "$want" ] && [ "$want" = "$have" ] && return 0   # az ghabl haman core ast
     install -m755 "$d/$target/backhaul" "$bin" || continue
     log "backhaul-$role az core-e patch-shode nasb/berooz shod (uTLS): $bin"
@@ -362,4 +362,87 @@ rth_file_dump(){ # $1=barchasb  $2=masir  [$3=hadaksar khat]
   [ -f "$p" ] || { rth_sec "$label ($p) — NIST"; return 0; }
   rth_sec "$label ($p)"
   head -n "$n" "$p" 2>/dev/null | rth_redact || true
+}
+
+# ---------------------------------------------------------------------------
+# FRP Core Integration (fatedier/frp)
+# ---------------------------------------------------------------------------
+install_frp(){
+  local role="$1" bin="${RATHOLE_BIN_DIR:-/usr/local/bin}/frp${role:0:1}" ver="${FRP_VER:-0.61.1}" arch tmp ok=0 m
+  # role: server -> frps, client -> frpc
+  [ -x "$bin" ] && return 0
+  case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) die "memari poshtibani nemishavad." ;; esac
+  command -v curl >/dev/null 2>&1 || die "curl lazem ast."
+  log "download FRP ${ver} ($role)..."
+  tmp="$(mktemp -d)"
+  local fname="frp_${ver}_linux_${arch}.tar.gz"
+  for m in "" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/"; do
+    if curl -fsSL --connect-timeout 20 --retry 2 "${m}https://github.com/fatedier/frp/releases/download/v${ver}/${fname}" -o "$tmp/frp.tgz" 2>/dev/null; then ok=1; break; fi
+    warn "in mnba javab nadad, mnba-ye badi..."
+  done
+  [ "$ok" -eq 1 ] || { rm -rf "$tmp"; die "download frp az hame-ye mnaba shekast khord."; }
+  tar -xzf "$tmp/frp.tgz" -C "$tmp" || { rm -rf "$tmp"; die "baz kardan arshiv frp shekast khord."; }
+  local target_bin="frp${role:0:1}" # frps or frpc
+  local src; src="$(find "$tmp" -maxdepth 2 -type f -name "$target_bin" | head -n1)"
+  [ -n "$src" ] || { rm -rf "$tmp"; die "binary-e $target_bin dar arshiv peyda nashod."; }
+  install -m755 "$src" "$bin" || { rm -rf "$tmp"; die "nasb binary frp shekast khord."; }
+  rm -rf "$tmp"
+  log "frp $role nasb shod: $bin"
+}
+
+frp_systemd_unit(){
+  local role="$1" # server or client
+  local sname="frp${role:0:1}"
+  local cfg="/etc/frp/${sname}.toml"
+  mkdir -p /etc/frp
+  cat >"/etc/systemd/system/${sname}.service" <<EOF
+[Unit]
+Description=FRP ${role} Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Restart=on-failure
+RestartSec=5s
+ExecStart=/usr/local/bin/${sname} -c ${cfg}
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# GRE L3 Linux Tunnel Integration
+# ---------------------------------------------------------------------------
+gre_setup_interface(){
+  local name="${1:-gre1}" local_ip="$2" remote_ip="$3" tunnel_ip="$4"
+  modprobe ip_gre 2>/dev/null || true
+  ip tunnel del "$name" 2>/dev/null || true
+  ip tunnel add "$name" mode gre local "$local_ip" remote "$remote_ip" ttl 255 || return 1
+  ip addr add "$tunnel_ip/30" dev "$name" || return 1
+  ip link set "$name" mtu 1476 up || return 1
+  iptables -t mangle -C POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o "$name" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null ||     iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o "$name" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+  sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+  log "GRE tunnel '$name' faal shod: $tunnel_ip/30 (remote: $remote_ip, mtu: 1476)"
+}
+
+gre_teardown_interface(){
+  local name="${1:-gre1}"
+  ip link set "$name" down 2>/dev/null || true
+  ip tunnel del "$name" 2>/dev/null || true
+  iptables -t mangle -D POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o "$name" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+  log "GRE tunnel '$name' pak shod."
+}
+
+detect_ip(){
+  if [ -n "${RATHOLE_PUBLIC_IP:-}" ]; then printf '%s' "$RATHOLE_PUBLIC_IP"; return; fi
+  local ip=""
+  if command -v curl >/dev/null 2>&1; then
+    ip="$(curl -fsS4 --connect-timeout 2 --max-time 3 https://api.ipify.org 2>/dev/null)"
+  fi
+  [ -n "$ip" ] || ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  printf '%s' "$ip"
 }

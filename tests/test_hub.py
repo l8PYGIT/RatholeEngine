@@ -326,5 +326,36 @@ class TestDualCoreActions(unittest.TestCase):
         self.assertIsNone(build_node_cmd("rm_bh_svc", {"name": "x\n"}))
 
 
+class TestLoginRateLimit(unittest.TestCase):
+    def setUp(self):
+        hub.login_reset("1.2.3.4")
+        hub.login_reset("test-client")
+        hub.login_reset("new-ip")
+        hub.login_reset("old-ip-1")
+        hub.login_reset("old-ip-2")
+
+
+    def test_login_rate_limit_blocks_after_max(self):
+        ip = "1.2.3.4"
+        for _ in range(5):
+            self.assertTrue(hub.login_allowed(ip))
+            hub.login_record_fail(ip)
+        self.assertFalse(hub.login_allowed(ip))
+        hub.login_reset(ip)
+        self.assertTrue(hub.login_allowed(ip))
+
+    def test_login_rate_limit_pruning(self):
+        with hub._login_lock:
+            # Insert expired entries
+            hub._LOGIN_FAILS["old-ip-1"] = [100.0]
+            hub._LOGIN_FAILS["old-ip-2"] = [200.0]
+        # Calling login_allowed should prune expired keys
+        self.assertTrue(hub.login_allowed("new-ip"))
+        with hub._login_lock:
+            self.assertNotIn("old-ip-1", hub._LOGIN_FAILS)
+            self.assertNotIn("old-ip-2", hub._LOGIN_FAILS)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

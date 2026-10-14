@@ -63,7 +63,9 @@ if ! command -v rathole >/dev/null 2>&1; then
   curl -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --retry 2 \
        "$url" -o "$tmp/rathole.zip" || die "download rathole shekast khord (shabake/filtr?)."
   unzip -o "$tmp/rathole.zip" -d "$tmp" >/dev/null
-  install -m 755 "$tmp/rathole" /usr/local/bin/rathole
+  b="$(find "$tmp" -type f -name rathole -print -quit 2>/dev/null)"
+  [ -n "$b" ] || { rm -rf "$tmp"; die "binary-e rathole dar zip peyda nashod."; }
+  install -m 755 "$b" /usr/local/bin/rathole
   rm -rf "$tmp"
 fi
 
@@ -76,7 +78,6 @@ fi
 mkdir -p /etc/rathole
 
 # ---------- nasb ratholenode ----------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "$SCRIPT_DIR/ratholenode" ] && { install -m 755 "$SCRIPT_DIR/ratholenode" /usr/local/bin/ratholenode; log "ratholenode nasb shod."; } || warn "ratholenode knar askript nist."
 [ -f "$SCRIPT_DIR/common.sh" ] && { mkdir -p /usr/local/share/rathole; install -m 644 "$SCRIPT_DIR/common.sh" /usr/local/share/rathole/common.sh; rm -f /usr/local/bin/common.sh; log "common.sh nasb shod."; }
 # core-e backhaul-e patch-shode (uTLS) — bebin tozih dar install-panel.sh

@@ -528,6 +528,7 @@ pre { max-height: 260px; margin: 8px 0 0; padding: 12px; overflow: auto; border:
   stroke-width: 3.2;
   stroke-linecap: round;
   cursor: pointer;
+  pointer-events: stroke;
   transition: stroke .2s, stroke-width .2s, opacity .25s, filter .2s;
 }
 

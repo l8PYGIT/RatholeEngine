@@ -1148,6 +1148,7 @@ function handlePinPairSelected(p1, p2) {
 
 function promptPatchProtocol(iranSrv, nodeName, defaultPort, p1Coord, p2Coord) {
   const opts = [
+    {v:'frp_gre', t:'🚀🛡️ ترکیبی FRP + GRE (لایه ۳ با استریم مالتی‌پلکس)'},
     {v:'frp', t:'🚀 هسته تونل معکوس FRP (fatedier - مالتی‌پلکس TCP/KCP/QUIC)'},
     {v:'ws', t:'🌐 وب‌سوکت با TLS روی ۴۴۳ (WS+TLS - مسیر مخفی پیش‌فرض)'},
     {v:'backhaul', t:'⚡ مالتی‌پلکس ترافیک بالا Backhaul (SMUX)'},
@@ -1156,19 +1157,37 @@ function promptPatchProtocol(iranSrv, nodeName, defaultPort, p1Coord, p2Coord) {
     {v:'noise', t:'🔒 پروتکل امن رمزنگاری Noise (X25519 بدون گواهی)'},
     {v:'plain', t:'📡 ساده بدون رمز Plain (HTTP/8880)'}
   ];
+  const frpTrOpts = [
+    {v:'quic', t:'QUIC (بر پایه UDP، ضد فیلتر و پرسرعت)'},
+    {v:'kcp', t:'KCP (بر پایه UDP با تصحیح خطای FEC)'},
+    {v:'websocket', t:'WebSocket (شبیه ترافیک وب)'},
+    {v:'tcp', t:'TCP (حالت استاندارد)'}
+  ];
+  const profOpts = [
+    {v:'balanced', t:'Balanced (متعادل - پکت‌لاس عادی)'},
+    {v:'lossy', t:'Lossy (مخصوص شبکه‌های ناپایدار با FEC بالا)'},
+    {v:'aggressive', t:'Aggressive (مخصوص اینترنت بشدت فیلتر و اختلال‌دار)'}
+  ];
 
   formModal(`🔌 اتصال سیم‌کشی جدید: ${iranSrv} ⟵⟶ ${nodeName}`, [
-    {id:'carrier', label:'پروتکل و حامل ارتباطی تونل را انتخاب کنید:', type:'select', val:'frp', opts:opts},
+    {id:'carrier', label:'پروتکل و حامل ارتباطی تونل را انتخاب کنید:', type:'select', val:'frp_gre', opts:opts},
+    {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP و FRP+GRE):', type:'select', val:'quic', opts:frpTrOpts},
+    {id:'profile', label:'پروفایل شتاب KCP / Backhaul:', type:'select', val:'balanced', opts:profOpts},
+    {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE و FRP+GRE):', type:'text', val:'10.10.10.1', ph:'10.10.10.1'},
     {id:'port', label:'پورت اینباند داخلی سرور ایران (Backend Port):', type:'text', val:defaultPort || '8443', hint:'پورتی که ترافیک ورودی به آن فوروارد می‌شود'}
   ], async v => {
     closeModal();
     const carrier = v.carrier;
     const port = parseInt(v.port, 10) || defaultPort || 8443;
-    applyPatchConnection(iranSrv, nodeName, carrier, port, p1Coord, p2Coord);
+    applyPatchConnection(iranSrv, nodeName, carrier, port, p1Coord, p2Coord, {
+      frp_transport: v.frp_tr || 'quic',
+      profile: v.profile || 'balanced',
+      gre_ip: v.gre_ip || '10.10.10.1'
+    });
   });
 }
 
-function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2) {
+function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = {}) {
   if (!OVS[iranSrv]) OVS[iranSrv] = {};
   if (!OVS[iranSrv].nodes) OVS[iranSrv].nodes = [];
 
@@ -1176,24 +1195,38 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2) {
   if (existing) {
     existing.transport = carrier;
     existing.port = port;
+    existing.frp_transport = extra.frp_transport || existing.frp_transport;
+    existing.profile = extra.profile || existing.profile;
+    existing.gre_ip = extra.gre_ip || existing.gre_ip;
   } else {
     OVS[iranSrv].nodes.push({
       name: nodeName,
       port: port,
       transport: carrier,
-      inbound_port: port
+      inbound_port: port,
+      frp_transport: extra.frp_transport,
+      profile: extra.profile,
+      gre_ip: extra.gre_ip
     });
   }
 
   const cid = 'c_' + iranSrv + '_' + nodeName;
   let custom = PATCH_CUSTOM_CIRCUITS.find(x => x.id === cid);
   if (!custom) {
-    custom = { id: cid, iran: iranSrv, node: nodeName, carrier: carrier, port: port, status: 'ok', newlyPlugged: true };
+    custom = {
+      id: cid, iran: iranSrv, node: nodeName, carrier: carrier, port: port, status: 'ok', newlyPlugged: true,
+      frp_transport: extra.frp_transport || 'quic',
+      profile: extra.profile || 'balanced',
+      gre_ip: extra.gre_ip || '10.10.10.1'
+    };
     PATCH_CUSTOM_CIRCUITS.push(custom);
   } else {
     custom.carrier = carrier;
     custom.port = port;
     custom.newlyPlugged = true;
+    if (extra.frp_transport) custom.frp_transport = extra.frp_transport;
+    if (extra.profile) custom.profile = extra.profile;
+    if (extra.gre_ip) custom.gre_ip = extra.gre_ip;
   }
 
   drawPatchBoard();
@@ -1202,7 +1235,7 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2) {
   if (svg) {
     const carrierColors = {
       ws: '#38bdf8', kcp: '#818cf8', backhaul: '#fbbf24', noise: '#c084fc',
-      plain: '#fb923c', frp: '#f97316', gre: '#10b981'
+      plain: '#fb923c', frp: '#f97316', gre: '#10b981', frp_gre: '#10b981'
     };
     const col = carrierColors[carrier] || '#fbbf24';
     if (p1 && p1.x && p1.y) triggerSocketPuff(svg, p1.x, p1.y, col);
@@ -1210,7 +1243,8 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2) {
   }
 
   highlightCircuit(cid);
-  toast(`✨ سیم‌کشی جدید با موفقیت وصل شد: ${iranSrv} ➔ ${nodeName} [${carrier.toUpperCase()}] ✓`);
+  const carrierTitle = carrier === 'frp_gre' ? 'FRP+GRE (ترکیبی)' : carrier.toUpperCase();
+  toast(`✨ سیم‌کشی جدید با موفقیت وصل شد: ${iranSrv} ➔ ${nodeName} [${carrierTitle}] ✓`);
 
   // Clear animation flag after playback
   setTimeout(() => {
@@ -1227,22 +1261,41 @@ function copyV2rayRecipe(domain, port, path) {
 
 function quickCarrierModal(iran, node, curCarrier) {
   const opts = [
+    {v:'frp_gre', t:'🚀🛡️ ترکیبی FRP + GRE (لایه ۳ با استریم مالتی‌پلکس)'},
+    {v:'frp', t:'🚀 هسته تونل معکوس FRP (fatedier - مالتی‌پلکس TCP/KCP/QUIC)'},
     {v:'ws', t:'🌐 وب‌سوکت با TLS روی ۴۴۳ (WS)'},
     {v:'kcp', t:'🛡️ پروتکل ضد اختلال KCP (UDP+FEC)'},
     {v:'backhaul', t:'⚡ مالتی‌پلکس ترافیک بالا Backhaul (SMUX)'},
     {v:'noise', t:'🔒 پروتکل امن رمزنگاری Noise'},
     {v:'plain', t:'📡 ساده بدون رمز Plain (HTTP)'},
-    {v:'frp', t:'🚀 هسته تونل معکوس FRP (fatedier)'},
     {v:'gre', t:'🌐 تونل شبکه L3 لینوکس GRE'}
   ];
-  formModal(`تغییر پروتکل ارتباطی نود ${node}`, [
-    {id:'carrier', label:'پروتکل و حامل جدید:', type:'select', val:curCarrier, opts:opts}
+  const c = buildWiringModel().circuits.find(x => x.node === node) || {};
+  const frpTrOpts = [
+    {v:'quic', t:'QUIC (بر پایه UDP، ضد فیلتر و پرسرعت)'},
+    {v:'kcp', t:'KCP (بر پایه UDP با تصحیح خطای FEC)'},
+    {v:'websocket', t:'WebSocket (شبیه ترافیک وب)'},
+    {v:'tcp', t:'TCP (حالت استاندارد)'}
+  ];
+  const profOpts = [
+    {v:'balanced', t:'Balanced (عادی)'},
+    {v:'lossy', t:'Lossy (پکت‌لاس بالا)'},
+    {v:'aggressive', t:'Aggressive (اختلال شدید)'}
+  ];
+  formModal(`تغییر پروتکل و حالت ارتباطی نود ${node}`, [
+    {id:'carrier', label:'پروتکل و حامل جدید:', type:'select', val:curCarrier, opts:opts},
+    {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:c.frp_transport || 'quic', opts:frpTrOpts},
+    {id:'profile', label:'پروفایل شتاب KCP / Backhaul:', type:'select', val:c.profile || 'balanced', opts:profOpts},
+    {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE یا FRP+GRE):', type:'text', val:c.gre_ip || '10.10.10.1'}
   ], async v => {
     closeModal();
-    toast(`پروتکل ${node} به ${v.carrier.toUpperCase()} تغییر یافت ✓`);
-    const c = buildWiringModel().circuits.find(x => x.node === node);
+    const carrierTitle = v.carrier === 'frp_gre' ? 'FRP+GRE' : v.carrier.toUpperCase();
+    toast(`پروتکل ${node} به ${carrierTitle} تغییر یافت ✓`);
     if (c) {
       c.carrier = v.carrier;
+      c.frp_transport = v.frp_tr || 'quic';
+      c.profile = v.profile || 'balanced';
+      c.gre_ip = v.gre_ip || '10.10.10.1';
       showCircuitInspector(c);
       drawPatchBoard();
       highlightCircuit(c.id);
@@ -1322,6 +1375,9 @@ function buildWiringModel() {
       exists.carrier = cc.carrier;
       exists.backendPort = cc.port || exists.backendPort;
       exists.newlyPlugged = cc.newlyPlugged;
+      exists.frp_transport = cc.frp_transport || exists.frp_transport;
+      exists.profile = cc.profile || exists.profile;
+      exists.gre_ip = cc.gre_ip || exists.gre_ip;
     } else {
       const ir = irans.find(i => i.name === cc.iran) || { name: cc.iran, host: '' };
       const nd = nodes.find(n => n.name === cc.node) || { name: cc.node, host: '' };
@@ -1340,7 +1396,10 @@ function buildWiringModel() {
         iranPort: cc.port || 8443,
         backendPort: cc.port || 8443,
         serviceName: cc.node,
-        newlyPlugged: cc.newlyPlugged
+        newlyPlugged: cc.newlyPlugged,
+        frp_transport: cc.frp_transport || 'quic',
+        profile: cc.profile || 'balanced',
+        gre_ip: cc.gre_ip || '10.10.10.1'
       });
     }
   });
@@ -1393,20 +1452,33 @@ function showCircuitInspector(c) {
   const isOk = c.status === 'ok';
   const stColor = isOk ? 'var(--success)' : 'var(--danger)';
   const stText = isOk ? t('wb_signal_ok') : t('wb_signal_warn');
-  const carrierClass = 'b-' + (['ws', 'kcp', 'backhaul', 'noise', 'plain', 'frp', 'gre'].indexOf(c.carrier) >= 0 ? c.carrier : 'ws');
+  const carrierClass = 'b-' + (['ws', 'kcp', 'backhaul', 'noise', 'plain', 'frp', 'gre', 'frp_gre'].indexOf(c.carrier) >= 0 ? c.carrier : 'ws');
+
+  let modeTag = '';
+  if (c.carrier === 'frp' || c.carrier === 'frp_gre') {
+    modeTag += ` <span class="badge" style="background:rgba(249,115,22,0.18);color:#f97316;border:1px solid rgba(249,115,22,0.35);font-size:10px;margin-inline-start:4px;">${(c.frp_transport || 'quic').toUpperCase()}</span>`;
+  }
+  if (c.carrier === 'gre' || c.carrier === 'frp_gre') {
+    modeTag += ` <span class="badge" style="background:rgba(16,185,129,0.18);color:#10b981;border:1px solid rgba(16,185,129,0.35);font-size:10px;margin-inline-start:4px;">IP: ${h(c.gre_ip || '10.10.10.1/30')}</span>`;
+  }
+  if (c.carrier === 'kcp' || c.carrier === 'backhaul') {
+    modeTag += ` <span class="badge" style="background:rgba(129,140,248,0.18);color:#818cf8;border:1px solid rgba(129,140,248,0.35);font-size:10px;margin-inline-start:4px;">${h(c.profile || 'balanced')}</span>`;
+  }
+
+  const carrierLabel = c.carrier === 'frp_gre' ? 'FRP+GRE' : c.carrier.toUpperCase();
 
   insp.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;min-width:260px;">
       <span class="dot" style="background:${stColor};box-shadow:0 0 12px ${stColor};width:12px;height:12px;flex:0 0 12px;"></span>
       <div>
-        <div class="ci-title">${t('wb_circuit')}: <b style="color:var(--text);font-size:14px;">${h(c.node)}</b> <span class="badge ${carrierClass}" style="font-size:10.5px;margin-inline-start:6px;">${c.carrier.toUpperCase()}</span></div>
+        <div class="ci-title">${t('wb_circuit')}: <b style="color:var(--text);font-size:14px;">${h(c.node)}</b> <span class="badge ${carrierClass}" style="font-size:10.5px;margin-inline-start:6px;">${carrierLabel}</span>${modeTag}</div>
         <div class="ci-path" style="margin-top:2px;">${h(c.domain)}:${h(c.ingressPort)}${h(c.ingressPath)} ➔ [${h(c.iran)}] ➔ [${h(c.node)}] ➔ Inbound :${h(c.backendPort)}</div>
       </div>
     </div>
     <div style="margin-inline-start:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <span class="sub" style="font-size:11.5px;color:${stColor};font-weight:700;margin-inline-end:4px;">${stText}</span>
       <button class="g" type="button" style="padding:6px 12px;font-size:12px;" onclick="copyV2rayRecipe('${h(c.domain)}','${h(c.ingressPort)}','${h(c.ingressPath)}')">📋 ${t('wb_copy_v2ray')}</button>
-      <button class="s" type="button" style="padding:6px 12px;font-size:12px;" onclick="quickCarrierModal('${h(c.iran)}','${h(c.node)}','${h(c.carrier)}')">⚡ پروتکل</button>
+      <button class="s" type="button" style="padding:6px 12px;font-size:12px;" onclick="quickCarrierModal('${h(c.iran)}','${h(c.node)}','${h(c.carrier)}')">⚡ پروتکل و مد</button>
       <button class="gh" type="button" style="padding:6px 12px;font-size:12px;" onclick="nav('#/server/${h(c.node)}')">${t('wb_open_node')}</button>
       <button class="r" type="button" style="padding:6px 10px;font-size:12px;" onclick="disconnectCircuit('${c.id}')" title="قطع سیم‌کشی">✂️ قطع</button>
       <button class="ci-close" type="button" onclick="resetCircuit()" title="${t('close')}">×</button>
@@ -1501,12 +1573,13 @@ function drawPatchBoard() {
 
     // Slot 3: Foreign Node Socket (Rack 3)
     const nodePinX = xNode + 16;
+    const laneText = c.carrier === 'frp_gre' ? `lane: frp+gre (${c.frp_transport || 'quic'})` : (c.carrier === 'frp' ? `lane: frp (${c.frp_transport || 'quic'})` : `lane: ${h(c.carrier)}`);
     slotsSvg += `
       <g class="patch-socket" data-cid="${cid}" onclick="highlightCircuit('${cid}')">
         <rect x="${xNode + 10}" y="${cy - 20}" width="${wNode - 20}" height="40" rx="6" fill="var(--surface-3)" stroke="var(--border)" />
         <circle cx="${nodePinX}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin patch-pin-draggable" data-pin-type="node" data-node="${h(c.node)}" data-cid="${cid}" data-x="${nodePinX}" data-y="${cy}" onmousedown="startPatchDrag(event, this)" onmouseup="dropPatchPin(event, this)" onclick="onPinClick(event, this)"/>
         <text x="${xNode + 28}" y="${cy - 4}" fill="var(--text)" font-size="11.5" font-weight="700">${h(c.node)}</text>
-        <text x="${xNode + 28}" y="${cy + 12}" fill="var(--text-muted)" font-size="10.5" font-family="var(--mono)">lane: ${h(c.carrier)}</text>
+        <text x="${xNode + 28}" y="${cy + 12}" fill="var(--text-muted)" font-size="10.5" font-family="var(--mono)">${laneText}</text>
         <circle cx="${xNode + wNode - 16}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin"/>
       </g>
     `;
@@ -1533,7 +1606,7 @@ function drawPatchBoard() {
     const d2 = svgCableD(p3x, cy, p4x, cy);
     const flowClass = isOk ? 'cable-flow' : 'down';
     const plugClass = c.newlyPlugged ? 'newly-plugged' : '';
-    const carrierClass = ['ws', 'kcp', 'backhaul', 'noise', 'plain', 'frp', 'gre'].indexOf(c.carrier) >= 0 ? c.carrier : 'ws';
+    const carrierClass = ['ws', 'kcp', 'backhaul', 'noise', 'plain', 'frp', 'gre', 'frp_gre'].indexOf(c.carrier) >= 0 ? c.carrier : 'ws';
 
     cablesSvg += `
       <path d="${d2}" fill="none" stroke="transparent" stroke-width="20" style="cursor:pointer;" data-cid="${cid}" onclick="highlightCircuit('${cid}')"/>

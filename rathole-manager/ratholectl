@@ -2739,6 +2739,10 @@ cmd_frp(){
   case "$sub" in
     on)
       local port="${1:-7000}" token="${2:-}" transport="${3:-tcp}"
+      if [ "$token" = "tcp" ] || [ "$token" = "kcp" ] || [ "$token" = "quic" ] || [ "$token" = "websocket" ]; then
+        transport="$token"
+        token=""
+      fi
       echo "$port" | grep -qE '^[0-9]+$' || die "port bayad adad bashad."
       [ "$port" = "443" ] && die "port 443 rezerv ast; port-e digari (masalan 7000) bede."
       [ -n "$token" ] || token="$(openssl rand -hex 20)"

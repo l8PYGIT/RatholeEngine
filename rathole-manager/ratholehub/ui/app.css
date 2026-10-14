@@ -260,6 +260,7 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 .b-backhaul { background: var(--teal-soft); color: var(--teal); }
 .b-frp { background: rgba(249, 115, 22, 0.16); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.35); }
 .b-gre { background: rgba(16, 185, 129, 0.16); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
+.b-frp_gre { background: linear-gradient(135deg, rgba(249, 115, 22, 0.22), rgba(16, 185, 129, 0.22)); color: #34d399; border: 1px solid rgba(249, 115, 22, 0.45); }
 .b-game { background: var(--pink-soft); color: var(--pink); }
 .b-role { background: var(--warning-soft); color: var(--warning); }
 
@@ -542,6 +543,7 @@ pre { max-height: 260px; margin: 8px 0 0; padding: 12px; overflow: auto; border:
 .cable-wire.plain    { stroke: #fb923c; }
 .cable-wire.frp      { stroke: #f97316; stroke-dasharray: 8 3; }
 .cable-wire.gre      { stroke: #10b981; }
+.cable-wire.frp_gre  { stroke: #10b981; stroke-dasharray: 10 4; filter: drop-shadow(0 0 5px #f97316); }
 .cable-wire.down     { stroke: #f43f5e; stroke-dasharray: 4 4; opacity: .7; }
 
 /* Pulse animations */

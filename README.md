@@ -70,6 +70,7 @@ The rathole lane supports **four carriers** (WebSocket/TLS, KCP, plain, and Nois
 - **direct-IP** *(ingress, not a tunnel carrier)* — a separate HTTP listener where node selection comes from a hidden header (`X-Cdn-Id: <node_name>`) instead of URL path; users connect to the raw server IP, no domain/TLS required.
 - **frp** *(v1.9.5)* — a standalone reverse-tunnel core (`fatedier/frp`) supporting TCP, KCP, QUIC, and WebSocket multiplexing with shared token authentication.
 - **gre** *(v1.9.5)* — Linux kernel Layer 3 point-to-point network tunnel (`ip tunnel`) with /30 subnet addressing, MTU 1476, and iptables TCPMSS clamping.
+- **frp + gre** *(v1.9.6)* — hybrid carrier combining FRP's obfuscated multiplexed stream (QUIC, KCP, WebSocket, TCP) with Linux kernel Layer 3 point-to-point GRE routing for censorship resistance and direct L3 IP connectivity.
 - **adaptive failover** *(v1.5.0)* — timer-driven probes classify each carrier (`healthy / tls_failed / tcp_timeout / …`) and auto-switch between ws and kcp with hysteresis + cooldown; plain requires explicit `ALLOW_INSECURE=1`.
 - **secret control path** *(v1.5.0)* — WebSocket control upgraded from `/` to `/_rh/<32 hex>`; nginx routes only that exact path to rathole; all other paths retain fake-site behaviour.
 

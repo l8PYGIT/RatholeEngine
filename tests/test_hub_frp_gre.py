@@ -35,12 +35,18 @@ class TestFRPAndGREHubCmds(unittest.TestCase):
         # Validation checks
         self.assertIsNone(build_iran_cmd("frp_on", {"port": "7000;rm -rf /"}))
         self.assertIsNone(build_iran_cmd("frp_on", {"port": "7000", "transport": "invalid"}))
+        for tr in ("tcp", "kcp", "quic", "websocket"):
+            cmd = build_iran_cmd("frp_on", {"port": "7000", "token": "abcdef0123456789", "transport": tr})
+            self.assertEqual(cmd, ["ratholectl", "frp", "on", "7000", "abcdef0123456789", tr])
 
     def test_frp_node_commands(self):
         self.assertEqual(build_node_cmd("frp_status", {}), ["ratholenode", "frp", "status"])
         self.assertEqual(build_node_cmd("frp_off", {}), ["ratholenode", "frp", "off"])
         self.assertEqual(build_node_cmd("frp_on", {"remote": "5.202.4.40:7000", "token": "abcdef0123456789", "transport": "tcp"}),
                          ["ratholenode", "frp", "on", "5.202.4.40:7000", "abcdef0123456789", "tcp"])
+        for tr in ("tcp", "kcp", "quic", "websocket"):
+            cmd = build_node_cmd("frp_on", {"remote": "5.202.4.40:7000", "token": "abcdef0123456789", "transport": tr})
+            self.assertEqual(cmd, ["ratholenode", "frp", "on", "5.202.4.40:7000", "abcdef0123456789", tr])
         # Validation checks
         self.assertIsNone(build_node_cmd("frp_on", {"remote": "bad-host", "token": "abcdef0123456789"}))
 

@@ -867,6 +867,12 @@ cmd_frp(){
 
 cmd_frp_on(){
   local remote="${1:-}" token="${2:-}" transport="${3:-tcp}"
+  if [ "$token" = "tcp" ] || [ "$token" = "kcp" ] || [ "$token" = "quic" ] || [ "$token" = "websocket" ]; then
+    transport="$token"
+    token=""
+  fi
+  load_env
+  [ -n "$token" ] || token="${FRP_TOKEN:-}"
   [ -n "$remote" ] && [ -n "$token" ] || die "estefade: ratholenode frp on <iran_ip:port> <token> [transport]"
   echo "$remote" | grep -qE '^[^:]+:[0-9]+$' || die "adres bayad be shkl IP:PORT bashad."
   local sip sport

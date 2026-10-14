@@ -79,6 +79,7 @@ done
 
 # ---------- nasb pishniazhai paih ----------
 install_prereqs(){
+  command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1 && return 0
   local pkgs="curl unzip tar ca-certificates"
   log "amade-sazi mohit va nasb pish-niazha ($pkgs)..."
   if command -v apt-get >/dev/null 2>&1; then

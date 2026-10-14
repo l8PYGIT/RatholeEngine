@@ -410,12 +410,12 @@ gen_server_toml(){
     # rathole v0.5.0 field-e 'services' ra ALZAMI midanad; agar hich node/service nabashad,
     # bayad yek table-e khali [server.services] bedahim vagarna: "missing field services".
     local svc_count
-    svc_count="$(jq '[.nodes[] | select((.transport // "") != "noise" and (.transport // "") != "backhaul")] | length' "$STATE" 2>/dev/null)"
+    svc_count="$(jq '[.nodes[] | select((.transport // "ws") as $t | ["noise", "backhaul", "frp", "gre", "frp_gre"] | index($t) | not)] | length' "$STATE" 2>/dev/null)"
     if [ "${svc_count:-0}" -eq 0 ]; then
       echo "[server.services]"
       echo
     fi
-    jq -r '.nodes[] | select((.transport // "") != "noise" and (.transport // "") != "backhaul") |
+    jq -r '.nodes[] | select((.transport // "ws") as $t | ["noise", "backhaul", "frp", "gre", "frp_gre"] | index($t) | not) |
       [.name, (.port|tostring), .token, ((.api_local_port // "")|tostring), ((.api_token // "")|tostring)] | @tsv' "$STATE" 2>/dev/null |
     while IFS=$'\t' read -r name port token aport atoken; do
       name="${name%$'\r'}"; port="${port%$'\r'}"; token="${token%$'\r'}"

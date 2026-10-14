@@ -351,6 +351,41 @@ ratholectl proxy rm mysvc
 - **امنیت:** این قابلیت به اپراتور اجازه می‌دهد nginx را به میزبان دلخواه اشاره دهد؛ upstream **اعتمادشده** فرض می‌شود (اپراتور خودش انتخابش می‌کند). از هاب هم با اکشن‌های `proxy_add`/`proxy_rm`/`proxy_ls` (با همان regexها و argv جدا) در دسترس است.
 - ساختار state: `.proxies[]` با `{name, upstream}`؛ هر تغییر مثل بقیه‌ی دستورها کانفیگ را بازتولید و hot-reload می‌کند.
 
+### ۲.۹) `frp` — هسته‌ی ریورس تونل مستقل fatedier/frp
+
+یک **هسته‌ی جدا و بالغ (`fatedier/frp`)** کنار rathole و backhaul. مناسب برای شرایطی که نیاز به مالتی‌پلکسینگ پیشرفته TCP/QUIC/KCP/WebSocket با قابلیت‌های احراز هویت توکن مشترک و نگاشت مستقیم پورت‌های لوکال است:
+
+```bash
+# روی ایران: هسته frps را روشن کن
+ratholectl frp on [port] [transport] [token]     # پیش‌فرض: port=7000, transport=tcp
+ratholectl frp show                              # نمایش دستور آماده کلاینت نود
+ratholectl frp status                            # وضعیت پروسه frps و پورت‌ها
+ratholectl frp off                               # خاموش‌کردن کامل سرویس frps
+
+# روی نود خارج: کلاینت frpc را روشن کن
+ratholenode frp on <IRAN_IP:PORT> <TOKEN> [transport]   # transport: tcp, kcp, quic, websocket
+ratholenode frp status
+ratholenode frp off
+```
+
+### ۲.۱۰) `gre` — تونل شبکه لایه ۳ کرنل لینوکس (ip tunnel)
+
+تونل **شبکه لایه ۳ نقطه به نقطه (Generic Routing Encapsulation)** مبتنی بر کرنل لینوکس، مناسب برای شبکه‌سازی مستقیم IP بین سرور ایران و سرور خارج بدون نیاز به هیچ باینری یا پراکسی واسط:
+
+```bash
+# روی ایران: اینترفیس gre1 را با ساب‌نت /30 بساز
+ratholectl gre on <NODE_REMOTE_IP> [tunnel_ip] [gre_name]   # پیش‌فرض آی‌پی تونل: 10.10.10.1/30
+ratholectl gre status [gre_name]
+ratholectl gre off [gre_name]
+
+# روی نود خارج: انتهای تونل gre را متصل کن
+ratholenode gre on <IRAN_REMOTE_IP> [tunnel_ip] [gre_name]  # پیش‌فرض آی‌پی تونل: 10.10.10.2/30
+ratholenode gre status [gre_name]
+ratholenode gre off [gre_name]
+```
+
+- **بهینه‌سازی شبکه:** تنظیم خودکار `MTU 1476` و اعمال قانون `TCPMSS clamping` در iptables جهت جلوگیری از تکه‌تکه شدن (fragmentation) بسته‌های TCP بر بستر اینترنت ایران.
+
 ### ۳) توصیه‌های کلاینت/نود
 - روی کانفیگ کلاینت‌ها برای استریم/لتنسی **`mux=off`** بگذار (mux برای ریلز ضرر دارد).
 - اگر `kcp` هم لگ را حل نکرد، احتمالاً **IP نود** کثیف/throttle است؛ نود تمیزتر را امتحان کن.

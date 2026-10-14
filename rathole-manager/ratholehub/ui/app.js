@@ -82,7 +82,7 @@ async function router(){
  await ensureServers();
  if(ROUTE.page==='server')renderServerPage(ROUTE.param);
  else if(ROUTE.page==='wiring'){ GVIEW='board'; localStorage.setItem('rh_gview','board'); renderRouting(); }
- else if(ROUTE.page==='routing')renderRouting();
+ else if(ROUTE.page==='routing'){ if(GVIEW==='board') GVIEW='graph'; renderRouting(); }
  else if(ROUTE.page==='audit')renderAuditPage();
  else if(ROUTE.page==='settings')renderSettingsPage();
  else renderDashboard();

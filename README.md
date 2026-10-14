@@ -68,7 +68,8 @@ The rathole lane supports **four carriers** (WebSocket/TLS, KCP, plain, and Nois
 - **backhaul** *(v1.9)* — a separate Go core (`Musixal/Backhaul`, patched with a uTLS Chrome fingerprint) beside rathole that multiplexes user connections via **SMUX**. It uses the separate `bh-services.conf` registry and can run as a dual-core lane alongside `rathole-client`; nginx proxies the hardcoded `/channel` + `/tunnel` paths on the same 443.
 - **game / SNI** — L4 passthrough on 443; TLS terminates on the node (VLESS+TLS+Vision).
 - **direct-IP** *(ingress, not a tunnel carrier)* — a separate HTTP listener where node selection comes from a hidden header (`X-Cdn-Id: <node_name>`) instead of URL path; users connect to the raw server IP, no domain/TLS required.
-- **proxy** *(ingress)* — a `/<name>/` path on the same 443 that `proxy_pass`es to any upstream without going through rathole.
+- **frp** *(v1.9.5)* — a standalone reverse-tunnel core (`fatedier/frp`) supporting TCP, KCP, QUIC, and WebSocket multiplexing with shared token authentication.
+- **gre** *(v1.9.5)* — Linux kernel Layer 3 point-to-point network tunnel (`ip tunnel`) with /30 subnet addressing, MTU 1476, and iptables TCPMSS clamping.
 - **adaptive failover** *(v1.5.0)* — timer-driven probes classify each carrier (`healthy / tls_failed / tcp_timeout / …`) and auto-switch between ws and kcp with hysteresis + cooldown; plain requires explicit `ALLOW_INSECURE=1`.
 - **secret control path** *(v1.5.0)* — WebSocket control upgraded from `/` to `/_rh/<32 hex>`; nginx routes only that exact path to rathole; all other paths retain fake-site behaviour.
 
@@ -212,9 +213,11 @@ If RatholeEngine helps you, consider supporting continued development:
 
 **اصل مرکزی:** تغییر state → بازتولید کانفیگ → `nginx -t` → hot-reload (با حفظ inode و بازگشت خودکار در صورت خطا).
 
+**هسته‌ها و حامل‌ها:** پشتیبانی از حامل‌های پیش‌فرض rathole (شامل WebSocket/TLS، KCP، Plain و Noise)، هسته‌ی مالتی‌پلکس **Backhaul (SMUX)**، هسته‌ی ریورس تونل **FRP (`fatedier/frp`)**، و تونل شبکه **GRE (لایه ۳ کرنل لینوکس)** با پچ‌بورد بصری سیم‌کشی تعاملی در پنل هاب.
+
 **دستورهای مفید CLI:** `ratholectl status` (داشبورد کامل: دامنه، پورت‌ها، گواهی، سرویس‌ها، نودها — با `--json` برای هاب)، `ratholectl paths` (مسیر همه‌ی فایل‌ها با ✓/✗)، `ratholectl version` (نسخه‌ی مدیر + rathole). `ratholectl add` یک دستور آماده‌ی `curl … | sudo bash -s -- --node -- …` هم برای نصب نود چاپ می‌کند.
 
-**از هاب:** دکمه‌ی **«آپدیت همه»** همه‌ی سرورها را یکی‌یکی آپدیت می‌کند (progress bar + وضعیت هر سرور + badge نسخه سبز/زرد)، **«افزودن به نود»** یک نود ایران را روی نود/آپ‌استریم خارج سیم‌کشی می‌کند، و **«تنظیم تونل اصلی»** نود را به سرور ایرانش وصل می‌کند.
+**از هاب:** بورد سیم‌کشی تعاملی (Patch Panel) با پچ کردن زنده کابل‌ها و انتخاب پروتکل، دکمه‌ی **«آپدیت همه»**، **«افزودن به نود»**، و **«تنظیم تونل اصلی»**.
 
 **شروع سریع و مرجع کامل CLI (فارسی):** [`docs/README.fa.md`](docs/README.fa.md)
 

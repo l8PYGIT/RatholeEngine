@@ -371,7 +371,8 @@ rth_file_dump(){ # $1=barchasb  $2=masir  [$3=hadaksar khat]
 # FRP Core Integration (fatedier/frp)
 # ---------------------------------------------------------------------------
 install_frp(){
-  local role="$1" bin="${RATHOLE_BIN_DIR:-/usr/local/bin}/frp${role:0:1}" ver="${FRP_VER:-0.61.1}" arch tmp ok=0 m
+  local role="$1"
+  local bin="${RATHOLE_BIN_DIR:-/usr/local/bin}/frp${role:0:1}" ver="${FRP_VER:-0.61.1}" arch tmp ok=0 m
   # role: server -> frps, client -> frpc
   [ -x "$bin" ] && return 0
   case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) die "memari poshtibani nemishavad." ;; esac

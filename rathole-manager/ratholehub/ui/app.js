@@ -471,6 +471,8 @@ function renderIran(n,ov){
     const isKcp = featureOn(ov, 'kcp');
     const isNoise = featureOn(ov, 'noise');
     const isPlain = featureOn(ov, 'plain');
+    const isFrp = featureOn(ov, 'frp');
+    const isGre = featureOn(ov, 'gre');
 
     s+=`<div class="sec"><h4>⚡ ${t('carriers_avail')}</h4>
       <div class="sub" style="margin-bottom:8px">${h(t('carriers_avail_hint'))}</div>

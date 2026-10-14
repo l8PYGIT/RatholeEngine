@@ -362,6 +362,7 @@ def build_node_cmd(action, a):
     # ---- backhaul: client-e SMUX ke be domain/443 (nginx → backhaul-server) vasl mishavad ----
     if action == "backhaul_status": return ["ratholenode", "backhaul", "status"]
     if action == "backhaul_logs":   return ["ratholenode", "backhaul", "logs"]
+    if action == "backhaul_ls":     return ["ratholenode", "backhaul", "ls"]
     if action == "backhaul_off":    return ["ratholenode", "backhaul", "off"]
     if action == "backhaul_on":
         mode      = a.get("mode", "nginx_tls") or "nginx_tls"
@@ -394,12 +395,16 @@ def build_node_cmd(action, a):
     if action == "frp_status": return ["ratholenode", "frp", "status"]
     if action == "frp_off":    return ["ratholenode", "frp", "off"]
     if action == "frp_on":
-        rem = str(a.get("remote", "") or "")
-        tok = str(a.get("token", "") or "")
-        tr  = str(a.get("transport", "tcp") or "tcp")
+        rem   = str(a.get("remote", "") or "")
+        tok   = str(a.get("token", "") or "")
+        tr    = str(a.get("transport", "tcp") or "tcp")
+        rport = str(a.get("remote_port", "") or "")
         if not RE_IPPORT.match(rem): return None
         if not RE_KEY.match(tok) and not RE_BH_TOK.match(tok): return None
         if not RE_FRP_TR.match(tr): return None
+        if rport:
+            if not RE_PORT.match(rport): return None
+            return ["ratholenode", "frp", "on", rem, tok, tr, rport]
         return ["ratholenode", "frp", "on", rem, tok, tr]
     # ---- gre: tunnel-e shabake-ye L3 Linux (ip tunnel) ----
     if action == "gre_status": return ["ratholenode", "gre", "status"]
@@ -508,7 +513,11 @@ def build_node_cmd(action, a):
     # ---- mdirit service rooye node ----
     if action == "add_svc":
         name = a.get("name", ""); token = a.get("token", ""); inbound = str(a.get("inbound", ""))
+        rport = str(a.get("remote_port", "") or "")
         if not RE_NAME.match(name) or not RE_KEY.match(token) or not RE_PORT.match(inbound): return None
+        if rport:
+            if not RE_PORT.match(rport): return None
+            return ["ratholenode", "add-svc", name, token, inbound, rport]
         return ["ratholenode", "add-svc", name, token, inbound]
     if action == "rm_svc":
         name = a.get("name", "")

@@ -35,8 +35,8 @@ def main():
                         file_path = os.path.join(root, f)
                         rel_file = os.path.relpath(file_path, REPO_ROOT).replace("\\", "/")
                         
-                        # Determine permission (executable if .sh or ratholectl/ratholenode)
-                        is_exec = (f.endswith(".sh") or f in ("ratholectl", "ratholenode") or "bin" in rel_file)
+                        # Determine permission (executable if .sh or ratholectl/ratholenode/ratholeagent.py)
+                        is_exec = (f.endswith(".sh") or f in ("ratholectl", "ratholenode", "ratholeagent.py") or "bin" in rel_file)
                         perm = 0o755 if is_exec else 0o644
                         
                         zinfo = zipfile.ZipInfo(rel_file)

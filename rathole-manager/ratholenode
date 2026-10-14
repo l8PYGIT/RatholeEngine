@@ -162,7 +162,7 @@ gen_client(){
         fi
       fi
     fi
-    while IFS='|' read -r name token inbound; do
+    while IFS='|' read -r name token inbound _rest; do
       [ -n "$name" ] || continue
       case "$name" in \#*) continue ;; esac
       # CR-e entehai ra pak kon (agar services.conf ba CRLF zakhire shode bashad) va
@@ -211,7 +211,7 @@ cmd_apply(){
   need_root; load_env
   # check tadakhol port baraye har service
   if [ -f "$SVC_FILE" ]; then
-    while IFS='|' read -r name token inbound; do
+    while IFS='|' read -r name token inbound _rest; do
       [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
       check_port_conflict "$inbound" "inbound $name" "$name" || warn "ba vojood tadakhol adamh midhim."
     done < "$SVC_FILE"
@@ -233,18 +233,21 @@ valid_svc_token(){ echo "$1" | grep -qE '^[A-Za-z0-9._=+/-]+$'; }
 
 cmd_add_svc(){
   need_root
-  local name="${1:-}" token="${2:-}" inbound="${3:-}"
-  [ -n "$name" ] && [ -n "$token" ] && [ -n "$inbound" ] || die "estefade: ratholenode add-svc <name> <token> <inbound_port>"
+  local name="${1:-}" token="${2:-}" inbound="${3:-}" remote_port="${4:-}"
+  [ -n "$name" ] && [ -n "$token" ] && [ -n "$inbound" ] || die "estefade: ratholenode add-svc <name> <token> <inbound_port> [remote_port]"
   valid_svc_name "$name" || die "name namotabar."
   valid_svc_token "$token" || die "token namotabar (faghat [A-Za-z0-9._=+/-] mjaz ast)."
   echo "$inbound" | grep -qE '^[0-9]+$' || die "port bayad adad bashad."
+  if [ -n "$remote_port" ]; then
+    echo "$remote_port" | grep -qE '^[0-9]+$' || die "remote_port bayad adad bashad."
+  fi
   check_port_conflict "$inbound" "service '$name'" || die "tadakhol port — meghdar digari entekhab kon."
   touch "$SVC_FILE"; chmod 600 "$SVC_FILE"
   if svc_exists "$name"; then
     warn "service '$name' vojood dard; beroozresani mishavad."
     sed -i "/^$name|/d" "$SVC_FILE"
   fi
-  echo "${name}|${token}|${inbound}" >> "$SVC_FILE"
+  echo "${name}|${token}|${inbound}${remote_port:+|$remote_port}" >> "$SVC_FILE"
   log "service '$name' → 127.0.0.1:$inbound ezafe shod (haman tunnel)."
   cmd_apply
 }
@@ -266,9 +269,13 @@ cmd_ls(){
   echo "tunnel be: $(c_y "${SERVER:-?}")  (hame serviceha rooye yek channel kontroli)"
   printf '%-16s %s\n' "SERVICE" "INBOUND"
   printf '%s\n' "---------------------------"
-  while IFS='|' read -r name token inbound; do
+  while IFS='|' read -r name token inbound rport _rest; do
     [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
-    printf '%-16s %s\n' "$name" "$inbound"
+    if [ -n "$rport" ]; then
+      printf '%-16s %-10s (remote: %s)\n' "$name" "$inbound" "$rport"
+    else
+      printf '%-16s %s\n' "$name" "$inbound"
+    fi
   done < "$SVC_FILE"
 }
 
@@ -847,9 +854,17 @@ gen_frp_client_toml(){
     echo "transport.tcpMux = true"
     echo
     if [ -f "$SVC_FILE" ]; then
-      while IFS='|' read -r name stoken inbound rport_file; do
+      local svc_count; svc_count=$(grep -cvE '^\s*(#|$)' "$SVC_FILE" 2>/dev/null || echo 0)
+      while IFS='|' read -r name stoken inbound rport_file _rest; do
         [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
-        local rport="${remote_port:-${rport_file:-$inbound}}"
+        local rport="${rport_file:-}"
+        if [ -z "$rport" ]; then
+          if [ "$svc_count" -le 1 ] && [ -n "$remote_port" ]; then
+            rport="$remote_port"
+          else
+            rport="$inbound"
+          fi
+        fi
         echo "[[proxies]]"
         echo "name = \"$name\""
         echo "type = \"tcp\""
@@ -1055,6 +1070,15 @@ cmd_agent(){
           agent_py="$(dirname "$0")/ratholeagent.py"
         elif [ -f "/opt/rathole-manager/ratholeagent.py" ]; then
           agent_py="/opt/rathole-manager/ratholeagent.py"
+        else
+          log "download ratholeagent.py..."
+          mkdir -p /usr/local/share/rathole
+          local _m
+          for _m in "" "https://mirror.ghproxy.com/" "https://ghproxy.net/"; do
+            curl -fsSL --connect-timeout 10 "${_m}https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/rathole-manager/ratholeagent.py" -o /usr/local/share/rathole/ratholeagent.py 2>/dev/null && break || true
+          done
+          chmod +x /usr/local/share/rathole/ratholeagent.py 2>/dev/null || true
+          [ -f /usr/local/share/rathole/ratholeagent.py ] && agent_py="/usr/local/share/rathole/ratholeagent.py"
         fi
       fi
       [ -f "$agent_py" ] || die "ratholeagent.py peyda nashod."
@@ -1128,7 +1152,7 @@ UNIT
 cmd_check(){
   load_env
   [ -f "$SVC_FILE" ] || { warn "srvisi nist."; return; }
-  while IFS='|' read -r name token inbound; do
+  while IFS='|' read -r name token inbound _rest; do
     [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
     check_inbound "$inbound" "inbound $name"
   done < "$SVC_FILE"

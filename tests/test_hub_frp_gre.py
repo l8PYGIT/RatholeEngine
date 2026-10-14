@@ -47,8 +47,12 @@ class TestFRPAndGREHubCmds(unittest.TestCase):
         for tr in ("tcp", "kcp", "quic", "websocket"):
             cmd = build_node_cmd("frp_on", {"remote": "5.202.4.40:7000", "token": "abcdef0123456789", "transport": tr})
             self.assertEqual(cmd, ["ratholenode", "frp", "on", "5.202.4.40:7000", "abcdef0123456789", tr])
+        # remote_port optional parameter
+        self.assertEqual(build_node_cmd("frp_on", {"remote": "5.202.4.40:7000", "token": "abcdef0123456789", "transport": "tcp", "remote_port": "1001"}),
+                         ["ratholenode", "frp", "on", "5.202.4.40:7000", "abcdef0123456789", "tcp", "1001"])
         # Validation checks
         self.assertIsNone(build_node_cmd("frp_on", {"remote": "bad-host", "token": "abcdef0123456789"}))
+        self.assertIsNone(build_node_cmd("frp_on", {"remote": "5.202.4.40:7000", "token": "abcdef0123456789", "remote_port": "bad;port"}))
 
     def test_gre_iran_commands(self):
         self.assertEqual(build_iran_cmd("gre_status", {}), ["ratholectl", "gre", "status"])

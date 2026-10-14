@@ -360,7 +360,7 @@ main(){
 
   log "normal-sazi khate-payan va mojavez ejra..."
   local s
-  for s in "$INSTALL_DIR"/*.sh "$INSTALL_DIR/ratholectl" "$INSTALL_DIR/ratholenode"; do
+  for s in "$INSTALL_DIR"/*.sh "$INSTALL_DIR/ratholectl" "$INSTALL_DIR/ratholenode" "$INSTALL_DIR/ratholeagent.py"; do
     [ -f "$s" ] || continue; sed -i 's/\r$//' "$s"; chmod +x "$s"
   done
   rm -rf "$tmp"

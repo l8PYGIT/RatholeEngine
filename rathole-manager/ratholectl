@@ -2102,6 +2102,15 @@ cmd_agent(){
           agent_py="$(dirname "$0")/ratholeagent.py"
         elif [ -f "/opt/rathole-manager/ratholeagent.py" ]; then
           agent_py="/opt/rathole-manager/ratholeagent.py"
+        else
+          log "download ratholeagent.py..."
+          mkdir -p /usr/local/share/rathole
+          local _m
+          for _m in "" "https://mirror.ghproxy.com/" "https://ghproxy.net/"; do
+            curl -fsSL --connect-timeout 10 "${_m}https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/rathole-manager/ratholeagent.py" -o /usr/local/share/rathole/ratholeagent.py 2>/dev/null && break || true
+          done
+          chmod +x /usr/local/share/rathole/ratholeagent.py 2>/dev/null || true
+          [ -f /usr/local/share/rathole/ratholeagent.py ] && agent_py="/usr/local/share/rathole/ratholeagent.py"
         fi
       fi
       [ -f "$agent_py" ] || die "ratholeagent.py peyda nashod."

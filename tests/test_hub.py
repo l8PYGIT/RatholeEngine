@@ -325,6 +325,17 @@ class TestDualCoreActions(unittest.TestCase):
         self.assertIsNone(build_node_cmd("add_bh_svc", {"name": "x;id", "token": "a" * 40, "inbound": "1201"}))
         self.assertIsNone(build_node_cmd("rm_bh_svc", {"name": "x\n"}))
 
+    def test_backhaul_ls_cmd(self):
+        self.assertEqual(build_node_cmd("backhaul_ls", {}), ["ratholenode", "backhaul", "ls"])
+
+    def test_add_svc_with_remote_port(self):
+        tok = "a" * 40
+        self.assertEqual(build_node_cmd("add_svc", {"name": "bulk", "token": tok, "inbound": "1201", "remote_port": "1001"}),
+                         ["ratholenode", "add-svc", "bulk", tok, "1201", "1001"])
+        self.assertEqual(build_node_cmd("add_svc", {"name": "bulk", "token": tok, "inbound": "1201"}),
+                         ["ratholenode", "add-svc", "bulk", tok, "1201"])
+        self.assertIsNone(build_node_cmd("add_svc", {"name": "bulk", "token": tok, "inbound": "1201", "remote_port": "1001;rm"}))
+
 
 class TestLoginRateLimit(unittest.TestCase):
     def setUp(self):

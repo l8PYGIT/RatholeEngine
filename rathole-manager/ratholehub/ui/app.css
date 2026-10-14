@@ -451,8 +451,9 @@ pre { max-height: 260px; margin: 8px 0 0; padding: 12px; overflow: auto; border:
   .brand { min-width: 0; padding: 0; }
   .brand-mark { width: 40px; height: 40px; }
   .brand-sub { display: none; }
-  .nav-list { position: fixed; inset-inline: 0; bottom: 0; z-index: 60; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; height: 66px; padding: 5px max(6px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 96%, transparent); backdrop-filter: blur(12px); }
-  .sitem { flex-direction: column; justify-content: center; gap: 2px; min-height: 54px; padding: 4px; border: 0; font-size: 10.5px; text-align: center; }
+  .nav-list { position: fixed; inset-inline: 0; bottom: 0; z-index: 60; display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; height: 66px; padding: 5px max(6px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 96%, transparent); backdrop-filter: blur(12px); }
+  .sitem { flex-direction: column; justify-content: center; gap: 2px; min-height: 54px; padding: 4px 2px; border: 0; font-size: 10px; text-align: center; }
+  .sitem span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   .sitem.active { border: 0; background: var(--primary-soft); color: var(--text); }
   .sitem .icon { width: 19px; height: 19px; }
   .sfoot { display: flex; align-items: center; gap: 6px; margin: 0 0 0 auto; padding: 0; border: 0; }
@@ -476,6 +477,7 @@ pre { max-height: 260px; margin: 8px 0 0; padding: 12px; overflow: auto; border:
   .settings-grid { grid-template-columns: 1fr; }
   .spage-head .btns { width: 100%; margin-inline-start: 0; }
   .toast { bottom: calc(82px + env(safe-area-inset-bottom)); }
+  .circuit-inspector { bottom: calc(74px + env(safe-area-inset-bottom)); width: calc(100% - 20px); max-width: none; padding: 10px 12px; }
 }
 
 @media (max-width: 560px) {
@@ -495,6 +497,11 @@ pre { max-height: 260px; margin: 8px 0 0; padding: 12px; overflow: auto; border:
   .mbox .row > input, .mbox .row > select { width: 100%; flex-basis: auto; }
   .modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .settings-kv { grid-template-columns: 1fr; gap: 2px; }
+  .carrier-grid, .hero-stats { grid-template-columns: 1fr; }
+  .circuit-inspector .ci-title { font-size: 11.5px; }
+  .circuit-inspector .ci-path { font-size: 10.5px; }
+  .circuit-inspector button { font-size: 11px; padding: 4px 8px; }
+  .carrier-actions button { flex: 1 1 calc(50% - 6px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

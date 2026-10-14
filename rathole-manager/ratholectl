@@ -2150,6 +2150,54 @@ hub_installer(){
   done
   return 1
 }
+hub_auto_register_local(){
+  local inv_file="/etc/ratholehub/inventory.json"
+  [ -d "/etc/ratholehub" ] || return 0
+  [ -f "$inv_file" ] || echo "[]" > "$inv_file"
+
+  # 1. کلید ed25519 لوکال را برای دسترسی محلی آماده کن
+  if [ ! -f /root/.ssh/id_ed25519 ]; then
+    mkdir -p /root/.ssh && chmod 700 /root/.ssh
+    ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519 >/dev/null 2>&1 || true
+  fi
+  if [ -f /root/.ssh/id_ed25519.pub ]; then
+    mkdir -p /root/.ssh && chmod 700 /root/.ssh
+    touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
+    local pub; pub="$(cat /root/.ssh/id_ed25519.pub)"
+    grep -qxF "$pub" /root/.ssh/authorized_keys 2>/dev/null || echo "$pub" >> /root/.ssh/authorized_keys
+  fi
+
+  # 2. تشخیص پورت فعال sshd
+  local ssh_port="22"
+  if command -v sshd >/dev/null 2>&1; then
+    local p; p="$(sshd -T 2>/dev/null | grep -i '^port ' | awk '{print $2}' || true)"
+    [ -n "$p" ] && ssh_port="$p"
+  fi
+
+  # 3. ثبت یا اصلاح سرور لوکال در inventory
+  python3 -c "
+import json, os
+p = '$inv_file'
+try:
+    with open(p, 'r', encoding='utf-8') as f: inv = json.load(f)
+except Exception: inv = []
+inv = [s for s in inv if s.get('host') not in ('127.0.0.1', 'localhost') and '127.0.0.1' not in s.get('api_url', '')]
+inv.append({
+    'name': 'iran-main',
+    'role': 'iran',
+    'transport': 'ssh',
+    'host': '127.0.0.1',
+    'ssh_user': 'root',
+    'ssh_port': int('$ssh_port')
+})
+with open(p, 'w', encoding='utf-8') as f: json.dump(inv, f, indent=2, ensure_ascii=False)
+os.chmod(p, 0o600)
+" 2>/dev/null || true
+
+  systemctl restart ratholehub 2>/dev/null || true
+  log "server-e Iran (127.0.0.1:$ssh_port) khodkar be inventory-e hub ezafe shod."
+}
+
 cmd_hub(){
   need_root; need_bin jq; ensure_state
   local sub="${1:-status}" port="${2:-}"
@@ -2180,6 +2228,10 @@ cmd_hub(){
       log "panel psht nginx faal shod: https://$(s_get '.domain')/$(hub_path_seg)/  →  127.0.0.1:$port"
       warn "panel hala amvmi ast; ramz ghvi rooye hab bgzar."
       regenerate
+      hub_auto_register_local
+      ;;
+    auto-add|add-local)
+      hub_auto_register_local
       ;;
     off)
       local tmp; tmp="$(mktemp)"; jq 'del(.hub_port)' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
@@ -2204,7 +2256,7 @@ cmd_hub(){
         echo "service ratholehub: $(c_y 'nasb nashode')  (nasb-e khodkar: ratholectl hub on [port])"
       fi
       ;;
-    *) die "estefade: ratholectl hub <on [port]|off|status>" ;;
+    *) die "estefade: ratholectl hub <on [port]|off|status|auto-add>" ;;
   esac
 }
 

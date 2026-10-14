@@ -70,7 +70,8 @@ The dashboard supports grid and list views. Refresh is page-aware (default 20 se
 | Page | Hash | Content |
 |------|------|---------|
 | **Dashboard** | `#/dashboard` | Server cards, grid/list toggle, availability/version badges, add-server and Provision forms, Update All progress. |
-| **Server page** | `#/server/<name>` | Overview, domain/certificates, ports/paths, rathole carriers, ingress modes, node/service tables, game/SNI, Backhaul lane, status/details/log actions. |
+| **Wiring Board** | `#/wiring` | Interactive 4-Rack Patch Board (Ingress, Carriers, Inbounds, Outbounds), Drag & Drop & Click-to-Wire cables, socket sparks, floating Circuit Inspector HUD with recipe copy, and Carrier Switcher Modal. |
+| **Server page** | `#/server/<name>` | Overview, domain/certificates, ports/paths, rathole carriers, ingress modes, node/service tables, game/SNI, Backhaul lane, FRP & GRE controls, status/details/log actions. |
 | **Routing / Console** | `#/routing` | Ingress versus tunnel lanes, draggable SVG graph, console/table view, and direct links to server pages. |
 | **Activity** | `#/audit` | Authenticated audit history with time, user, server, action, and return code. |
 | **Settings** | `#/settings` | Listen/API-token hint, API-token rotation, and admin-password change. |
@@ -83,18 +84,42 @@ The dashboard supports grid and list views. Refresh is page-aware (default 20 se
 | `sub-port` | ✅ | Subscription port (default 2096) |
 | `control-port` | ✅ | rathole control port (default 2333) |
 | `internal` | Display only | Internal panel port (behind SNI) |
-| `hub`, `plain`, `noise`, `backhaul`, `direct` | Display only | Port of each listener/core |
+| `hub`, `plain`, `noise`, `backhaul`, `direct`, `frp` | Display only | Port of each listener/core |
 
 The `sub-path` and `hub-path` path segments are editable too. Carrier-owned ports are display-only because enabling/disabling that carrier owns their lifecycle.
 
-### Key Buttons
+## Interactive Visual Wiring Board (Patch Panel & Circuit Inspector)
 
+Introduced in **v2.0**, the Visual Wiring Board (`#/wiring`) transforms multi-server tunnel management into a physical datacenter patch bay interface:
+
+- **4-Rack Parallel Layout:**
+  1. **Iran Ingress:** Public Domain, 443 listeners, Direct-IP ports, and private game ports.
+  2. **Tunnel Carriers:** rathole (WS+TLS, KCP, Plain, Noise), Backhaul SMUX, FRP (TCP/QUIC/KCP/WS), GRE kernel L3 tunnel, and FRP+GRE Hybrid.
+  3. **Node Inbounds:** Foreign node local listening ports (e.g., 1080, 10086, 20086).
+  4. **Foreign Outbounds:** Internet egress channels (Direct, Cloudflare Warp, Tor, IPv6).
+- **Interactive Cabling (Drag-and-Drop & Click-to-Wire):**
+  - Connect sockets by dragging patch cables or clicking origin and destination jacks.
+  - Rendered as smooth SVG cubic Bézier curves (`.cable-wire`) color-coded by carrier protocol.
+  - Tactile socket plug/unplug audio-visual feedback with spark and smoke puff animations.
+- **Floating Circuit Inspector HUD (`#circuit_inspector`):**
+  - Frosted glass HUD docked at the screen bottom displaying the full end-to-end circuit trace (`Client → Public Port → Path → Carrier Core → Local Bind → Remote Inbound → Internet Exit`).
+  - Real-time latency measurement and tunnel health status.
+  - One-click copy for client V2Ray/Xray connection configs tailored to the selected circuit.
+- **Patch Mode Switcher (Carrier Modal):**
+  - Click any socket to open the carrier switcher modal, instantly switching between any of the 8 supported carriers with parameter autofill and verification.
+- **Mobile & Multi-Device Optimization:**
+  - 5-column bottom navigation bar on mobile viewports (`Dashboard`, `Wiring`, `Routing`, `Audit`, `Settings`).
+  - Dynamic viewport safe-area offset so the floating inspector HUD floats cleanly above mobile bottom bars.
+
+### Key Buttons & Capabilities (v2.0)
+
+- **Multi-core support:** Independent control over rathole, Backhaul, FRP, and Linux GRE interfaces.
 - **"Update All"** — updates all servers one by one over SSH. Live progress bar: queued → updating → ✓ new version or ✗ (rc=N). The server running the hub itself is included; if the hub service restarts mid-update, that one row may show incomplete while the rest finish.
-- **Version badge** — green = up to date, yellow `vX→vY` = needs update. Version is read from `ratholectl/ratholenode version` and compared against `latest_version` from `GET /api/hubstatus` (which reads `MANAGER_VERSION` from `common.sh` in the deployed bundle).
-- **"Wire to node"** — registers an Iran node (name/token/inbound) as a service on a foreign node or upstream. The hub fetches the actual token/inbound via `GET /api/servers/<iran>/nodeconnect/<node>` (masked in `ls`), then runs `add_svc` (or `upstream_add_svc`) on the target.
-- **"Set main tunnel"** — links a foreign node to a registered Iran server by setting `SERVER=host:443` (action `set_server`). The provision form also has an "Iran server" select; if the server being provisioned has role `node`, the hub sets its main tunnel automatically after a successful deploy.
-- **Backhaul lane services** — node pages expose a separate table backed by `bh-services.conf`; adding/removing Backhaul services does not stop the normal rathole client.
-- **Theme/language controls** — icon buttons switch theme, language, refresh, and logout, with accessible labels and tooltips.
+- **Version badge** — green = up to date, yellow `vX→vY` = needs update. Version is read from `ratholectl/ratholenode version` and compared against `latest_version` from `GET /api/hubstatus`.
+- **"Wire to node"** — registers an Iran node (name/token/inbound) as a service on a foreign node or upstream.
+- **"Set main tunnel"** — links a foreign node to a registered Iran server by setting `SERVER=host:443`.
+- **Backhaul lane services** — node pages expose a separate table backed by `bh-services.conf`.
+- **FRP & GRE interfaces** — server pages expose full status, configuration, and controls for `frps`/`frpc` and `ip tunnel gre`.
 
 ---
 

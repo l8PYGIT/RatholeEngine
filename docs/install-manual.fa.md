@@ -426,6 +426,74 @@ sudo ratholectl domain rm cdn.example.ir
 sudo ratholectl domain primary cdn.example.ir   # تغییر دامنه اصلی
 ```
 
+### اختیاری: هسته ریورس تونل FRP (نصب و راه‌اندازی دستی)
+
+اگر تمایل به استفاده از هسته بالغ `fatedier/frp` برای مالتی‌پلکسینگ QUIC یا KCP دارید:
+
+```bash
+# ۱) دانلود باینری frp (روی هر دو سرور):
+cd /tmp
+FRP_VER="v0.51.3"
+curl -fsSL "https://github.com/fatedier/frp/releases/download/${FRP_VER}/frp_${FRP_VER#v}_linux_amd64.tar.gz" -o frp.tar.gz
+tar -xzf frp.tar.gz
+sudo install -m 755 frp_*_linux_amd64/frps /usr/local/bin/frps
+sudo install -m 755 frp_*_linux_amd64/frpc /usr/local/bin/frpc
+
+# ۲) روی سرور ایران: فعال‌سازی با ratholectl یا ساخت سرویس دستی
+sudo ratholectl frp on 7000 quic <SECRET_TOKEN>
+# یا دستی:
+# /etc/frp/frps.ini:
+# [common]
+# bind_port = 7000
+# bind_udp_port = 7000
+# token = <SECRET_TOKEN>
+# sudo systemctl restart frps
+
+# ۳) روی نود خارج: اتصال کلاینت frpc به ایران
+sudo ratholenode frp on <IRAN_IP>:7000 <SECRET_TOKEN> quic
+sudo ratholenode frp status
+```
+
+### اختیاری: تونل لایه ۳ نقطه به نقطه GRE (شبکه‌سازی مستقیم لینوکس)
+
+برای ارتباط مستقیم شبکه بدون هیچ پروسه واسط:
+
+```bash
+# ۱) روی سرور ایران:
+sudo ip tunnel add gre1 mode gre remote <NODE_IP> local <IRAN_IP> ttl 255
+sudo ip addr add 10.10.10.1/30 dev gre1
+sudo ip link set gre1 mtu 1476 up
+# اعمال TCPMSS Clamping برای جلوگیری از افت فریم و پکت‌لاس در شبکه ایران:
+sudo iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o gre1 -j TCPMSS --clamp-mss-to-pmtu
+
+# خودکار با ratholectl:
+sudo ratholectl gre on <NODE_IP> 10.10.10.1/30 gre1
+
+# ۲) روی نود خارج:
+sudo ip tunnel add gre1 mode gre remote <IRAN_IP> local <NODE_IP> ttl 255
+sudo ip addr add 10.10.10.2/30 dev gre1
+sudo ip link set gre1 mtu 1476 up
+sudo iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o gre1 -j TCPMSS --clamp-mss-to-pmtu
+
+# خودکار با ratholenode:
+sudo ratholenode gre on <IRAN_IP> 10.10.10.2/30 gre1
+
+# ۳) تست ارتباط لایه ۳:
+ping -c 3 10.10.10.2   # از روی سرور ایران
+```
+
+### اختیاری: پروتکل هیبرید FRP + GRE (ضد اختلال حداکثری)
+
+در این سناریو، ابتدا اینترفیس مجازی GRE فعال شده و سپس فرآیند FRP منحصراً روی رنج خصوصی شبکه لایه ۳ (`10.10.10.0/30`) استریم‌های فشرده QUIC یا KCP را مبادله می‌کند:
+
+```bash
+# ۱. فعال‌سازی اینترفیس GRE در هر دو سمت (طبق دستورات بخش بالا)
+# ۲. اجرای frps روی آدرس داخلی GRE:
+sudo ratholectl frp on 7000 quic <SECRET_TOKEN>
+# ۳. روی نود خارج: اتصال کلاینت به IP خصوصی ایران در تونل GRE
+sudo ratholenode frp on 10.10.10.1:7000 <SECRET_TOKEN> quic
+```
+
 ---
 
 ## ۵. نصب کامل هاب مرکزی

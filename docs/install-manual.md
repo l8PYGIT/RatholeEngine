@@ -434,6 +434,73 @@ sudo ratholectl domain primary cdn.example.ir --certbot
 
 > If you have a wildcard or CDN cert that already covers both domains, pass `--fullchain /path` and `--key /path` instead of `--certbot`.
 
+### Optional: Standalone FRP Reverse Tunnel Core
+
+If you prefer using the mature `fatedier/frp` core for advanced QUIC or KCP multiplexing:
+
+```bash
+# 1) Download frp binaries (on both servers):
+cd /tmp
+FRP_VER="v0.51.3"
+curl -fsSL "https://github.com/fatedier/frp/releases/download/${FRP_VER}/frp_${FRP_VER#v}_linux_amd64.tar.gz" -o frp.tar.gz
+tar -xzf frp.tar.gz
+sudo install -m 755 frp_*_linux_amd64/frps /usr/local/bin/frps
+sudo install -m 755 frp_*_linux_amd64/frpc /usr/local/bin/frpc
+
+# 2) On the Iran server: activate via ratholectl or manual configuration
+sudo ratholectl frp on 7000 quic <SECRET_TOKEN>
+# Or manually in /etc/frp/frps.ini:
+# [common]
+# bind_port = 7000
+# bind_udp_port = 7000
+# token = <SECRET_TOKEN>
+# sudo systemctl restart frps
+
+# 3) On the foreign node: connect client frpc to Iran
+sudo ratholenode frp on <IRAN_IP>:7000 <SECRET_TOKEN> quic
+sudo ratholenode frp status
+```
+
+### Optional: Linux Kernel Layer 3 GRE Tunnel
+
+For direct kernel-level IP network connectivity between servers without application proxies:
+
+```bash
+# 1) On the Iran server:
+sudo ip tunnel add gre1 mode gre remote <NODE_IP> local <IRAN_IP> ttl 255
+sudo ip addr add 10.10.10.1/30 dev gre1
+sudo ip link set gre1 mtu 1476 up
+# Apply TCPMSS Clamping to prevent packet fragmentation:
+sudo iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o gre1 -j TCPMSS --clamp-mss-to-pmtu
+
+# Automated with ratholectl:
+sudo ratholectl gre on <NODE_IP> 10.10.10.1/30 gre1
+
+# 2) On the foreign node:
+sudo ip tunnel add gre1 mode gre remote <IRAN_IP> local <NODE_IP> ttl 255
+sudo ip addr add 10.10.10.2/30 dev gre1
+sudo ip link set gre1 mtu 1476 up
+sudo iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o gre1 -j TCPMSS --clamp-mss-to-pmtu
+
+# Automated with ratholenode:
+sudo ratholenode gre on <IRAN_IP> 10.10.10.2/30 gre1
+
+# 3) Test Layer 3 connectivity:
+ping -c 3 10.10.10.2   # from Iran server
+```
+
+### Optional: FRP + GRE Hybrid Mode (Maximum Resilience)
+
+In this setup, the L3 GRE virtual interface is established first, and the FRP daemon binds and operates strictly inside the private network (`10.10.10.0/30`), delivering encrypted QUIC/KCP multiplexed streams inside GRE packets:
+
+```bash
+# 1. Bring up GRE interface on both sides (following the GRE instructions above)
+# 2. Run frps on Iran bound to the GRE internal interface:
+sudo ratholectl frp on 7000 quic <SECRET_TOKEN>
+# 3. On the foreign node: connect frpc to Iran's internal GRE IP:
+sudo ratholenode frp on 10.10.10.1:7000 <SECRET_TOKEN> quic
+```
+
 ---
 
 ## 5. Full central hub install

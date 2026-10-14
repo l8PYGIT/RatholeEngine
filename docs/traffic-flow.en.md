@@ -186,6 +186,97 @@ User ──wss://domain:443/mysvc/──► nginx (:443, TLS)
 
 ---
 
+## Backhaul Traffic Flow (SMUX Multiplexing over 443)
+
+When a node switches its carrier to `backhaul`, traffic routes through the Go SMUX multiplexer core while preserving the public domain and port:
+
+```
+User ──wss://domain:443/trk01──► nginx (:443, TLS)
+                                   ├── map $uri → 127.0.0.1:1001 (port stays identical)
+                                   │              └── forwarded to backhaul-server (:3080)
+                                   └── SMUX streams (hardcoded paths /channel and /tunnel)
+                                                  │
+                                                  ▼
+                                     backhaul-client (on foreign node)
+                                                  │
+                                                  ▼
+                                     delivered to Xray inbound (:2087)
+```
+
+**Key Advantages:**
+- Multiplexes many concurrent user TCP streams into a single persistent session.
+- Resistant to connection resets under aggressive packet loss.
+
+---
+
+## FRP Traffic Flow (Standalone fatedier/frp Core)
+
+When a node's transport is assigned to `frp`:
+
+```
+User ──wss://domain:443/trk01──► nginx (:443, TLS)
+                                   └── map $uri → 127.0.0.1:1001
+                                                  │
+                                                  ▼
+                                     frps (local bind on Iran server)
+                                                  │ (QUIC/KCP/WS/TCP streams on port 7000)
+                                                  ▼
+                                     frpc (client on foreign node)
+                                                  │
+                                                  ▼
+                                     delivered to Xray inbound (:2087)
+```
+
+**Key Advantage:** Enables QUIC (UDP) or KCP multiplexing without requiring end users to change their V2Ray/Xray client configurations.
+
+---
+
+## GRE Tunnel Traffic Flow (Linux L3 Kernel Interface)
+
+In GRE mode, packets traverse directly at Layer 3 (IP protocol 47) without application-layer reverse-tunnel daemons:
+
+```
+Iran Server (gre1: 10.10.10.1) ◄───[GRE Encapsulated Packets, MTU 1476]───► Foreign Node (gre1: 10.10.10.2)
+                                                                             │
+iptables TCPMSS Clamping (1436)                                              ▼
+Direct local port forwarding to virtual IP ─────────────────────────► Xray inbound
+```
+
+- Kernel-level packet forwarding minimizes CPU overhead.
+- Packets appear as standard GRE encapsulation to network middleboxes.
+
+---
+
+## FRP + GRE Hybrid Traffic Flow (Layer 3 + Transport Muxing)
+
+The ultimate anti-blocking combination linking L3 kernel tunneling with modern stream multiplexing:
+
+```
+User ──wss://domain:443/trk01──► nginx (:443, TLS)
+                                   └── map $uri → 127.0.0.1:1001
+                                                  │
+                                                  ▼
+                                  frps (bound to GRE interface 10.10.10.1:7000)
+                                                  │
+                                  [QUIC/KCP packets encapsulated inside Linux GRE header]
+                                                  │
+                                                  ▼
+                                  frpc (connected via 10.10.10.2 interface)
+                                                  │
+                                                  ▼
+                                  demultiplexed data delivered to Xray inbound (:2087)
+                                                  │
+                                                  ▼
+                                  exit to open internet
+```
+
+**Why it defeats DPI:**
+1. Outer layer is purely kernel GRE network traffic between two servers.
+2. Inner traffic consists of multiplexed, constant-length QUIC or KCP buffers devoid of plain HTTP/TLS markers.
+3. Network jitter is absorbed by FRP's connection pool buffers.
+
+---
+
 ## Why This Design?
 
 - **One port, one domain, one cert:** everything multiplexed behind nginx on 443; the operator maintains one cert.

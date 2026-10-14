@@ -51,7 +51,7 @@ A single **Iran server** — behind one domain, one Let's Encrypt cert, one publ
 |------|---------|----------------|
 | **Iran panel** | [`rathole-manager/ratholectl`](rathole-manager/ratholectl) (bash) | rathole **server** + nginx. Owns node inventory. Generates `server.toml` + `rathole.conf`. |
 | **Foreign node** | [`rathole-manager/ratholenode`](rathole-manager/ratholenode) (bash) | rathole **client**. Generates `client.toml`. |
-| **Hub** | [`rathole-manager/ratholehub/hub.py`](rathole-manager/ratholehub/hub.py) (Python, stdlib only) | Central web panel driving many servers over SSH. |
+| **Hub** | [`rathole-manager/ratholehub/hub.py`](rathole-manager/ratholehub/hub.py) (Python, stdlib only) | Central web panel driving many servers over SSH. Features the Interactive Visual Wiring Board (`#/wiring`), Circuit Inspector HUD, and multi-core carrier management. |
 
 The core design principle everywhere: **change state → regenerate config → validate → hot-reload**. Configs are never hand-edited; they are rewritten in place (inode preserved) so rathole hot-reloads without dropping active tunnels, with automatic rollback if `nginx -t` fails.
 
@@ -124,7 +124,11 @@ ratholectl doctor                    # health check
 
 `ratholectl add` also prints a ready-to-paste `curl … | sudo bash -s -- --node -- …` one-liner for the foreign node, with the token/inbound already filled in.
 
-**From the hub** you can drive all of this without the CLI: **Update all** rolls the update across every server one-by-one (progress bar + per-server status, with a green/yellow version badge on each), **add to node** wires an Iran node (name/token/inbound) onto a foreign node or upstream, and **set main tunnel** links a node to its Iran server.
+**From the hub** you can drive all of this without the CLI:
+- **Interactive Visual Wiring Board (`#/wiring`)** — A datacenter-style 4-rack patch board simulating real physical cables with SVG cubic Bézier curves, tactile socket sparks & smoke puff animations, instant carrier switching modal, and a floating **Circuit Inspector HUD** with one-click client V2Ray/Xray config copy.
+- **Update all** rolls the update across every server one-by-one (progress bar + per-server status, with a green/yellow version badge on each).
+- **Add to node** wires an Iran node (name/token/inbound) onto a foreign node or upstream.
+- **Set main tunnel** links a node to its Iran server with single-click auto-configuration.
 
 ## Update & rollback
 

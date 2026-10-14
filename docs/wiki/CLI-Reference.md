@@ -8,7 +8,7 @@
 | مدیریت | `add` · `rm` · `edit` · `rename` · `rotate` | `add-svc` · `rm-svc` · `set` · `set-main` · `apply` |
 | پیکربندی | `set` · `init` · `regen` · `paths` · `info` | `backup` · `restore` · `migrate` |
 | بک‌آپ | `backup` · `restore` · `recover` | `backup` · `restore` |
-| حامل تونل | `kcp` · `plain` · `noise` · `backhaul` | `kcp` · `plain` · `noise` · `backhaul` |
+| حامل تونل | `kcp` · `plain` · `noise` · `backhaul` · `frp` · `gre` | `kcp` · `plain` · `noise` · `backhaul` · `frp` · `gre` |
 | ورودی کاربر | `direct` · `proxy` · `game` | — |
 | multi-Iran | — | `upstream` · `watchdog` · `adaptive` |
 | دامنه/گواهی | `domain` · `cert` · `ip-cert` · `control-path` | — |
@@ -118,6 +118,17 @@ ratholectl backhaul status
 ratholectl backhaul show             # خط آماده‌ی ratholenode backhaul on را چاپ می‌کند
 ratholectl backhaul node <name> on   # انتقال نود به transport=backhaul
 ratholectl backhaul node <name> off  # برگرداندن نود
+
+# FRP — هسته‌ی ریورس تونل مستقل fatedier/frp (پشتیبانی از QUIC/KCP/WS/TCP)
+ratholectl frp on [port] [transport] [token] # پیش‌فرض: port=7000, transport=tcp
+ratholectl frp off                   # خاموش‌کردن سرور frps
+ratholectl frp status                # وضعیت فرآیند frps و پورت‌های لوکال
+ratholectl frp show                  # چاپ دستور آماده کلاینت نود
+
+# GRE — تونل لایه ۳ نقطه به نقطه کرنل لینوکس (ip tunnel)
+ratholectl gre on <remote_ip> [tunnel_ip] [gre_name] # پیش‌فرض tunnel_ip: 10.10.10.1/30, gre1
+ratholectl gre off [gre_name]        # حذف اینترفیس مجازی GRE
+ratholectl gre status [gre_name]     # بررسی وضعیت اینترفیس و پکت‌ها
 ```
 
 ### ورودی‌های کاربری (Ingress)
@@ -263,6 +274,16 @@ ratholenode backhaul rm-svc <name>
 ratholenode backhaul ls
 ratholenode backhaul off
 ratholenode backhaul status
+
+# FRP — کلاینت ریورس تونل frpc (اتصال مستقیم به frps)
+ratholenode frp on <remote_ip:port> <token> [transport] # transport: tcp|kcp|quic|websocket
+ratholenode frp off
+ratholenode frp status
+
+# GRE — رابط نقطه به نقطه لایه ۳ کرنل لینوکس (ip tunnel)
+ratholenode gre on <remote_ip> [tunnel_ip] [gre_name]   # پیش‌فرض tunnel_ip: 10.10.10.2/30, gre1
+ratholenode gre off [gre_name]
+ratholenode gre status [gre_name]
 ```
 
 ### Adaptive Failover (سوئیچ خودکار)

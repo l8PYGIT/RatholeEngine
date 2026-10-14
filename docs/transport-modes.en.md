@@ -156,32 +156,13 @@ ratholectl proxy rm <name> | ls
 
 ---
 
-## 9) Adaptive Failover (v1.5.0+)
-
-An automatic controller for the main rathole lane. It currently switches between WebSocket and KCP without operator intervention; Backhaul health can be probed when it is the legacy selected mode, but dual-core service ownership is not moved automatically.
-
-- **Bounded probes:** every `ADAPTIVE_INTERVAL` seconds (default 30), one WebSocket RFC 6455 probe to `CONTROL_PATH`. Classification: `dns_failed` → `tcp_timeout` → `tls_failed` → `ws_rejected` → `ws_timeout` → `healthy`.
-- **Threshold/hysteresis:** switch after `ADAPTIVE_FAILURES` (default 3) consecutive failures; return after `ADAPTIVE_RECOVERIES` (default 5) consecutive successes + cooldown.
-- **Cooldown:** `ADAPTIVE_COOLDOWN` (default 300 s) between consecutive switches.
-- **Priority order:** `ws` → `kcp`. `plain` is only considered with `ALLOW_INSECURE=1` in `node.env`.
-- **Auto-rollback:** if the probe fails after switching too, the previous config is restored.
-- **State sanitization:** `/etc/rathole/adaptive-state.json` (mode 0600) only stores `time`, `current`, `classification`, `latency_ms`, `consecutive_failures` — no token/key/CONTROL_PATH.
-
-```bash
-ratholenode adaptive on [--interval N] [--failures N] [--recoveries N]
-ratholenode adaptive off | status
-ratholenode adaptive test [--json]
-```
-
----
-
-## 10) Secret WebSocket Control Path (v1.5.0+)
+## 9) Secret WebSocket Control Path (v1.5.0+)
 
 The rathole control channel moved from `/` to `/_rh/<32 hex>` so DPI cannot distinguish it from the fake site.
 
-- nginx: only `location = /_rh/<secret>` with `$http_upgrade` routes to the control port; all other paths keep their fake/data behavior.
-- Management: `ratholectl control-path show` (masked) / `rotate` (generates new path, grace period for nodes to update).
-- Node: `CONTROL_PATH` in `node.env`, inserted as `path = "/_rh/..."` in `client.toml`.
+- **nginx:** only `location = /_rh/<secret>` with `$http_upgrade` routes to the control port; all other paths keep their fake/data behavior.
+- **Management:** `ratholectl control-path show` (masked) / `rotate` (generates new path, grace period for nodes to update).
+- **Node:** `CONTROL_PATH` in `node.env`, inserted as `path = "/_rh/..."` in `client.toml`.
 
 ```bash
 ratholectl control-path show
@@ -190,7 +171,7 @@ ratholectl control-path rotate
 
 ---
 
-## 11) FRP Core — reverse tunnel via fatedier/frp
+## 10) FRP Core — reverse tunnel via fatedier/frp
 
 A standalone reverse tunnel core (`fatedier/frp`) operating alongside rathole and Backhaul. Designed for advanced connection multiplexing over TCP, KCP, QUIC, or WebSocket with shared token authentication.
 
@@ -210,7 +191,7 @@ ratholenode frp off | status
 
 ---
 
-## 12) GRE Tunnel — Linux L3 point-to-point network
+## 11) GRE Tunnel — Linux L3 point-to-point network
 
 A kernel-level Layer 3 Generic Routing Encapsulation (GRE) point-to-point tunnel interface (`ip tunnel`) providing direct IP communication without intermediate proxies.
 
@@ -229,7 +210,37 @@ ratholenode gre off [gre_name] | status [gre_name]
 
 ---
 
-**Key rule:** changing a rathole carrier leaves services/tokens/user paths untouched. Moving a service between rathole, Backhaul, or FRP changes lane ownership on both ends, but keeps the public URL path and Iran-side local port stable. For packet-level traffic flow details, see [`traffic-flow.md`](traffic-flow.md).
+## 12) FRP + GRE Hybrid (L3 Network with FRP Multiplexing)
+
+> The most resilient anti-censorship combo: A Linux kernel Layer 3 GRE tunnel (`10.10.10.0/30`) is established between Iran and the foreign node. Then, the FRP reverse tunnel binds and operates exclusively over this internal virtual interface, multiplexing local traffic over QUIC or KCP streams.
+
+- **Advantages:** Censors inspect only GRE-encapsulated packets with standard headers, while user connections are densely multiplexed and buffered inside the tunnel.
+- **Transport Selection:** QUIC (over UDP) or KCP with Reed-Solomon FEC over GRE.
+- **One-Click Patch Panel Wiring:** In the Hub Web Panel (`#/wiring`), select `FRP+GRE (Hybrid)` to automatically configure both GRE interfaces and the nested FRP reverse tunnel.
+
+---
+
+## 13) Adaptive Mode (Automatic L7 Probing & Dynamic Failover)
+
+> An **autonomous control layer** operating on the tunnel carriers. It continuously assesses link health via active L7 probes and dynamically switches the active transport without operator intervention when censorship or packet loss is detected.
+
+- **Bounded probes:** Every `ADAPTIVE_INTERVAL` seconds (default 30), sends an RFC 6455 WebSocket probe to `CONTROL_PATH`. Failure classification:
+  `dns_failed` → `tcp_timeout` → `tls_failed` → `ws_rejected` → `ws_timeout` → `healthy`.
+- **Threshold/hysteresis:** Switches carrier after `ADAPTIVE_FAILURES` (default 3) consecutive failures; returns after `ADAPTIVE_RECOVERIES` (default 5) consecutive successes + cooldown.
+- **Cooldown:** `ADAPTIVE_COOLDOWN` (default 300 s) between consecutive switches.
+- **Priority order:** `ws` → `kcp` (and `plain` if `ALLOW_INSECURE=1` is set).
+- **Auto-rollback:** If the probe fails after switching carrier, the previous configuration is automatically restored.
+- **State sanitization:** `/etc/rathole/adaptive-state.json` (mode 0600) only stores `time`, `current`, `classification`, `latency_ms`, `consecutive_failures` — zero tokens, credentials, or secrets in the state file.
+
+```bash
+ratholenode adaptive on [--interval N] [--failures N] [--recoveries N]
+ratholenode adaptive off | status
+ratholenode adaptive test [--json]
+```
+
+---
+
+**Key rule:** In all tunnel modes, user paths, tokens, and inbound configs remain untouched; only the underlying tunnel carrier changes. For packet-level traffic flow details, see [`traffic-flow.md`](traffic-flow.md).
 
 ---
 
@@ -238,4 +249,5 @@ ratholenode gre off [gre_name] | status [gre_name]
 - [CLI Reference (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — full command signatures
 - [Workflow Guides (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/Workflow-Guides) — step-by-step: direct-IP setup, backhaul migration, multi-domain, multi-upstream
 - [`transport-modes.md`](transport-modes.md) — Persian version of this document
-- [`hub.en.md`](hub.en.md) — Hub panel documentation (English)
+- [`architecture.md`](architecture.md) — overall system architecture
+- [`hub.md`](hub.md) / [`hub.en.md`](hub.en.md) — Hub Web Panel and Visual Wiring Board

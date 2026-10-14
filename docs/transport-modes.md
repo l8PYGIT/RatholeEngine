@@ -81,28 +81,6 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 
 ---
 
-**نکته‌ی کلیدی:** در حالت‌های ۱ تا ۵، سرویس‌ها/توکن‌ها/مسیر کاربران دست‌نخورده می‌مانند؛ فقط حاملِ تونل عوض می‌شود. برای جزئیات مسیر بسته لایه‌به‌لایه: [`traffic-flow.md`](traffic-flow.md).
-
----
-
-## همچنین ببینید
-
-- [مرجع کامل دستورات CLI (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — syntax کامل همه دستورات
-- [راهنماهای عملی (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/Workflow-Guides) — راه‌اندازی direct-IP، مهاجرت به backhaul، چند دامنه، multi-upstream
-- [`transport-modes.en.md`](transport-modes.en.md) — نسخه انگلیسی همین سند
-- [`architecture.md`](architecture.md) — معماری کلی سیستم
-
-> یک لایه‌ی **خودکار** بالای حالت‌های ۱–۵. حاملِ فعال را بدون دخالت اپراتور عوض می‌کند.
-
-- **probe‌های bounded:** هر بازه (پیش‌فرض ۳۰ ثانیه) یک WebSocket RFC 6455 به `CONTROL_PATH` می‌فرستد؛ طبقه‌بندی مستقیم:
-  `dns_failed` → `tcp_timeout` → `tls_failed` → `ws_rejected` → `ws_timeout` → `healthy`
-- **threshold/hysteresis:** پس از `ADAPTIVE_FAILURES` (پیش‌فرض ۳) شکست متوالی سوییچ؛ پس از `ADAPTIVE_RECOVERIES` (پیش‌فرض ۵) بازگشت سالم + اتمام cooldown.
-- **cooldown:** `ADAPTIVE_COOLDOWN` (پیش‌فرض ۳۰۰ ثانیه) بین سوییچ‌های متوالی.
-- **حامل‌های اولویت‌دار:** `ws` → `kcp` (و در صورت `ALLOW_INSECURE=1`: `plain`). plain هرگز بدون اجازه‌ی صریح انتخاب نمی‌شود.
-- **rollback خودکار:** اگر probe پس از سوییچ هم fail باشد، config قبلی بازیابی می‌شود.
-- **state sanitize:** `/etc/rathole/adaptive-state.json` (mode 0600) فقط فیلدهای `time`, `current`, `classification`, `latency_ms`, `consecutive_failures` دارد — هیچ token/key/CONTROL_PATH در JSON نیست.
-- روشن‌کردن: `ratholenode adaptive on [--interval N] [--failures N] [--recoveries N]`، خاموش: `off`، وضعیت: `status`، تست: `test [--json]`.
-
 ## ۹) secret WebSocket control path (v1.5.0+)
 
 > مسیر WebSocket کنترلی rathole از `/` به `/_rh/<32 hex>` منتقل شد تا DPI نتواند آن را از سایت فیک تشخیص دهد.
@@ -148,4 +126,39 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 
 ---
 
-**نکته‌ی کلیدی:** در حالت‌های ۱ تا ۵ و ۱۰، سرویس‌ها/توکن‌ها/مسیر کاربران دست‌نخورده می‌مانند؛ فقط حاملِ تونل عوض می‌شود. برای جزئیات مسیر بسته لایه‌به‌لایه: [`traffic-flow.md`](traffic-flow.md).
+## ۱۲) ترکیبی FRP + GRE (حالت هیبرید لایه ۳ با مالتی‌پلکسینگ)
+
+> قدرتمندترین ترکیب ضد اختلال: یک تونل شبکه لایه ۳ GRE بین سرور ایران و خارج برپا می‌شود (`10.10.10.1/30`)، سپس هسته ریورس تونل FRP بر روی این اینترفیس داخلی لود شده و پورت‌های لوکال را از طریق استریم‌های مالتی‌پلکس‌شده (QUIC یا KCP) جابه‌جا می‌کند.
+
+- **مزایا:** فایروال اینترنت ایران فقط بسته‌های کپسوله‌شده GRE را مشاهده می‌کند، در حالی که در داخل تونل، جریان‌های کاربری به صورت مالتی‌پلکس فشرده و بازتولید می‌شوند.
+- **انتخاب ترنسپورت:** مد QUIC با UDP یا KCP همراه با تصحیح خطای FEC روی GRE.
+- **پیکربندی ساده در بورد سیم‌کشی:** در پنل وب با انتخاب گزینه `FRP+GRE (ترکیبی)` در بورد پچ‌پنل، کل این فرآیند با یک کلیک ست‌آپ و لینک می‌شود.
+
+---
+
+## ۱۳) adaptive mode (حالت انطباقی خودکار و پروب L7)
+
+> یک لایه‌ی **خودکار** بالای حامل‌های تونل که سلامت ارتباط را دائماً می‌سنجد و حاملِ فعال را در صورت بروز اختلال بدون دخالت اپراتور عوض می‌کند.
+
+- **probe‌های bounded:** هر بازه (پیش‌فرض ۳۰ ثانیه) یک پروب واقعی WebSocket RFC 6455 به `CONTROL_PATH` می‌فرستد؛ طبقه‌بندی مستقیم:
+  `dns_failed` → `tcp_timeout` → `tls_failed` → `ws_rejected` → `ws_timeout` → `healthy`
+- **threshold/hysteresis:** پس از `ADAPTIVE_FAILURES` (پیش‌فرض ۳) شکست متوالی سوییچ؛ پس از `ADAPTIVE_RECOVERIES` (پیش‌فرض ۵) بازگشت سالم + اتمام cooldown.
+- **cooldown:** `ADAPTIVE_COOLDOWN` (پیش‌فرض ۳۰۰ ثانیه) بین سوییچ‌های متوالی.
+- **حامل‌های اولویت‌دار:** `ws` → `kcp` (و در صورت `ALLOW_INSECURE=1`: `plain`).
+- **rollback خودکار:** اگر probe پس از سوییچ هم fail باشد، config قبلی بازیابی می‌شود.
+- **دستورات:** `ratholenode adaptive on [--interval N] [--failures N] [--recoveries N]`، خاموش: `off`، وضعیت: `status`، تست: `test [--json]`.
+
+---
+
+**نکته‌ی کلیدی:** در تمامی حالت‌های تونلی، سرویس‌ها/توکن‌ها/مسیر کاربران دست‌نخورده می‌مانند؛ فقط حاملِ تونل عوض می‌شود. برای جزئیات مسیر بسته لایه‌به‌لایه: [`traffic-flow.md`](traffic-flow.md).
+
+---
+
+## همچنین ببینید
+
+- [مرجع کامل دستورات CLI (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — syntax کامل همه دستورات
+- [راهنماهای عملی (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/Workflow-Guides) — راه‌اندازی direct-IP، مهاجرت به backhaul، چند دامنه، multi-upstream
+- [`transport-modes.en.md`](transport-modes.en.md) — نسخه انگلیسی همین سند
+- [`architecture.md`](architecture.md) — معماری کلی سیستم
+- [`hub.md`](hub.md) — پنل وب و بورد سیم‌کشی تعاملی
+

@@ -79,10 +79,11 @@ function markNav(){document.querySelectorAll('.sitem').forEach(e=>{
  const active=e.dataset.pg===ROUTE.page;e.classList.toggle('active',active);e.setAttribute('aria-current',active?'page':'false');});}
 async function router(){
  if(!TOKEN)return; ROUTE=parseHash(); markNav();
+ if(ROUTE.page!=='wiring'&&ROUTE.page!=='routing'&&typeof resetCircuit==='function')resetCircuit();
  await ensureServers();
  if(ROUTE.page==='server')renderServerPage(ROUTE.param);
  else if(ROUTE.page==='wiring'){ GVIEW='board'; localStorage.setItem('rh_gview','board'); renderRouting(); }
- else if(ROUTE.page==='routing'){ if(GVIEW==='board') GVIEW='graph'; renderRouting(); }
+ else if(ROUTE.page==='routing'){ if(GVIEW==='board') GVIEW='graph'; if(typeof resetCircuit==='function')resetCircuit(); renderRouting(); }
  else if(ROUTE.page==='audit')renderAuditPage();
  else if(ROUTE.page==='settings')renderSettingsPage();
  else renderDashboard();
@@ -846,7 +847,7 @@ function renderNode(n,ov){
 let _gTimer=null,_gDragging=false;
 let GVIEW=localStorage.getItem('rh_gview')||'board';     // namaye routing: graph|table
 function scheduleGraph(){clearTimeout(_gTimer);_gTimer=setTimeout(()=>{if((ROUTE.page==='routing'||ROUTE.page==='wiring')&&!_gDragging){if(GVIEW==='console')drawConsole();else if(GVIEW==='board')drawPatchBoard();else drawGraph();}},150);}
-function setGView(v){GVIEW=v;localStorage.setItem('rh_gview',v);renderRouting();}
+function setGView(v){if(v!=='board'&&typeof resetCircuit==='function')resetCircuit();GVIEW=v;localStorage.setItem('rh_gview',v);renderRouting();}
 // tartib-e dasti-e box-ha (drag): dar localStorage mimanad
 function gOrder(col){try{return JSON.parse(localStorage.getItem('rh_gorder_'+col)||'[]');}catch(e){return[];}}
 function gResetOrder(){localStorage.removeItem('rh_gorder_iran');localStorage.removeItem('rh_gorder_node');drawGraph();toast(t('saved'));}

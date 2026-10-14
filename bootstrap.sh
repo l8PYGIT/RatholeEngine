@@ -38,17 +38,18 @@ warn(){ printf '%s %s\n' "$(c_y '[*]')" "$*"; }
 err(){ printf '%s %s\n' "$(c_r '[!]')" "$*" >&2; }
 die(){ err "$*"; exit 1; }
 # zir-e `curl ... | sudo bash` stdin pipe ast na terminal؛ agar /dev/tty baz shavad
-# hanooz mitavanim taamoli beporsim (rdp/ask_yn az /dev/tty mikhanand).
+# stdin ra be /dev/tty vasl mikonim ta hameye porsesh-ha va subshell-ha ba terminal kar konand.
+if [ ! -t 0 ] && [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
+  exec < /dev/tty
+fi
+
 TTY_DEV=""
 if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then TTY_DEV="/dev/tty"; fi
 is_tty(){ [ -t 0 ] || [ -n "$TTY_DEV" ]; }
-rdp(){ # read -rp ke ba stdin-e pipe ham kar mikonad: $1=prompt $2=nam-e motghayer
-  # MOHEM: agar NA stdin terminal bashad va NA /dev/tty baz shavad, HARGEZ az stdin nakhan —
-  # `read` rooye pipe-e baz ta abad montazer mimanad va prompt ham chap nemishavad (nasb bi-seda
-  # gir mikonad). timeout ham backstop-e terminal-e bi-morajea (screen-e detach-shode) ast.
+rdp(){ # read -rp: $1=prompt $2=nam-e motghayer
   local t="${RTH_READ_TIMEOUT:-300}"
-  if   [ -n "$TTY_DEV" ]; then IFS= read -rt "$t" -p "$1" "$2" < "$TTY_DEV"
-  elif [ -t 0 ];         then IFS= read -rt "$t" -p "$1" "$2"
+  if   [ -t 0 ];         then IFS= read -rt "$t" -p "$1" "$2"
+  elif [ -n "$TTY_DEV" ]; then IFS= read -rt "$t" -p "$1" "$2" < "$TTY_DEV"
   else printf -v "$2" '%s' ""; fi
 }
 ask_yn(){ [ "$ASSUME_YES" -eq 1 ] && return 0; local a; rdp "$1 [Y/n]: " a; [[ -z "$a" || "$a" =~ ^[Yy]$ ]]; }

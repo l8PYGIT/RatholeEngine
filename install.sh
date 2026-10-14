@@ -233,7 +233,11 @@ main(){
   # nabayad dobare be `latest` bargardad (vagarna noskhe-ye pin-shode bi-seda avaz mishavad).
   log "ejra-ye bootstrap..."
   export RATHOLE_GH="$GH" RATHOLE_RELEASE="$REL" RATHOLE_GH_TOKEN="$GH_TOKEN"
-  exec bash "$tmp/bootstrap.sh" --local "$bundle" "$@"
+  if [ ! -t 0 ] && [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
+    exec bash "$tmp/bootstrap.sh" --local "$bundle" "$@" < /dev/tty
+  else
+    exec bash "$tmp/bootstrap.sh" --local "$bundle" "$@"
+  fi
 }
 
 main "$@"

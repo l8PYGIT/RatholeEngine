@@ -25,6 +25,9 @@ need_root(){ [ "$(id -u)" -eq 0 ] || die "bayad ba root ejra shavad (sudo)."; }
 # tanha rah-e motmaen BAZ KARDAN-e /dev/tty ast (haman elgo-ye dorost-e bootstrap.sh).
 # agar hich tty-ye vaghei nabashad HARGEZ montazer nemimanim (meghdar-e khali barmigardad).
 RTH_TTY=""
+if [ ! -t 0 ] && [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
+  exec < /dev/tty
+fi
 if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then RTH_TTY="/dev/tty"; fi
 has_tty(){ [ -t 0 ] || [ -n "$RTH_TTY" ]; }
 

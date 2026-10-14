@@ -26,6 +26,7 @@ set -euo pipefail
 # ---------- tanzimat ----------
 GH="${RATHOLE_GH:-loopy-iri/tunnelplus}"    # owner/repo — pishfarz، ba RATHOLE_GH override kon
 REL="${RATHOLE_RELEASE:-latest}"               # latest | beta | yek tag mesl v1.0.0
+GH_TOKEN="${RATHOLE_GH_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-}}}"
 BASE="https://github.com/${GH}/releases"
 
 c_g(){ printf '\033[1;32m%s\033[0m' "$*"; }
@@ -50,6 +51,10 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || die "$1 be yek meghdar niaz darad (masalan: --release v1.8.0 | latest | beta)."
       REL="$2"; shift 2 ;;
     --release=*|--version=*) REL="${1#*=}"; shift ;;
+    --token|-t)
+      [ $# -ge 2 ] || die "$1 be yek meghdar niaz darad (masalan: --token github_pat_...)."
+      GH_TOKEN="$2"; shift 2 ;;
+    --token=*) GH_TOKEN="${1#*=}"; shift ;;
     --beta)   REL="beta"; shift ;;
     --stable) REL="latest"; shift ;;
     *) ARGS+=("$1"); shift ;;
@@ -96,16 +101,27 @@ install_prereqs(){
 
 fetch1(){ # $1=url $2=out ; ba curl ya wget (yek talash)
   local url="$1" out="$2"
+  local h=()
+  if [ -n "$GH_TOKEN" ] && echo "$url" | grep -qE 'github\.com|githubusercontent\.com'; then
+    h=(-H "Authorization: Bearer $GH_TOKEN")
+  fi
   # gard-e transfer-e raked: bedoon-e --speed-limit dar surate ekhtelal/filtering-e Iran curl ta abad hang mikonad.
   if command -v curl >/dev/null 2>&1; then
-    curl -fSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 2 "$url" -o "$out"
+    curl -fSL "${h[@]}" --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 2 "$url" -o "$out"
   elif command -v wget >/dev/null 2>&1; then
-    wget -q --timeout=20 --tries=2 -O "$out" "$url"
+    local wh=()
+    [ -n "$GH_TOKEN" ] && echo "$url" | grep -qE 'github\.com|githubusercontent\.com' && wh=(--header="Authorization: Bearer $GH_TOKEN")
+    wget -q "${wh[@]}" --timeout=20 --tries=2 -O "$out" "$url"
   else return 1; fi
 }
 
 # mirror-haye ghproxy baraye dor zadan-e filtering-e GitHub az dakhl-e Iran (hamsan-e install-panel.sh).
-RATHOLE_MIRRORS=("" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/")
+# dar soorat-e repo-ye private (GH_TOKEN)، mirror-haye omoomi dastresi nadarand pas faghat mostaghim.
+if [ -n "$GH_TOKEN" ]; then
+  RATHOLE_MIRRORS=("")
+else
+  RATHOLE_MIRRORS=("" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/")
+fi
 
 fetch(){ # $1=url (kamel، mesl https://github.com/...) $2=out ; mostaghim، sps mirror-ha
   local url="$1" out="$2" m
@@ -176,10 +192,20 @@ main(){
   log "download az GitHub release: $(c_y "$GH ($REL)")"
   # 1) bootstrap.sh (mantegh-e amade-sazi va nasb)
   if ! fetch "$DL/bootstrap.sh" "$tmp/bootstrap.sh"; then
-    err "download bootstrap.sh az release shekast khord: $DL/bootstrap.sh"
-    err "elal-e ehtemali: release hanooz montasher nashode (tag v* push kon)، slug eshtebah، ya filtering."
-    err "rah-e jaygozin: baste ra dasti begir va bootstrap.sh ra ba --local ejra kon (docs/README.fa.md)."
-    exit 1
+    if [ -n "$GH_TOKEN" ]; then
+      local raw_ref="${REL}"
+      [ "$raw_ref" = "latest" ] && raw_ref="main"
+      log "talash-e daryaft bootstrap.sh az private raw content (${raw_ref})..."
+      fetch "https://raw.githubusercontent.com/${GH}/${raw_ref}/bootstrap.sh" "$tmp/bootstrap.sh" || {
+        err "download bootstrap.sh az repo-ye private shekast khord."
+        exit 1
+      }
+    else
+      err "download bootstrap.sh az release shekast khord: $DL/bootstrap.sh"
+      err "elal-e ehtemali: release hanooz montasher nashode (tag v* push kon)، slug eshtebah، ya filtering."
+      err "rah-e jaygozin: baste ra dasti begir va bootstrap.sh ra ba --local ejra kon (docs/README.fa.md)."
+      exit 1
+    fi
   fi
   # 2) baste-ye asli
   local bundle=""
@@ -187,6 +213,15 @@ main(){
     bundle="$tmp/rathole-manager.zip"
   elif fetch "$DL/rathole-manager.tar.gz" "$tmp/rathole-manager.tar.gz"; then
     bundle="$tmp/rathole-manager.tar.gz"
+  elif [ -n "$GH_TOKEN" ]; then
+    log "download archive az API-ye private repository..."
+    local api_ref="${REL}"
+    [ "$api_ref" = "latest" ] && api_ref="main"
+    if fetch "https://api.github.com/repos/${GH}/tarball/${api_ref}" "$tmp/bundle.tar.gz"; then
+      bundle="$tmp/bundle.tar.gz"
+    else
+      die "download archive az API-ye private repository shekast khord."
+    fi
   else
     die "download baste (rathole-manager.zip/.tar.gz) az release shekast khord: $DL"
   fi
@@ -196,7 +231,7 @@ main(){
   # RATHOLE_RELEASE-e halshode ra export mikonim: masir-e `--update` be update.sh miresad va
   # nabayad dobare be `latest` bargardad (vagarna noskhe-ye pin-shode bi-seda avaz mishavad).
   log "ejra-ye bootstrap..."
-  export RATHOLE_GH="$GH" RATHOLE_RELEASE="$REL"
+  export RATHOLE_GH="$GH" RATHOLE_RELEASE="$REL" RATHOLE_GH_TOKEN="$GH_TOKEN"
   exec bash "$tmp/bootstrap.sh" --local "$bundle" "$@"
 }
 

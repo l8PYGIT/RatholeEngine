@@ -6,6 +6,15 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-14
+
+### Added
+- **Interactive Visual Wiring Board (`#/wiring` / Patch Panel):** Datacenter-style 4-rack patch board (Ingress, Carriers, Inbounds, Outbounds) with drag-and-drop & click-to-wire patch cabling, animated SVG cubic Bézier curves, socket spark & puff animations, floating Circuit Inspector HUD with live ping and one-click V2Ray recipe copy, and Carrier Switcher Modal.
+- **Standalone FRP Core (`fatedier/frp`):** Full reverse tunnel integration with TCP, KCP, QUIC, and WebSocket transport support. New commands: `ratholectl frp on/off/status/show` and `ratholenode frp on/off/status`.
+- **Linux Kernel Layer 3 GRE Tunnel:** Direct kernel IP-in-IP tunnel (`ip tunnel`) with /30 subnet addressing (`10.10.10.0/30`), MTU 1476 optimization, and iptables TCPMSS clamping. New commands: `ratholectl gre on/off/status` and `ratholenode gre on/off/status`.
+- **FRP + GRE Hybrid Carrier:** L3 kernel GRE network interface carrying nested FRP QUIC/KCP multiplexed streams for maximum censorship resistance.
+- **Multi-Device Responsive Redesign:** 5-column bottom navigation bar on mobile/tablet viewports, safe-area offset for floating HUD inspector, and 1-column fallback grids for mobile displays.
+
 ## [1.9.3] - 2026-08-19
 
 ### Changed

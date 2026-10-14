@@ -81,7 +81,7 @@ ratholectl doctor                      # بررسی سلامت
 ratholectl version                     # نسخهٔ manager + rathole (manager_version=/rathole_version=)
 ratholectl update                      # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholectl update beta                 # کانال بتا: آخرین pre-release (آزمایشی)
-ratholectl update v1.9.3               # آپدیت به نسخه‌ی خاص
+ratholectl update v2.0.0               # آپدیت به نسخه‌ی خاص
 ratholectl menu                        # منوی تعاملی کامل
 ```
 
@@ -157,7 +157,7 @@ ratholenode backup [file]              # snapshot از node.env + services + ups
 ratholenode restore <file>             # بازگردانی + بازتولید config + restart
 ratholenode update                     # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholenode update beta                # کانال بتا: آخرین pre-release (آزمایشی)
-ratholenode update v1.9.3              # آپدیت به نسخه‌ی خاص
+ratholenode update v2.0.0              # آپدیت به نسخه‌ی خاص
 ratholenode version                    # نسخهٔ manager + rathole
 ratholenode status | logs | apply
 ```
@@ -433,10 +433,10 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.s
 > **نصب یک نسخه‌ی خاص:** با فلگ `--release` (اگر بدون آرگومان اجرا کنی، خودش می‌پرسد؛ Enter = آخرین نسخه):
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v1.9.3 --panel --domain ... --fullchain ... --key ...
+> curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v2.0.0 --panel --domain ... --fullchain ... --key ...
 > ```
 >
-> `--beta` آخرین pre-release و `--stable` آخرین نسخه‌ی پایدار را می‌گیرد. از روی سرورِ نصب‌شده: `ratholectl update v1.9.3` یا `ratholenode update v1.9.3`.
+> `--beta` آخرین pre-release و `--stable` آخرین نسخه‌ی پایدار را می‌گیرد. از روی سرورِ نصب‌شده: `ratholectl update v2.0.0` یا `ratholenode update v2.0.0`.
 > دقت کن `RATHOLE_RELEASE=... curl ... | sudo bash` کار **نمی‌کند** (آن متغیر به `curl` می‌چسبد و `sudo` هم پاکش می‌کند) — از فلگ استفاده کن.
 >
 > **در ایران (فیلترینگ گیت‌هاب):** اگر دانلود مستقیم گیت‌هاب کار نکرد، بسته را روی سرور خارج بگیر و از روش «بسته‌ی محلی» زیر (`bootstrap.sh --local`) استفاده کن.

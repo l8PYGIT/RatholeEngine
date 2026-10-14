@@ -213,7 +213,7 @@ ratholectl restart             # ری‌استارت rathole-server (همه تا
 
 ratholectl update              # آپدیت به آخرین نسخه‌ی پایدار
 ratholectl update beta         # آخرین نسخه‌ی pre-release
-ratholectl update v1.9.3       # آپدیت به یک نسخه‌ی خاص
+ratholectl update v2.0.0       # آپدیت به یک نسخه‌ی خاص
 ```
 
 ---
@@ -356,7 +356,7 @@ ratholenode fakeweb status
 ratholenode restart          # ری‌استارت rathole-client (همه tunnelها لحظه‌ای قطع می‌شوند)
 ratholenode update           # آپدیت به آخرین نسخه‌ی پایدار
 ratholenode update beta      # آخرین pre-release
-ratholenode update v1.9.3    # آپدیت به نسخه‌ی خاص
+ratholenode update v2.0.0    # آپدیت به نسخه‌ی خاص
 ```
 
 ---

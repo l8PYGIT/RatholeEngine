@@ -100,10 +100,10 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.s
 Install a **specific released version** with `--release` (run with no arguments and it asks; Enter = latest):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v1.9.3 --panel --domain panel.example.ir --fullchain /path/fullchain.pem --key /path/privkey.pem
+curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v2.0.0 --panel --domain panel.example.ir --fullchain /path/fullchain.pem --key /path/privkey.pem
 ```
 
-`--beta` takes the newest pre-release, `--stable` the newest stable. From an installed server: `ratholectl update v1.9.3` / `ratholenode update v1.9.3`. Note `RATHOLE_RELEASE=... curl ... | sudo bash` does **not** work — the variable goes to `curl` and `sudo` strips it; use the flag.
+`--beta` takes the newest pre-release, `--stable` the newest stable. From an installed server: `ratholectl update v2.0.0` / `ratholenode update v2.0.0`. Note `RATHOLE_RELEASE=... curl ... | sudo bash` does **not** work — the variable goes to `curl` and `sudo` strips it; use the flag.
 
 Offline / local bundle (no download) still works via `bootstrap.sh` directly — see [`docs/README.fa.md`](docs/README.fa.md).
 

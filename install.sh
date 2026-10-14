@@ -44,6 +44,7 @@ die(){ err "$*"; exit 1; }
 # motghayer be CURL micshasbad na be bash-e sudo-shode، va `sudo` ham ba env_reset pak-ash mikonad.
 # pas karbar amalan hich rahi baraye pin kardan-e noskhe nadasht. flag az har do masir amn ast.
 # ARGS-e baghimande dast-nakhorde be bootstrap miravad (--panel/--node/--update/... hamchenan kar mikonad).
+RAW_ARGC=$#
 ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -70,7 +71,7 @@ if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then TTY_DEV="/dev/tty"; fi
 # faghat vaghti karbar NA flag dade va NA env — va terminal darim. Enter = latest.
 ask_release(){
   [ -n "${RATHOLE_RELEASE:-}" ] && return 0
-  local a="" t="${RTH_READ_TIMEOUT:-300}"
+  local a="" t="${RTH_READ_TIMEOUT:-10}"
   echo
   echo "$(c_g 'kodam noskhe nasb shavad?')"
   echo "  - Enter        → latest (akharin noskhe-ye paydar — tosiye)"
@@ -182,9 +183,9 @@ main(){
   local tmp; tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
 
-  # bedoon-e flag/env va ba terminal → beporsim (Enter = latest). ba flag ya bedoon-e tty:
-  # hich porseshi nist va raftar-e ghabli (latest) dast-nakhorde mimanad.
-  if [ "$REL" = "latest" ] && [ -z "${RATHOLE_RELEASE:-}" ] && { [ -t 0 ] || [ -n "$TTY_DEV" ]; }; then
+  # faghat agar hich flag-i dade nashode va stdin vaghean terminal ast ([ -t 0 ]).
+  # agar karbar flag dade ya pipe ast (curl | sudo bash), hargez gir nakon va mostaghim be latest boro.
+  if [ "$RAW_ARGC" -eq 0 ] && [ -z "$GH_TOKEN" ] && [ "$REL" = "latest" ] && [ -z "${RATHOLE_RELEASE:-}" ] && [ -t 0 ]; then
     ask_release
   fi
 

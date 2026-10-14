@@ -32,7 +32,14 @@ check(){ # $1=label $2=script-file-ba-helper $3=farakhani $4=setsid|ctty
   local label="$1" helper="$2" call="$3" mode="$4" pre=() out
   cp "$helper" "$D/run.sh"
   printf '%s\necho REACHED_END\n' "$call" >> "$D/run.sh"
-  [ "$mode" = setsid ] && pre=(setsid -w)
+  if [ "$mode" = setsid ]; then
+    if command -v setsid >/dev/null 2>&1; then
+      pre=(setsid -w)
+    else
+      ok "$label [$mode]: skip (setsid nist)"
+      return 0
+    fi
+  fi
   out="$(RTH_READ_TIMEOUT=3 timeout 20 "${pre[@]}" bash "$D/run.sh" <"$FIFO" 2>&1)"
   printf '%s' "$out" | grep -q REACHED_END \
     || fail "$label [$mode]: bedoon-e javab gir kard (hang) — nasb motevaghef mishavad"
@@ -58,7 +65,9 @@ check "common.sh/ask_yn"    "$D/common-helper.sh" 'ask_yn "tst?" || true' setsid
 # --- bedoon-e tty javab bayad «na» bashad (pishfarz-e amn baraye porsesh-e makhrab) ---
 cp "$D/common-helper.sh" "$D/run.sh"
 printf 'ask_yn "hazf shavad?" && echo ANSWER=YES || echo ANSWER=NO\n' >> "$D/run.sh"
-res="$(RTH_READ_TIMEOUT=3 timeout 20 setsid -w bash "$D/run.sh" <"$FIFO" 2>&1)"
+pre=()
+command -v setsid >/dev/null 2>&1 && pre=(setsid -w)
+res="$(RTH_READ_TIMEOUT=3 timeout 20 "${pre[@]}" bash "$D/run.sh" <"$FIFO" 2>&1)"
 printf '%s' "$res" | grep -q 'ANSWER=NO' || fail "bedoon-e tty javab bayad 'na' bashad, na: $res"
 ok "bedoon-e tty javab-e ask_yn 'na' ast (pishfarz-e amn)"
 

@@ -82,7 +82,11 @@ install_prereqs(){
   command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1 && return 0
   log "nasb pish-niazha (curl tar unzip ca-certificates)..."
   local pkgs="curl unzip tar ca-certificates"
-  if command -v apt-get >/dev/null 2>&1; then export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y $pkgs
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    export NEEDRESTART_MODE=a
+    export NEEDRESTART_SUSPEND=1
+    apt-get update -y && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" $pkgs
   elif command -v dnf >/dev/null 2>&1; then dnf install -y $pkgs
   elif command -v yum >/dev/null 2>&1; then yum install -y $pkgs
   elif command -v pacman >/dev/null 2>&1; then pacman -Sy --noconfirm curl unzip tar ca-certificates
@@ -92,8 +96,11 @@ install_prereqs(){
 
 fetch1(){ # $1=url $2=out ; ba curl ya wget (yek talash)
   local url="$1" out="$2"
-  if command -v curl >/dev/null 2>&1; then curl -fSL --retry 3 --connect-timeout 20 "$url" -o "$out"
-  elif command -v wget >/dev/null 2>&1; then wget -q -O "$out" "$url"
+  # gard-e transfer-e raked: bedoon-e --speed-limit dar surate ekhtelal/filtering-e Iran curl ta abad hang mikonad.
+  if command -v curl >/dev/null 2>&1; then
+    curl -fSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 2 "$url" -o "$out"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q --timeout=20 --tries=2 -O "$out" "$url"
   else return 1; fi
 }
 
@@ -118,7 +125,7 @@ fetch(){ # $1=url (kamel، mesl https://github.com/...) $2=out ; mostaghim، sps
 resolve_beta_tag(){
   local m out tag
   for m in "${RATHOLE_MIRRORS[@]}"; do
-    out="$(curl -fsSL --connect-timeout 15 --retry 1 "${m}https://github.com/${GH}/releases.atom" 2>/dev/null)" || continue
+    out="$(curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 15 --retry 1 "${m}https://github.com/${GH}/releases.atom" 2>/dev/null)" || continue
     # '|| true' ALZAMI ast: install.sh ba 'set -e' ejra mishavad va agar grep hich beta-i
     # peyda nakonad، in enteshab non-zero mishavad va script vasat-e kar mimirad.
     tag="$(printf '%s' "$out" \

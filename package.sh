@@ -60,6 +60,12 @@ rm -f "$OUT"
 if command -v zip >/dev/null 2>&1; then
   echo "[+] sakht $OUT ba zip (forward-slash)..."
   zip -r -q "$OUT" "${PACK[@]}"
+elif command -v python3 >/dev/null 2>&1 && [ -f "tools/build_zip.py" ]; then
+  echo "[+] sakht $OUT ba python3 tools/build_zip.py..."
+  python3 tools/build_zip.py
+elif command -v python >/dev/null 2>&1 && [ -f "tools/build_zip.py" ]; then
+  echo "[+] sakht $OUT ba python tools/build_zip.py..."
+  python tools/build_zip.py
 else
   echo "[*] zip nasb nist; bhjai an tar.gz misazam (bootstrap har do ra mipzird)..."
   tar -czf "rathole-manager.tar.gz" "${PACK[@]}"

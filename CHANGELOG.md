@@ -18,6 +18,13 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 - **حالت ترکیبی هیبرید FRP + GRE:** قوی‌ترین زنجیره ضد اختلال با اجرای استریم‌های مالتی‌پلکس‌شده FRP بر بستر شبکه لایه ۳ GRE.
 - **بازطراحی واکنش‌گرا و ناوبری ۵ ستونه موبایل:** اصلاح کامل Grid ناوبری پایین صفحه در موبایل/تبلت، شناورسازی ایمن HUD بازرس مدار بر اساس `safe-area-inset`، و بهینه‌سازی کارت‌های حامل برای صفحات کوچک.
 
+### Fixed
+- **رفع قطعی فریز و قفل نصاب در اینترنت ایران (Stalled Transfer & NeedRestart Freeze):**
+  - افزودن گارد سرعت و زمان حداقل (`--speed-limit 1024 --speed-time 20` و `--connect-timeout 15`) برای تمام فراخوانی‌های `curl` در `install.sh`، `bootstrap.sh`، `install-panel.sh`، `install-node.sh`، `common.sh` و `ratholectl/ratholenode/hub.py` جهت جلوگیری از گیر کردن بی‌پایان تحت اختلالات DPI و فیلترینگ شدید.
+  - تنظیم متغیرهای `NEEDRESTART_MODE=a` و `NEEDRESTART_SUSPEND=1` به همراه سوئیچ‌های `--force-confdef --force-confold` در تمامی فراخوانی‌های `apt-get` برای جلوگیری از توقف تعاملی نصاب روی اوبونتو ۲۲.۰۴ و ۲۴.۰۴.
+  - افزودن خودکار آدرس‌های جایگزین و میرورهای پرسرعت GitHub Proxy به دانلود رتهول در اسکریپت `install-node.sh`.
+  - اصلاح تست رگرسیون `test_tty_prompt.sh` جهت مدیریت ایمن محیط‌های بدون ابزار `setsid`.
+
 ## [1.9.3] - 2026-08-19
 
 ### Changed

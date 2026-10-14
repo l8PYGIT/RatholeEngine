@@ -82,7 +82,10 @@ install_prereqs(){
   local pkgs="curl unzip tar ca-certificates"
   log "amade-sazi mohit va nasb pish-niazha ($pkgs)..."
   if command -v apt-get >/dev/null 2>&1; then
-    export DEBIAN_FRONTEND=noninteractive; apt-get update -y && apt-get install -y $pkgs
+    export DEBIAN_FRONTEND=noninteractive
+    export NEEDRESTART_MODE=a
+    export NEEDRESTART_SUSPEND=1
+    apt-get update -y && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" $pkgs
   elif command -v dnf >/dev/null 2>&1; then dnf install -y $pkgs
   elif command -v yum >/dev/null 2>&1; then yum install -y $pkgs
   elif command -v pacman >/dev/null 2>&1; then pacman -Sy --noconfirm curl unzip tar ca-certificates
@@ -155,8 +158,10 @@ resolve_source(){
 download(){
   local url="$1" out="$2"
   log "download baste az: $url"
-  if command -v curl >/dev/null 2>&1; then curl -fSL --retry 3 --connect-timeout 20 "$url" -o "$out"
-  elif command -v wget >/dev/null 2>&1; then wget -O "$out" "$url"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --retry 2 "$url" -o "$out"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -T 30 -t 2 -O "$out" "$url"
   else return 1; fi
 }
 

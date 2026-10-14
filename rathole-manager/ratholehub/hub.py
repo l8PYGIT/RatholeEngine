@@ -378,7 +378,7 @@ REL="latest"
 if [ "$CHAN" = "beta" ]; then
   TAG=""
   for M in "${MIRRORS[@]}"; do
-    AT="$(curl -fsSL --connect-timeout 15 --retry 1 "${M}https://github.com/${GH}/releases.atom" 2>/dev/null)" || continue
+    AT="$(curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 15 --retry 1 "${M}https://github.com/${GH}/releases.atom" 2>/dev/null)" || continue
     TAG="$(printf '%%s' "$AT" | grep -oE 'releases/tag/v[0-9A-Za-z._-]+' | sed 's#.*releases/tag/##' | grep -E -- '-(beta|rc|alpha)' | head -n1 || true)"
     [ -n "$TAG" ] && break
   done
@@ -390,7 +390,7 @@ T="$(mktemp)"
 trap 'rm -f "$T"' EXIT
 ok=0
 for M in "${MIRRORS[@]}"; do
-  if curl -fsSL --connect-timeout 20 --retry 2 "${M}https://github.com/${GH}/${PATH_SEG}" -o "$T" 2>/dev/null; then ok=1; break; fi
+  if curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 1 "${M}https://github.com/${GH}/${PATH_SEG}" -o "$T" 2>/dev/null; then ok=1; break; fi
 done
 [ "$ok" = 1 ] || { echo "download install.sh az hameye mirror-ha shekast khord (filtering?)" >&2; exit 1; }
 RATHOLE_GH="$GH" RATHOLE_RELEASE="$REL" bash "$T" --update

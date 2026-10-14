@@ -54,19 +54,34 @@ esac
 if ! command -v rathole >/dev/null 2>&1; then
   log "nasb pish-niazha va download rathole ${RATHOLE_VERSION}..."
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -y && apt-get install -y curl unzip tar ca-certificates
+  export NEEDRESTART_MODE=a
+  export NEEDRESTART_SUSPEND=1
+  apt-get update -y && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" curl unzip tar ca-certificates
   tmp="$(mktemp -d)"
-  url="https://github.com/rapiz1/rathole/releases/download/${RATHOLE_VERSION}/rathole-${RH_ARCH}.zip"
+  gh="rapiz1/rathole/releases/download/${RATHOLE_VERSION}/rathole-${RH_ARCH}.zip"
+  urls=(
+    "https://github.com/${gh}"
+    "https://ghproxy.net/https://github.com/${gh}"
+    "https://gh-proxy.com/https://github.com/${gh}"
+    "https://mirror.ghproxy.com/https://github.com/${gh}"
+  )
   # --speed-limit/--speed-time (na --max-time): DPI-e Iran ettesal ra bargharar mikonad va baad
   # jarian ra motevaghef → curl-e bedoon-e hadd TA ABAD montazer mimanad. in gard faghat transfer-e
   # RAKED ra ghat mikonad va download-e kond-vali-dar-hal-pishraft ra nemikoshad.
-  curl -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --retry 2 \
-       "$url" -o "$tmp/rathole.zip" || die "download rathole shekast khord (shabake/filtr?)."
-  unzip -o "$tmp/rathole.zip" -d "$tmp" >/dev/null
-  b="$(find "$tmp" -type f -name rathole -print -quit 2>/dev/null)"
-  [ -n "$b" ] || { rm -rf "$tmp"; die "binary-e rathole dar zip peyda nashod."; }
-  install -m 755 "$b" /usr/local/bin/rathole
+  ok=0
+  for u in "${urls[@]}"; do
+    if curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 1 \
+         "$u" -o "$tmp/rathole.zip" 2>/dev/null; then
+      if unzip -o "$tmp/rathole.zip" -d "$tmp" >/dev/null 2>&1; then
+        b="$(find "$tmp" -type f -name rathole -print -quit 2>/dev/null)"
+        if [ -n "$b" ]; then
+          install -m 755 "$b" /usr/local/bin/rathole && ok=1 && break
+        fi
+      fi
+    fi
+  done
   rm -rf "$tmp"
+  [ "$ok" -eq 1 ] || die "download rathole shekast khord (shabake/filtr?)."
 fi
 
 # agar core/SHA256SUMS vojood darad, az binary-e patched-e bundle estefade kon

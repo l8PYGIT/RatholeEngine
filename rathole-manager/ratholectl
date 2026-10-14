@@ -3126,7 +3126,7 @@ cmd_update(){
   local tmp m ok=0; tmp="$(mktemp)"
   log "download install.sh az GitHub Release: $gh ($rel)..."
   for m in "${mirrors[@]}"; do
-    if curl -fSL --retry 2 --connect-timeout 20 "${m}https://github.com/${gh}/${path}" -o "$tmp" 2>/dev/null; then ok=1; break; fi
+    if curl -fSL --retry 1 --connect-timeout 15 --speed-limit 1024 --speed-time 20 "${m}https://github.com/${gh}/${path}" -o "$tmp" 2>/dev/null; then ok=1; break; fi
     [ -n "$m" ] && warn "in mirror javab nadad, badi..."
   done
   [ "$ok" -eq 1 ] || { rm -f "$tmp"; die "download install.sh az hameye mirror-ha shekast khord (filtering/slug/release ra barresi kon)."; }

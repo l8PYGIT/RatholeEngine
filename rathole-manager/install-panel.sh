@@ -119,9 +119,11 @@ esac
 # ---------- pish-niazha ----------
 log "nasb pish-niazha (nginx, jq, curl, unzip, openssl, certbot, sshpass)..."
 export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
 apt-get update -y
 # sshpass baraye provision-e khodkar-e node-ha az panel/hub (nasb-e kelid ba ramz) lazem ast.
-apt-get install -y nginx jq curl unzip openssl ca-certificates certbot python3-certbot-nginx sshpass
+apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" nginx jq curl unzip openssl ca-certificates certbot python3-certbot-nginx sshpass
 
 # ---------- nasb rathole ----------
 # esteratezhi (moshkel-e asli-ye Iran: GitHub filtr ast):
@@ -186,7 +188,7 @@ install_rathole(){
   local ok=0
   for u in "${urls[@]}"; do
     log "talash: $u"
-    if curl -fsSL --connect-timeout 20 --retry 2 "$u" -o "$tmp/rathole.zip" 2>/dev/null; then
+    if curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 1 "$u" -o "$tmp/rathole.zip" 2>/dev/null; then
       if try_extract_bin "$tmp/rathole.zip"; then ok=1; break; fi
     fi
     warn "in mnba javab nadad, mnba-ye badi..."

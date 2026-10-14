@@ -70,7 +70,7 @@ RTH_MIRRORS=("" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.g
 resolve_beta_tag(){
   local gh="$1" m out tag
   for m in "${RTH_MIRRORS[@]}"; do
-    out="$(curl -fsSL --connect-timeout 15 --retry 1 "${m}https://github.com/${gh}/releases.atom" 2>/dev/null)" || continue
+    out="$(curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 15 --retry 1 "${m}https://github.com/${gh}/releases.atom" 2>/dev/null)" || continue
     tag="$(printf '%s' "$out" \
       | grep -oE 'releases/tag/v[0-9A-Za-z._-]+' \
       | sed 's#.*releases/tag/##' \
@@ -262,7 +262,7 @@ install_backhaul(){
   log "download backhaul ${ver} ($role)..."
   tmp="$(mktemp -d)"
   for m in "" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/"; do
-    if curl -fsSL --connect-timeout 20 --retry 2 "${m}https://github.com/Musixal/Backhaul/releases/download/${ver}/backhaul_linux_${arch}.tar.gz" -o "$tmp/bh.tgz" 2>/dev/null; then ok=1; break; fi
+    if curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 1 "${m}https://github.com/Musixal/Backhaul/releases/download/${ver}/backhaul_linux_${arch}.tar.gz" -o "$tmp/bh.tgz" 2>/dev/null; then ok=1; break; fi
     warn "in mnba javab nadad, mnba-ye badi..."
   done
   [ "$ok" -eq 1 ] || { rm -rf "$tmp"; die "download backhaul az hame-ye mnaba shekast khord."; }
@@ -377,7 +377,7 @@ install_frp(){
   tmp="$(mktemp -d)"
   local fname="frp_${ver}_linux_${arch}.tar.gz"
   for m in "" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/"; do
-    if curl -fsSL --connect-timeout 20 --retry 2 "${m}https://github.com/fatedier/frp/releases/download/v${ver}/${fname}" -o "$tmp/frp.tgz" 2>/dev/null; then ok=1; break; fi
+    if curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 1 "${m}https://github.com/fatedier/frp/releases/download/v${ver}/${fname}" -o "$tmp/frp.tgz" 2>/dev/null; then ok=1; break; fi
     warn "in mnba javab nadad, mnba-ye badi..."
   done
   [ "$ok" -eq 1 ] || { rm -rf "$tmp"; die "download frp az hame-ye mnaba shekast khord."; }

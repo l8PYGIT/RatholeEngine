@@ -15,6 +15,13 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 - **FRP + GRE Hybrid Carrier:** L3 kernel GRE network interface carrying nested FRP QUIC/KCP multiplexed streams for maximum censorship resistance.
 - **Multi-Device Responsive Redesign:** 5-column bottom navigation bar on mobile/tablet viewports, safe-area offset for floating HUD inspector, and 1-column fallback grids for mobile displays.
 
+### Fixed
+- **Resolved Installer Freeze / Stalled Transfers under Iranian DPI:**
+  - Added bounded speed-limits (`--speed-limit 1024 --speed-time 20` and `--connect-timeout 15`) across all `curl` download loops in `install.sh`, `bootstrap.sh`, `install-panel.sh`, `install-node.sh`, `common.sh`, `ratholectl`, `ratholenode`, and `hub.py`. Prevents indefinite hangs when DPI drops traffic after initial TCP connection.
+  - Set `NEEDRESTART_MODE=a`, `NEEDRESTART_SUSPEND=1`, and `-o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"` across all `apt-get` calls to eliminate interactive restart prompts on Ubuntu 22.04 and 24.04.
+  - Added multi-mirror fallback (including ghproxy mirrors) for rathole binary download in `install-node.sh`.
+  - Hardened `test_tty_prompt.sh` regression harness to gracefully skip `setsid` when unavailable.
+
 ## [1.9.3] - 2026-08-19
 
 ### Changed

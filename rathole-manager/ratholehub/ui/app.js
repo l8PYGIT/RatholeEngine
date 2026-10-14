@@ -1169,11 +1169,20 @@ function promptPatchProtocol(iranSrv, nodeName, defaultPort, p1Coord, p2Coord) {
     {v:'aggressive', t:'Aggressive (مخصوص اینترنت بشدت فیلتر و اختلال‌دار)'}
   ];
 
+  const bhTrOpts = [
+    {v:'wssmux', t:'wssmux (TLS + SMUX مالتی‌پلکس روی ۴۴۳)'},
+    {v:'wsmux', t:'wsmux (بدون TLS + SMUX مالتی‌پلکس)'},
+    {v:'wss', t:'wss (TLS بدون مالتی‌پلکس)'},
+    {v:'ws', t:'ws (وب‌سوکت ساده)'}
+  ];
+
   formModal(`🔌 اتصال سیم‌کشی جدید: ${iranSrv} ⟵⟶ ${nodeName}`, [
     {id:'carrier', label:'پروتکل و حامل ارتباطی تونل را انتخاب کنید:', type:'select', val:'frp_gre', opts:opts},
-    {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP و FRP+GRE):', type:'select', val:'quic', opts:frpTrOpts},
+    {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:'quic', opts:frpTrOpts},
+    {id:'bh_tr', label:'مد ترانسپورت Backhaul (برای Backhaul):', type:'select', val:'wssmux', opts:bhTrOpts},
     {id:'profile', label:'پروفایل شتاب KCP / Backhaul:', type:'select', val:'balanced', opts:profOpts},
-    {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE و FRP+GRE):', type:'text', val:'10.10.10.1', ph:'10.10.10.1'},
+    {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE یا FRP+GRE):', type:'text', val:'10.10.10.1', ph:'10.10.10.1'},
+    {id:'carrier_port', label:'پورت اختصاصی حامل در ایران (اختیاری):', type:'text', val:'', ph:'پیش‌فرض: FRP=7000, BH=3080, Plain=8880, Noise=2334, KCP=443'},
     {id:'port', label:'پورت اینباند داخلی سرور ایران (Backend Port):', type:'text', val:defaultPort || '8443', hint:'پورتی که ترافیک ورودی به آن فوروارد می‌شود'}
   ], async v => {
     closeModal();
@@ -1181,8 +1190,10 @@ function promptPatchProtocol(iranSrv, nodeName, defaultPort, p1Coord, p2Coord) {
     const port = parseInt(v.port, 10) || defaultPort || 8443;
     applyPatchConnection(iranSrv, nodeName, carrier, port, p1Coord, p2Coord, {
       frp_transport: v.frp_tr || 'quic',
+      bh_transport: v.bh_tr || 'wssmux',
       profile: v.profile || 'balanced',
-      gre_ip: v.gre_ip || '10.10.10.1'
+      gre_ip: v.gre_ip || '10.10.10.1',
+      carrier_port: v.carrier_port || ''
     });
   });
 }
@@ -1196,8 +1207,10 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = 
     existing.transport = carrier;
     existing.port = port;
     existing.frp_transport = extra.frp_transport || existing.frp_transport;
+    existing.bh_transport = extra.bh_transport || existing.bh_transport;
     existing.profile = extra.profile || existing.profile;
     existing.gre_ip = extra.gre_ip || existing.gre_ip;
+    existing.carrier_port = extra.carrier_port || existing.carrier_port;
   } else {
     OVS[iranSrv].nodes.push({
       name: nodeName,
@@ -1205,8 +1218,10 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = 
       transport: carrier,
       inbound_port: port,
       frp_transport: extra.frp_transport,
+      bh_transport: extra.bh_transport,
       profile: extra.profile,
-      gre_ip: extra.gre_ip
+      gre_ip: extra.gre_ip,
+      carrier_port: extra.carrier_port
     });
   }
 
@@ -1216,8 +1231,10 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = 
     custom = {
       id: cid, iran: iranSrv, node: nodeName, carrier: carrier, port: port, status: 'ok', newlyPlugged: true,
       frp_transport: extra.frp_transport || 'quic',
+      bh_transport: extra.bh_transport || 'wssmux',
       profile: extra.profile || 'balanced',
-      gre_ip: extra.gre_ip || '10.10.10.1'
+      gre_ip: extra.gre_ip || '10.10.10.1',
+      carrier_port: extra.carrier_port || ''
     };
     PATCH_CUSTOM_CIRCUITS.push(custom);
   } else {
@@ -1225,8 +1242,10 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = 
     custom.port = port;
     custom.newlyPlugged = true;
     if (extra.frp_transport) custom.frp_transport = extra.frp_transport;
+    if (extra.bh_transport) custom.bh_transport = extra.bh_transport;
     if (extra.profile) custom.profile = extra.profile;
     if (extra.gre_ip) custom.gre_ip = extra.gre_ip;
+    if (extra.carrier_port) custom.carrier_port = extra.carrier_port;
   }
 
   drawPatchBoard();
@@ -1277,6 +1296,12 @@ function quickCarrierModal(iran, node, curCarrier) {
     {v:'websocket', t:'WebSocket (شبیه ترافیک وب)'},
     {v:'tcp', t:'TCP (حالت استاندارد)'}
   ];
+  const bhTrOpts = [
+    {v:'wssmux', t:'wssmux (TLS + SMUX مالتی‌پلکس روی ۴۴۳)'},
+    {v:'wsmux', t:'wsmux (بدون TLS + SMUX مالتی‌پلکس)'},
+    {v:'wss', t:'wss (TLS بدون مالتی‌پلکس)'},
+    {v:'ws', t:'ws (وب‌سوکت ساده)'}
+  ];
   const profOpts = [
     {v:'balanced', t:'Balanced (عادی)'},
     {v:'lossy', t:'Lossy (پکت‌لاس بالا)'},
@@ -1285,8 +1310,10 @@ function quickCarrierModal(iran, node, curCarrier) {
   formModal(`تغییر پروتکل و حالت ارتباطی نود ${node}`, [
     {id:'carrier', label:'پروتکل و حامل جدید:', type:'select', val:curCarrier, opts:opts},
     {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:c.frp_transport || 'quic', opts:frpTrOpts},
+    {id:'bh_tr', label:'مد ترانسپورت Backhaul (برای Backhaul):', type:'select', val:c.bh_transport || 'wssmux', opts:bhTrOpts},
     {id:'profile', label:'پروفایل شتاب KCP / Backhaul:', type:'select', val:c.profile || 'balanced', opts:profOpts},
-    {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE یا FRP+GRE):', type:'text', val:c.gre_ip || '10.10.10.1'}
+    {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE یا FRP+GRE):', type:'text', val:c.gre_ip || '10.10.10.1'},
+    {id:'carrier_port', label:'پورت اختصاصی حامل در ایران (اختیاری):', type:'text', val:c.carrier_port || '', ph:'پیش‌فرض: FRP=7000, BH=3080, Plain=8880, Noise=2334'}
   ], async v => {
     closeModal();
     const carrierTitle = v.carrier === 'frp_gre' ? 'FRP+GRE' : v.carrier.toUpperCase();
@@ -1294,8 +1321,10 @@ function quickCarrierModal(iran, node, curCarrier) {
     if (c) {
       c.carrier = v.carrier;
       c.frp_transport = v.frp_tr || 'quic';
+      c.bh_transport = v.bh_tr || 'wssmux';
       c.profile = v.profile || 'balanced';
       c.gre_ip = v.gre_ip || '10.10.10.1';
+      c.carrier_port = v.carrier_port || '';
       showCircuitInspector(c);
       drawPatchBoard();
       highlightCircuit(c.id);
@@ -1461,8 +1490,16 @@ function showCircuitInspector(c) {
   if (c.carrier === 'gre' || c.carrier === 'frp_gre') {
     modeTag += ` <span class="badge" style="background:rgba(16,185,129,0.18);color:#10b981;border:1px solid rgba(16,185,129,0.35);font-size:10px;margin-inline-start:4px;">IP: ${h(c.gre_ip || '10.10.10.1/30')}</span>`;
   }
-  if (c.carrier === 'kcp' || c.carrier === 'backhaul') {
+  if (c.carrier === 'backhaul') {
+    modeTag += ` <span class="badge" style="background:rgba(251,191,36,0.18);color:#fbbf24;border:1px solid rgba(251,191,36,0.35);font-size:10px;margin-inline-start:4px;">${h((c.bh_transport || 'wssmux').toUpperCase())} (${h(c.profile || 'balanced')})</span>`;
+  } else if (c.carrier === 'kcp') {
     modeTag += ` <span class="badge" style="background:rgba(129,140,248,0.18);color:#818cf8;border:1px solid rgba(129,140,248,0.35);font-size:10px;margin-inline-start:4px;">${h(c.profile || 'balanced')}</span>`;
+  } else if (c.carrier === 'noise') {
+    modeTag += ` <span class="badge" style="background:rgba(192,132,252,0.18);color:#c084fc;border:1px solid rgba(192,132,252,0.35);font-size:10px;margin-inline-start:4px;">Noise_NK :2334</span>`;
+  } else if (c.carrier === 'plain') {
+    modeTag += ` <span class="badge" style="background:rgba(251,146,60,0.18);color:#fb923c;border:1px solid rgba(251,146,60,0.35);font-size:10px;margin-inline-start:4px;">HTTP :8880</span>`;
+  } else if (c.carrier === 'ws') {
+    modeTag += ` <span class="badge" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.35);font-size:10px;margin-inline-start:4px;">TLS :443</span>`;
   }
 
   const carrierLabel = c.carrier === 'frp_gre' ? 'FRP+GRE' : c.carrier.toUpperCase();

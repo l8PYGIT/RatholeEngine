@@ -979,10 +979,19 @@ function copyRecipe(id){const el=$(id);if(!el)return;const txt=(el.getAttribute(
 let ACTIVE_CIRCUIT = null;
 let PATCH_DRAG = null;
 let SELECTED_PIN = null;
+let PATCH_CUSTOM_CIRCUITS = [];
 
 function svgCableD(x1, y1, x2, y2) {
-  const mx = (x1 + x2) / 2;
-  return `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.hypot(dx, dy);
+  // Realistic patch cable gravity: sag downward like real patch cord
+  const sag = Math.max(30, Math.min(160, dist * 0.22 + Math.abs(dy) * 0.12));
+  const c1x = x1 + dx * 0.28;
+  const c1y = y1 + sag;
+  const c2x = x2 - dx * 0.28;
+  const c2y = y2 + sag;
+  return `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`;
 }
 
 function getSvgPoint(e, svgEl) {
@@ -992,18 +1001,56 @@ function getSvgPoint(e, svgEl) {
   return pt.matrixTransform(svgEl.getScreenCTM().inverse());
 }
 
+function triggerSocketPuff(svg, x, y, color) {
+  if (!svg) return;
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('class', 'socket-puff-group');
+
+  for (let r of [1, 2]) {
+    const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    ring.setAttribute('cx', x);
+    ring.setAttribute('cy', y);
+    ring.setAttribute('class', 'socket-puff-ring');
+    if (color) ring.style.stroke = color;
+    if (r === 2) ring.style.animationDelay = '0.12s';
+    g.appendChild(ring);
+  }
+
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const dist = 24 + Math.random() * 18;
+    const dx = Math.cos(angle) * dist + 'px';
+    const dy = Math.sin(angle) * dist + 'px';
+    const spark = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    spark.setAttribute('cx', x);
+    spark.setAttribute('cy', y);
+    spark.setAttribute('r', '2.5');
+    spark.setAttribute('fill', color || '#fbbf24');
+    spark.setAttribute('class', 'socket-spark');
+    spark.style.setProperty('--dx', dx);
+    spark.style.setProperty('--dy', dy);
+    g.appendChild(spark);
+  }
+
+  svg.appendChild(g);
+  setTimeout(() => g.remove(), 850);
+}
+
 function startPatchDrag(e, pinEl) {
   e.stopPropagation();
   e.preventDefault();
   const svg = pinEl.closest('svg');
   const sx = parseFloat(pinEl.getAttribute('data-x'));
   const sy = parseFloat(pinEl.getAttribute('data-y'));
+  const pinType = pinEl.getAttribute('data-pin-type');
   PATCH_DRAG = {
     sourcePin: pinEl,
     svg: svg,
     startX: sx,
     startY: sy,
+    pinType: pinType,
     server: pinEl.getAttribute('data-server'),
+    node: pinEl.getAttribute('data-node'),
     port: pinEl.getAttribute('data-port'),
     cid: pinEl.getAttribute('data-cid')
   };
@@ -1021,11 +1068,12 @@ function onPatchMouseMove(e) {
     w.setAttribute('d', d);
     w.style.display = 'block';
   }
-  document.querySelectorAll('.pin[data-pin-type="node"]').forEach(p => {
+  const targetType = PATCH_DRAG.pinType === 'iran' ? 'node' : 'iran';
+  document.querySelectorAll(`.pin[data-pin-type="${targetType}"]`).forEach(p => {
     const tx = parseFloat(p.getAttribute('data-x'));
     const ty = parseFloat(p.getAttribute('data-y'));
     const dist = Math.hypot(pt.x - tx, pt.y - ty);
-    if (dist < 32) p.classList.add('pin-target-hover');
+    if (dist < 36) p.classList.add('pin-target-hover');
     else p.classList.remove('pin-target-hover');
   });
 }
@@ -1036,54 +1084,138 @@ function onPatchMouseUp(e) {
   window.removeEventListener('mouseup', onPatchMouseUp);
   const w = $('dynamic_patch_wire');
   if (w) w.style.display = 'none';
-  PATCH_DRAG.sourcePin.classList.remove('pin-selected');
+  if (PATCH_DRAG.sourcePin) PATCH_DRAG.sourcePin.classList.remove('pin-selected');
 
   const target = document.querySelector('.pin.pin-target-hover');
-  if (target) {
+  if (target && target !== PATCH_DRAG.sourcePin) {
     target.classList.remove('pin-target-hover');
-    connectPatchCircuit(PATCH_DRAG.server, target.getAttribute('data-node'), PATCH_DRAG.port);
+    handlePinPairSelected(PATCH_DRAG.sourcePin, target);
   }
   PATCH_DRAG = null;
 }
 
-function onPinClick(e, pinEl) {
+function dropPatchPin(e, pinEl) {
   e.stopPropagation();
-  const pType = pinEl.getAttribute('data-pin-type');
-  if (pType === 'iran') {
-    if (SELECTED_PIN) SELECTED_PIN.classList.remove('pin-selected');
-    SELECTED_PIN = pinEl;
-    pinEl.classList.add('pin-selected');
-    toast('⚡ پین سرور ایران انتخاب شد. روی پین نود مقصد کلیک کنید.');
-  } else if (pType === 'node' && SELECTED_PIN) {
-    const iranSrv = SELECTED_PIN.getAttribute('data-server');
-    const nodeName = pinEl.getAttribute('data-node');
-    const port = SELECTED_PIN.getAttribute('data-port');
-    SELECTED_PIN.classList.remove('pin-selected');
-    SELECTED_PIN = null;
-    connectPatchCircuit(iranSrv, nodeName, port);
-  } else {
-    highlightCircuit(pinEl.getAttribute('data-cid'));
+  if (PATCH_DRAG && PATCH_DRAG.sourcePin && PATCH_DRAG.sourcePin !== pinEl) {
+    handlePinPairSelected(PATCH_DRAG.sourcePin, pinEl);
+    onPatchMouseUp(e);
   }
 }
 
-function connectPatchCircuit(iranSrv, nodeName, port) {
-  toast(`🔌 سیم‌کشی جدید وصل شد: ${iranSrv} ➔ ${nodeName} ✓`);
-  const M = buildWiringModel();
-  let c = M.circuits.find(x => x.iran === iranSrv && x.node === nodeName);
-  if (!c && M.circuits.length) {
-    c = Object.assign({}, M.circuits[0], {
-      id: 'c_' + iranSrv + '_' + nodeName,
-      iran: iranSrv,
-      node: nodeName,
-      status: 'ok',
-      ingressPath: '/' + nodeName,
-      backendPort: port || 8444
-    });
-  }
-  if (c) {
-    highlightCircuit(c.id);
+function onPinClick(e, pinEl) {
+  e.stopPropagation();
+  if (!SELECTED_PIN) {
+    SELECTED_PIN = pinEl;
+    pinEl.classList.add('pin-selected');
+    const pType = pinEl.getAttribute('data-pin-type');
+    const name = pType === 'iran' ? pinEl.getAttribute('data-server') : pinEl.getAttribute('data-node');
+    toast(`⚡ پین [${name}] انتخاب شد. حالا روی پین نود/سرور مقابل برای اتصال کلیک کنید.`);
+  } else if (SELECTED_PIN === pinEl) {
+    SELECTED_PIN.classList.remove('pin-selected');
+    SELECTED_PIN = null;
+  } else {
+    const p1 = SELECTED_PIN;
+    const p2 = pinEl;
+    SELECTED_PIN.classList.remove('pin-selected');
+    SELECTED_PIN = null;
+
+    const t1 = p1.getAttribute('data-pin-type');
+    const t2 = p2.getAttribute('data-pin-type');
+    if (t1 !== t2) {
+      handlePinPairSelected(p1, p2);
+    } else {
+      toast('⚠️ لطفاً یک پین از سرور ایران و یک پین از نود خارجی را انتخاب کنید.');
+    }
   }
 }
+
+function handlePinPairSelected(p1, p2) {
+  const t1 = p1.getAttribute('data-pin-type');
+  const iranPin = t1 === 'iran' ? p1 : p2;
+  const nodePin = t1 === 'node' ? p1 : p2;
+
+  const iranSrv = iranPin.getAttribute('data-server') || 'iran-panel';
+  const nodeName = nodePin.getAttribute('data-node') || 'trk01';
+  const port = iranPin.getAttribute('data-port') || 8443;
+
+  const p1Coord = { x: parseFloat(iranPin.getAttribute('data-x')), y: parseFloat(iranPin.getAttribute('data-y')) };
+  const p2Coord = { x: parseFloat(nodePin.getAttribute('data-x')), y: parseFloat(nodePin.getAttribute('data-y')) };
+
+  promptPatchProtocol(iranSrv, nodeName, port, p1Coord, p2Coord);
+}
+
+function promptPatchProtocol(iranSrv, nodeName, defaultPort, p1Coord, p2Coord) {
+  const opts = [
+    {v:'frp', t:'🚀 هسته تونل معکوس FRP (fatedier - مالتی‌پلکس TCP/KCP/QUIC)'},
+    {v:'ws', t:'🌐 وب‌سوکت با TLS روی ۴۴۳ (WS+TLS - مسیر مخفی پیش‌فرض)'},
+    {v:'backhaul', t:'⚡ مالتی‌پلکس ترافیک بالا Backhaul (SMUX)'},
+    {v:'gre', t:'🛡️ تونل شبکه لایه ۳ کرنل لینوکس (GRE L3)'},
+    {v:'kcp', t:'🛡️ پروتکل ضد اختلال KCP (UDP+FEC اینترنت ملی)'},
+    {v:'noise', t:'🔒 پروتکل امن رمزنگاری Noise (X25519 بدون گواهی)'},
+    {v:'plain', t:'📡 ساده بدون رمز Plain (HTTP/8880)'}
+  ];
+
+  formModal(`🔌 اتصال سیم‌کشی جدید: ${iranSrv} ⟵⟶ ${nodeName}`, [
+    {id:'carrier', label:'پروتکل و حامل ارتباطی تونل را انتخاب کنید:', type:'select', val:'frp', opts:opts},
+    {id:'port', label:'پورت اینباند داخلی سرور ایران (Backend Port):', type:'text', val:defaultPort || '8443', hint:'پورتی که ترافیک ورودی به آن فوروارد می‌شود'}
+  ], async v => {
+    closeModal();
+    const carrier = v.carrier;
+    const port = parseInt(v.port, 10) || defaultPort || 8443;
+    applyPatchConnection(iranSrv, nodeName, carrier, port, p1Coord, p2Coord);
+  });
+}
+
+function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2) {
+  if (!OVS[iranSrv]) OVS[iranSrv] = {};
+  if (!OVS[iranSrv].nodes) OVS[iranSrv].nodes = [];
+
+  let existing = OVS[iranSrv].nodes.find(x => x.name === nodeName);
+  if (existing) {
+    existing.transport = carrier;
+    existing.port = port;
+  } else {
+    OVS[iranSrv].nodes.push({
+      name: nodeName,
+      port: port,
+      transport: carrier,
+      inbound_port: port
+    });
+  }
+
+  const cid = 'c_' + iranSrv + '_' + nodeName;
+  let custom = PATCH_CUSTOM_CIRCUITS.find(x => x.id === cid);
+  if (!custom) {
+    custom = { id: cid, iran: iranSrv, node: nodeName, carrier: carrier, port: port, status: 'ok', newlyPlugged: true };
+    PATCH_CUSTOM_CIRCUITS.push(custom);
+  } else {
+    custom.carrier = carrier;
+    custom.port = port;
+    custom.newlyPlugged = true;
+  }
+
+  drawPatchBoard();
+
+  const svg = document.querySelector('.patch-svg');
+  if (svg) {
+    const carrierColors = {
+      ws: '#38bdf8', kcp: '#818cf8', backhaul: '#fbbf24', noise: '#c084fc',
+      plain: '#fb923c', frp: '#f97316', gre: '#10b981'
+    };
+    const col = carrierColors[carrier] || '#fbbf24';
+    if (p1 && p1.x && p1.y) triggerSocketPuff(svg, p1.x, p1.y, col);
+    if (p2 && p2.x && p2.y) triggerSocketPuff(svg, p2.x, p2.y, col);
+  }
+
+  highlightCircuit(cid);
+  toast(`✨ سیم‌کشی جدید با موفقیت وصل شد: ${iranSrv} ➔ ${nodeName} [${carrier.toUpperCase()}] ✓`);
+
+  // Clear animation flag after playback
+  setTimeout(() => {
+    if (custom) custom.newlyPlugged = false;
+  }, 1000);
+}
+
 
 function copyV2rayRecipe(domain, port, path) {
   const link = `vless://11111111-2222-3333-4444-555555555555@${domain}:${port}?type=ws&security=tls&path=${encodeURIComponent(path)}#${path.replace('/', '')}`;
@@ -1119,12 +1251,25 @@ function quickCarrierModal(iran, node, curCarrier) {
 function disconnectCircuit(cid) {
   const wrap = $('patchboard_wrap');
   if (wrap) wrap.classList.remove('patch-dim');
-  document.querySelectorAll('.cable-wire[data-cid="'+cid+'"]').forEach(el => {
-    el.style.opacity = '0.15';
-    el.classList.remove('cable-active');
-  });
+
+  const M = buildWiringModel();
+  const c = M.circuits.find(x => x.id === cid);
+  if (c) {
+    const svg = document.querySelector('.patch-svg');
+    const pEl = document.querySelector(`.pin[data-cid="${cid}"]`);
+    if (svg && pEl) {
+      triggerSocketPuff(svg, parseFloat(pEl.getAttribute('data-x') || 0), parseFloat(pEl.getAttribute('data-y') || 0), '#f43f5e');
+    }
+  }
+
+  PATCH_CUSTOM_CIRCUITS = PATCH_CUSTOM_CIRCUITS.filter(x => x.id !== cid);
+  if (c && OVS[c.iran] && OVS[c.iran].nodes) {
+    OVS[c.iran].nodes = OVS[c.iran].nodes.filter(x => x.name !== c.node);
+  }
+
   resetCircuit();
-  toast('✂️ اتصال سیم‌کشی این مدار موقتاً قطع شد.');
+  drawPatchBoard();
+  toast('✂️ اتصال سیم‌کشی این مدار با موفقیت قطع شد.');
 }
 
 function buildWiringModel() {
@@ -1166,6 +1311,36 @@ function buildWiringModel() {
         serviceName: nd.name
       });
     });
+  });
+
+  // Merge any dynamic / custom circuits
+  PATCH_CUSTOM_CIRCUITS.forEach(cc => {
+    let exists = circuits.find(x => x.id === cc.id);
+    if (exists) {
+      exists.carrier = cc.carrier;
+      exists.backendPort = cc.port || exists.backendPort;
+      exists.newlyPlugged = cc.newlyPlugged;
+    } else {
+      const ir = irans.find(i => i.name === cc.iran) || { name: cc.iran, host: '' };
+      const nd = nodes.find(n => n.name === cc.node) || { name: cc.node, host: '' };
+      circuits.push({
+        id: cc.id,
+        iran: cc.iran,
+        iranHost: ir.host || '',
+        node: cc.node,
+        nodeHost: nd.host || '',
+        carrier: cc.carrier,
+        status: 'ok',
+        ingressType: 'HTTPS/443',
+        domain: ir.host || cc.iran,
+        ingressPort: '443',
+        ingressPath: '/' + cc.node,
+        iranPort: cc.port || 8443,
+        backendPort: cc.port || 8443,
+        serviceName: cc.node,
+        newlyPlugged: cc.newlyPlugged
+      });
+    }
   });
 
   return { irans, nodes, circuits };
@@ -1318,7 +1493,7 @@ function drawPatchBoard() {
         <circle cx="${xIran + 16}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin"/>
         <text x="${xIran + 28}" y="${cy - 4}" fill="var(--text)" font-size="11.5" font-weight="700">${h(c.iran)}</text>
         <text x="${xIran + 28}" y="${cy + 12}" fill="var(--text-muted)" font-size="10.5" font-family="var(--mono)">port: :${h(c.iranPort)}</text>
-        <circle cx="${iranPinX}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin patch-pin-draggable" data-pin-type="iran" data-server="${h(c.iran)}" data-port="${h(c.iranPort)}" data-cid="${cid}" data-x="${iranPinX}" data-y="${cy}" onmousedown="startPatchDrag(event, this)" onclick="onPinClick(event, this)"/>
+        <circle cx="${iranPinX}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin patch-pin-draggable" data-pin-type="iran" data-server="${h(c.iran)}" data-port="${h(c.iranPort)}" data-cid="${cid}" data-x="${iranPinX}" data-y="${cy}" onmousedown="startPatchDrag(event, this)" onmouseup="dropPatchPin(event, this)" onclick="onPinClick(event, this)"/>
       </g>
     `;
 
@@ -1327,7 +1502,7 @@ function drawPatchBoard() {
     slotsSvg += `
       <g class="patch-socket" data-cid="${cid}" onclick="highlightCircuit('${cid}')">
         <rect x="${xNode + 10}" y="${cy - 20}" width="${wNode - 20}" height="40" rx="6" fill="var(--surface-3)" stroke="var(--border)" />
-        <circle cx="${nodePinX}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin patch-pin-draggable" data-pin-type="node" data-node="${h(c.node)}" data-cid="${cid}" data-x="${nodePinX}" data-y="${cy}" onmouseup="dropPatchPin(event, this)" onclick="onPinClick(event, this)"/>
+        <circle cx="${nodePinX}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin patch-pin-draggable" data-pin-type="node" data-node="${h(c.node)}" data-cid="${cid}" data-x="${nodePinX}" data-y="${cy}" onmousedown="startPatchDrag(event, this)" onmouseup="dropPatchPin(event, this)" onclick="onPinClick(event, this)"/>
         <text x="${xNode + 28}" y="${cy - 4}" fill="var(--text)" font-size="11.5" font-weight="700">${h(c.node)}</text>
         <text x="${xNode + 28}" y="${cy + 12}" fill="var(--text-muted)" font-size="10.5" font-family="var(--mono)">lane: ${h(c.carrier)}</text>
         <circle cx="${xNode + wNode - 16}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin"/>
@@ -1348,30 +1523,31 @@ function drawPatchBoard() {
     const p1x = xIng + wIng - 16, p2x = xIran + 16;
     const d1 = svgCableD(p1x, cy, p2x, cy);
     cablesSvg += `
-      <path d="${d1}" class="cable-wire ws" data-cid="${cid}" stroke-width="2.5" opacity="0.6"/>
+      <path d="${d1}" fill="none" class="cable-wire ws" data-cid="${cid}" stroke-width="2.5" opacity="0.6"/>
     `;
 
     // Cable 2: Cross-border Tunnel Cable (Iran ➔ Node)
     const p3x = iranPinX, p4x = nodePinX;
     const d2 = svgCableD(p3x, cy, p4x, cy);
     const flowClass = isOk ? 'cable-flow' : 'down';
+    const plugClass = c.newlyPlugged ? 'newly-plugged' : '';
     const carrierClass = ['ws', 'kcp', 'backhaul', 'noise', 'plain', 'frp', 'gre'].indexOf(c.carrier) >= 0 ? c.carrier : 'ws';
 
     cablesSvg += `
-      <path d="${d2}" stroke="transparent" stroke-width="20" style="cursor:pointer;" data-cid="${cid}" onclick="highlightCircuit('${cid}')"/>
-      <path d="${d2}" class="cable-wire ${carrierClass} ${flowClass}" data-cid="${cid}" onclick="highlightCircuit('${cid}')"/>
+      <path d="${d2}" fill="none" stroke="transparent" stroke-width="20" style="cursor:pointer;" data-cid="${cid}" onclick="highlightCircuit('${cid}')"/>
+      <path d="${d2}" fill="none" class="cable-wire ${carrierClass} ${flowClass} ${plugClass}" data-cid="${cid}" onclick="highlightCircuit('${cid}')"/>
     `;
 
     // Cable 3: Node ➔ Backend Inbound Jumper
     const p5x = xNode + wNode - 16, p6x = xSvc + 16;
     const d3 = svgCableD(p5x, cy, p6x, cy);
     cablesSvg += `
-      <path d="${d3}" class="cable-wire ws" data-cid="${cid}" stroke-width="2.5" opacity="0.6"/>
+      <path d="${d3}" fill="none" class="cable-wire ws" data-cid="${cid}" stroke-width="2.5" opacity="0.6"/>
     `;
   });
 
   // Dynamic dragging cable element
-  cablesSvg += `<path id="dynamic_patch_wire" style="display:none;" class="cable-wire active-drag" d=""/>`;
+  cablesSvg += `<path id="dynamic_patch_wire" fill="none" style="display:none;" class="cable-wire active-drag" d=""/>`;
 
   svg += cablesSvg;
   svg += slotsSvg;

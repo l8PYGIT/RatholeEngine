@@ -45,5 +45,54 @@ class TestHubTransports(unittest.TestCase):
         self.assertEqual(data["cmd"], ["ratholenode", "ls"])
         self.assertEqual(data["timeout"], 60)
 
+    def test_build_agent_request_auto_prepends_http(self):
+        server = {
+            "name": "node-schemeless",
+            "transport": "api",
+            "api_url": "198.51.100.10:7001",
+            "api_token": "tok123"
+        }
+        req = hub.build_agent_request(server, ["ratholenode", "status"])
+        self.assertEqual(req.full_url, "http://198.51.100.10:7001/api/exec")
+
+    def test_parse_carrier_statuses(self):
+        # Backhaul
+        bh_txt = "backhaul (SMUX core): roshan  backhaul-server ru-ye 127.0.0.1:3080\n  node-haye backhaul: trk01, trk02"
+        bh = hub.parse_backhaul_status(bh_txt)
+        self.assertTrue(bh["enabled"])
+        self.assertEqual(bh["port"], "3080")
+        self.assertEqual(bh["nodes"], ["trk01", "trk02"])
+
+        # FRP
+        frp_txt = "frp (fatedier core): roshan rooye port 7000 (tcp)"
+        frp = hub.parse_frp_status(frp_txt)
+        self.assertTrue(frp["enabled"])
+        self.assertEqual(frp["port"], "7000")
+
+        # GRE
+        gre_txt = "gre (Linux L3): gre1 roshan va UP ast"
+        gre = hub.parse_gre_status(gre_txt)
+        self.assertTrue(gre["enabled"])
+        self.assertEqual(gre["name"], "gre1")
+
+    def test_hubcmds_frp_node_and_backhaul_nginx_port(self):
+        from hubcmds import build_iran_cmd, build_node_cmd, WRITE_ACTIONS
+        self.assertEqual(build_iran_cmd("frp_node_on", {"name": "trk01"}),
+                         ["ratholectl", "frp", "node", "trk01", "on"])
+        self.assertEqual(build_iran_cmd("frp_node_off", {"name": "trk01"}),
+                         ["ratholectl", "frp", "node", "trk01", "off"])
+        self.assertIn("frp_node_on", WRITE_ACTIONS)
+        self.assertIn("frp_node_off", WRITE_ACTIONS)
+
+        # backhaul on with domain:443 in nginx_tls mode
+        cmd = build_node_cmd("backhaul_on", {
+            "mode": "nginx_tls",
+            "remote_addr": "viph.l8py.com:443",
+            "token": "a" * 40,
+            "transport": "wssmux",
+            "profile": "balanced"
+        })
+        self.assertEqual(cmd, ["ratholenode", "backhaul", "on", "viph.l8py.com:443", "a" * 40, "wssmux", "balanced"])
+
 if __name__ == "__main__":
     unittest.main()

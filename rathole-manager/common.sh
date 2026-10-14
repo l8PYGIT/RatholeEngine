@@ -425,7 +425,14 @@ gre_setup_interface(){
   local name="${1:-gre1}" local_ip="$2" remote_ip="$3" tunnel_ip="$4"
   modprobe ip_gre 2>/dev/null || true
   ip tunnel del "$name" 2>/dev/null || true
-  ip tunnel add "$name" mode gre local "$local_ip" remote "$remote_ip" ttl 255 || return 1
+  # dar VPS-haye NAT ke IP-e omomi rooye interface nist، local_ip baes khata mishavad
+  local dev_ip; dev_ip="$(ip route get "$remote_ip" 2>/dev/null | grep -oE 'src [0-9.]+' | awk '{print $2}')"
+  [ -n "$dev_ip" ] && local_ip="$dev_ip"
+  if [ -n "$local_ip" ] && ip addr show 2>/dev/null | grep -q "inet $local_ip/"; then
+    ip tunnel add "$name" mode gre local "$local_ip" remote "$remote_ip" ttl 255 2>/dev/null || ip tunnel add "$name" mode gre remote "$remote_ip" ttl 255 || return 1
+  else
+    ip tunnel add "$name" mode gre remote "$remote_ip" ttl 255 || return 1
+  fi
   ip addr add "$tunnel_ip/30" dev "$name" || return 1
   ip link set "$name" mtu 1476 up || return 1
   iptables -t mangle -C POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o "$name" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null ||     iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o "$name" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true

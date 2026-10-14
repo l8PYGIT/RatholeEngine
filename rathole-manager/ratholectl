@@ -1560,6 +1560,18 @@ cmd_status(){
 
   local ip; ip="$(detect_ip)"
 
+  # ---- FRP & GRE status ----
+  local frp_port frp_transport gre_name gre_remote gre_tunnel svc_frp="off" gre_active="no"
+  frp_port="$(jq -r '.frp_port // empty' "$STATE" 2>/dev/null)"
+  frp_transport="$(jq -r '.frp_transport // "tcp"' "$STATE" 2>/dev/null)"
+  gre_name="$(jq -r '.gre.name // empty' "$STATE" 2>/dev/null)"
+  gre_remote="$(jq -r '.gre.remote_ip // empty' "$STATE" 2>/dev/null)"
+  gre_tunnel="$(jq -r '.gre.tunnel_ip // empty' "$STATE" 2>/dev/null)"
+  [ -f "/etc/systemd/system/${FRP_SVC}.service" ] && svc_frp="$(_svc_active "$FRP_SVC")" || svc_frp="off"
+  if [ -n "$gre_name" ]; then
+    ip link show "$gre_name" 2>/dev/null | grep -q "UP" && gre_active="yes"
+  fi
+
   # ---------- khoruji-ye JSON (baraye hub) ----------
   if [ "$as_json" -eq 1 ]; then
     jq -n \
@@ -1568,12 +1580,15 @@ cmd_status(){
       --argjson internal "${internal:-8443}" \
       --arg plain "${plain_port:-}" --arg direct "${direct_port:-}" --arg dhdr "$direct_header" \
       --arg hub "${hub_port:-}" --arg noise "${noise_port:-}" --arg backhaul "${bh_port:-}" \
+      --arg frp "${frp_port:-}" --arg frp_tr "$frp_transport" \
+      --arg gre_name "${gre_name:-}" --arg gre_rem "${gre_remote:-}" --arg gre_tip "${gre_tunnel:-}" \
       --arg sub_path "$(sub_path_seg)" --arg hub_path "$(hub_path_seg)" \
       --arg cert_fc "$cert_fc" --arg cert_key "$cert_key" --arg cert_ok "$cert_ok" \
       --arg cert_exp "$cert_exp" --arg cert_ss "$cert_selfsigned" \
       --arg ip_tls_ip "$ip_tls_ip" --arg ip_tls_fc "$ip_tls_fc" \
       --arg svc_server "$svc_server" --arg svc_nginx "$svc_nginx" --arg svc_noise "$svc_noise" \
-      --arg svc_bh "$svc_bh" --arg svc_fakeweb "$svc_fakeweb" --arg nginx_ok "$nginx_ok" \
+      --arg svc_bh "$svc_bh" --arg svc_frp "$svc_frp" --arg gre_active "$gre_active" \
+      --arg svc_fakeweb "$svc_fakeweb" --arg nginx_ok "$nginx_ok" \
       --arg bh_mode "$(jq -r '.backhaul_exposure // "nginx_tls"' "$STATE" 2>/dev/null)" \
       --arg bh_transport "$(jq -r '.backhaul_transport // "wsmux"' "$STATE" 2>/dev/null)" \
       --argjson sni_count "${sni_count:-0}" --argjson node_count "${node_count:-0}" \
@@ -1584,12 +1599,13 @@ cmd_status(){
                direct:(if $direct=="" then null else ($direct|tonumber) end),
                hub:(if $hub=="" then null else ($hub|tonumber) end),
                noise:(if $noise=="" then null else ($noise|tonumber) end),
-               backhaul:(if $backhaul=="" then null else ($backhaul|tonumber) end)},
+               backhaul:(if $backhaul=="" then null else ($backhaul|tonumber) end),
+               frp:(if $frp=="" then null else ($frp|tonumber) end)},
         paths:{sub:$sub_path, hub:$hub_path},
         direct_header:$dhdr,
         cert:{fullchain:$cert_fc, key:$cert_key, exists:$cert_ok, expiry:$cert_exp, self_signed:$cert_ss},
         ip_tls:{configured:($ip_tls_ip!=""),ip:(if $ip_tls_ip=="" then null else $ip_tls_ip end),fullchain:(if $ip_tls_fc=="" then null else $ip_tls_fc end),self_signed:($ip_tls_ip!="")},
-        services:{rathole_server:$svc_server, nginx:$svc_nginx, nginx_config_ok:$nginx_ok, noise:$svc_noise, backhaul:$svc_bh, fakeweb:$svc_fakeweb},
+        services:{rathole_server:$svc_server, nginx:$svc_nginx, nginx_config_ok:$nginx_ok, noise:$svc_noise, backhaul:$svc_bh, frp:$svc_frp, fakeweb:$svc_fakeweb},
         features:{plain:{configured:($plain!=""),active:($plain!="" and $svc_nginx=="yes"),port:(if $plain=="" then null else ($plain|tonumber) end)},
                   direct:{configured:($direct!=""),active:($direct!="" and $svc_nginx=="yes"),port:(if $direct=="" then null else ($direct|tonumber) end)},
                   noise:{configured:($noise!=""),active:($svc_noise=="yes"),port:(if $noise=="" then null else ($noise|tonumber) end),encrypted:true},
@@ -1597,7 +1613,9 @@ cmd_status(){
                   backhaul:{configured:($backhaul!=""),active:($svc_bh=="yes"),port:(if $backhaul=="" then null else ($backhaul|tonumber) end),mode:$bh_mode,transport:$bh_transport,
                             tls:($bh_mode=="nginx_tls" or ($bh_transport|test("^wss"))),
                             encrypted:($bh_mode=="nginx_tls" or ($bh_transport|test("^wss"))),
-                            verified:($bh_mode=="nginx_tls")}},
+                            verified:($bh_mode=="nginx_tls")},
+                  frp:{configured:($frp!=""),active:($svc_frp=="yes"),port:(if $frp=="" then null else ($frp|tonumber) end),transport:$frp_tr},
+                  gre:{configured:($gre_name!=""),active:($gre_active=="yes"),name:(if $gre_name=="" then null else $gre_name end),remote_ip:$gre_rem,tunnel_ip:$gre_tip}},
         sni_count:$sni_count, node_count:$node_count, nodes:$nodes}'
     return
   fi
@@ -2074,13 +2092,84 @@ cmd_agent(){
   local action="${1:-status}" port="${2:-8089}" token="${3:-}"
   shift 2>/dev/null || true; shift 2>/dev/null || true; shift 2>/dev/null || true
   case "$action" in
-    start)   systemctl start ${AGENT_SVC} 2>/dev/null && log "agent faal shod." || warn "shekast dar start agent." ;;
-    stop)    systemctl stop ${AGENT_SVC} 2>/dev/null && log "agent motevaghef shod." || warn "agent ejra nabood." ;;
+    on|install|start)
+      local py_bin=""
+      command -v python3 >/dev/null 2>&1 && py_bin="$(command -v python3)"
+      [ -n "$py_bin" ] || die "python3 nasb nist (apt install -y python3)."
+      local agent_py="/usr/local/share/rathole/ratholeagent.py"
+      if [ ! -f "$agent_py" ]; then
+        if [ -f "$(dirname "$0")/ratholeagent.py" ]; then
+          agent_py="$(dirname "$0")/ratholeagent.py"
+        elif [ -f "/opt/rathole-manager/ratholeagent.py" ]; then
+          agent_py="/opt/rathole-manager/ratholeagent.py"
+        fi
+      fi
+      [ -f "$agent_py" ] || die "ratholeagent.py peyda nashod."
+
+      mkdir -p /etc/rathole-agent
+      if [ -z "$token" ]; then
+        if [ -f "/etc/rathole-agent/token" ]; then
+          token="$(cat /etc/rathole-agent/token | tr -d '[:space:]')"
+        fi
+        [ -n "$token" ] || token="$(python3 -c "import secrets; print(secrets.token_hex(20))" 2>/dev/null || openssl rand -hex 20)"
+      fi
+      echo "$token" > /etc/rathole-agent/token
+      chmod 600 /etc/rathole-agent/token
+
+      cat > /etc/systemd/system/${AGENT_SVC}.service <<UNIT
+[Unit]
+Description=rathole REST Agent Daemon
+After=network.target
+
+[Service]
+Type=simple
+Environment=RATHOLE_AGENT_TOKEN=${token}
+ExecStart=${py_bin} ${agent_py} --port ${port} --role iran
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+      systemctl daemon-reload 2>/dev/null || true
+      systemctl enable --now ${AGENT_SVC} >/dev/null 2>&1 || true
+      systemctl restart ${AGENT_SVC} 2>/dev/null || true
+
+      local my_ip; my_ip="$(detect_ip 2>/dev/null || echo '127.0.0.1')"
+      log "Agent REST API faal shod rooye port $port"
+      echo
+      echo "$(c_y '──────── tanzimat etesal be Hub (REST API) ────────')"
+      echo "  Connection: Agent REST API"
+      echo "  API URL:    http://${my_ip}:${port}"
+      echo "  Token:      ${token}"
+      echo "$(c_y '────────────────────────────────────────────────────')"
+      ;;
+    off|stop)
+      systemctl disable --now ${AGENT_SVC} 2>/dev/null || true
+      rm -f /etc/systemd/system/${AGENT_SVC}.service
+      systemctl daemon-reload 2>/dev/null || true
+      log "Agent REST API khamoosh va service hazf shod."
+      ;;
     restart) systemctl restart ${AGENT_SVC} 2>/dev/null && log "agent restart shod." || warn "shekast dar restart agent." ;;
-    status)  systemctl --no-pager status ${AGENT_SVC} 2>/dev/null | head -n8 || echo "agent nasb nist." ;;
-    token)   [ -f "/etc/rathole-agent/token" ] && cat /etc/rathole-agent/token || echo "token peyda nashod (/etc/rathole-agent/token)." ;;
-    install) bash "$(dirname "$0")/install-agent.sh" --port "$port" --token "$token" --role "iran" ;;
-    *)       die "estefade: ratholectl agent <start|stop|restart|status|token|install> [port] [token]" ;;
+    status)
+      if systemctl is-active --quiet ${AGENT_SVC} 2>/dev/null; then
+        echo "agent: $(c_g 'active')"
+        local tok; tok="$(cat /etc/rathole-agent/token 2>/dev/null || true)"
+        [ -n "$tok" ] && echo "  token: $tok"
+      else
+        echo "agent: $(c_r 'inactive')"
+      fi
+      ;;
+    token)
+      [ -f "/etc/rathole-agent/token" ] && cat /etc/rathole-agent/token || echo "token peyda nashod (/etc/rathole-agent/token)." ;;
+    show)
+      local tok my_ip
+      tok="$(cat /etc/rathole-agent/token 2>/dev/null || echo '<TOKEN>')"
+      my_ip="$(detect_ip 2>/dev/null || echo '127.0.0.1')"
+      echo "API URL: http://${my_ip}:${port}"
+      echo "Token:   ${tok}"
+      ;;
+    *)       die "estefade: ratholectl agent <on [port] [token]|off|status|token|show>" ;;
   esac
 }
 
@@ -2612,8 +2701,10 @@ cmd_backhaul(){
       jq -e --arg n "$name" '.nodes[] | select(.name==$n)' "$STATE" >/dev/null 2>&1 || die "node '$name' peyda nashod."
       case "$act" in
         on)
-          local bp; bp="$(jq -r '.backhaul_port // empty' "$STATE" 2>/dev/null)"
-          [ -n "$bp" ] && [ "$bp" != null ] || die "aval backhaul ra roshan kon: ratholectl backhaul on [port]"
+          if [ -z "$bp" ] || [ "$bp" = null ]; then
+            log "backhaul rooye server roshan nist؛ khodkar roshan mishavad (port=3080)..."
+            cmd_backhaul on 3080 wsmux balanced nginx_tls
+          fi
           # transport-e har node YEKI ast (ws/noise/backhaul) — node-e noise ra sedaye khafi switch nakon.
           local cur; cur="$(jq -r --arg n "$name" '.nodes[] | select(.name==$n) | .transport // "ws"' "$STATE" 2>/dev/null)"
           [ "$cur" = noise ] && die "node '$name' rooye transport-e noise ast; aval 'ratholectl noise node $name off' ra bezan."
@@ -2815,10 +2906,35 @@ cmd_frp(){
       print_frp_connect
       ;;
     off)
-      local tmp; tmp="$(mktemp)"; jq 'del(.frp_port, .frp_token, .frp_transport)' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
+      local tmp; tmp="$(mktemp)"; jq '(.nodes[] | select(.transport == "frp")) |= del(.transport) | del(.frp_port, .frp_token, .frp_transport)' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
       systemctl disable --now "$FRP_SVC" 2>/dev/null || true
       rm -f "$FRP_TOML"
       log "FRP server khamoosh shod."
+      regenerate
+      ;;
+    node)
+      local name="${1:-}" act="${2:-}"
+      echo "$name" | grep -qE '^[A-Za-z0-9_-]{1,40}$' || die "name-e node namotabar ast."
+      jq -e --arg n "$name" '.nodes[] | select(.name==$n)' "$STATE" >/dev/null 2>&1 || die "node '$name' peyda nashod."
+      case "$act" in
+        on)
+          local fp; fp="$(jq -r '.frp_port // empty' "$STATE" 2>/dev/null)"
+          if [ -z "$fp" ] || [ "$fp" = null ]; then
+            log "FRP server faal nist؛ khodkar roshan mishavad (port=7000)..."
+            cmd_frp on 7000
+          fi
+          local tmp; tmp="$(mktemp)"; jq --arg n "$name" '(.nodes[] | select(.name==$n) | .transport) |= "frp"' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
+          log "node '$name' be transport-e FRP switch shod."
+          regenerate
+          print_frp_connect
+          ;;
+        off)
+          local tmp; tmp="$(mktemp)"; jq --arg n "$name" '(.nodes[] | select(.name==$n and .transport=="frp")) |= del(.transport)' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
+          log "node '$name' be transport-e pishfarz (ws az nginx/443) bargasht."
+          regenerate
+          ;;
+        *) die "estefade: ratholectl frp node <name> <on|off>" ;;
+      esac
       ;;
     status)
       local fp ft ftr
@@ -2833,7 +2949,7 @@ cmd_frp(){
       fi
       ;;
     show) print_frp_connect ;;
-    *) die "estefade: ratholectl frp <on [port] [token] [transport]|off|status|show>" ;;
+    *) die "estefade: ratholectl frp <on [port] [token] [transport]|off|node <name> on|off|status|show>" ;;
   esac
 }
 

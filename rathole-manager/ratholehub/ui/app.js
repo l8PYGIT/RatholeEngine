@@ -1266,10 +1266,89 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = 
   const carrierTitle = carrier === 'frp_gre' ? 'FRP+GRE (ترکیبی)' : carrier.toUpperCase();
   toast(`✨ سیم‌کشی جدید با موفقیت وصل شد: ${iranSrv} ➔ ${nodeName} [${carrierTitle}] ✓`);
 
+  provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra);
+
   // Clear animation flag after playback
   setTimeout(() => {
     if (custom) custom.newlyPlugged = false;
   }, 1000);
+}
+
+async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra) {
+  try {
+    const sIran = SERVERS.find(s => s.name === iranSrv);
+    let sNode = SERVERS.find(s => s.name === nodeName || (OVS[s.name] && OVS[s.name].services && OVS[s.name].services.some(x => x.name === nodeName)));
+    if (!sNode) sNode = SERVERS.find(s => s.role === 'node');
+
+    // 1. Ensure node exists on Iran side
+    const iov = OVS[iranSrv] || {};
+    const nlist = iov.nodes || [];
+    if (!nlist.some(x => x.name === nodeName)) {
+      await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'add_node', args: {name: nodeName, inbound: String(port)}});
+    }
+
+    // 2. Turn on carrier on Iran side if needed
+    if (carrier === 'backhaul') {
+      await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'backhaul_node_on', args: {name: nodeName}});
+    } else if (carrier === 'noise') {
+      await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'noise_node_on', args: {name: nodeName}});
+    } else if (carrier === 'frp' || carrier === 'frp_gre') {
+      await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'frp_node_on', args: {name: nodeName}});
+    } else if (carrier === 'gre') {
+      const rem = sNode ? (sNode.host || '') : '';
+      if (rem) await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'gre_on', args: {remote_ip: rem, tunnel_ip: extra.gre_ip || '10.10.10.1', name: 'gre1'}});
+    }
+
+    // 3. Configure Node side
+    if (sNode) {
+      const {j: conn} = await api('GET', 'api/servers/' + iranSrv + '/nodeconnect/' + nodeName);
+      if (conn && conn.ok) {
+        await api('POST', 'api/servers/' + sNode.name + '/action', {action: 'add_svc', args: {name: conn.name, token: conn.token, inbound: conn.inbound || String(port)}});
+      }
+      if (carrier === 'backhaul') {
+        const {j: bconn} = await api('GET', 'api/servers/' + iranSrv + '/backhaulconnect');
+        if (bconn && bconn.ok) {
+          await api('POST', 'api/servers/' + sNode.name + '/action', {
+            action: 'backhaul_on',
+            args: {
+              mode: 'nginx_tls',
+              remote_addr: bconn.remote_addr || bconn.domain || (sIran ? sIran.host : ''),
+              token: bconn.token,
+              transport: extra.bh_transport || 'wssmux',
+              profile: extra.profile || 'balanced'
+            }
+          });
+        }
+      } else if (carrier === 'frp' || carrier === 'frp_gre') {
+        const iranHost = sIran ? (sIran.host || '') : '';
+        if (iranHost) {
+          await api('POST', 'api/servers/' + sNode.name + '/action', {
+            action: 'frp_on',
+            args: {
+              remote: iranHost + ':7000',
+              token: (conn && conn.token) || 'a0370655deadbeefcafe1234',
+              transport: extra.frp_transport || 'quic'
+            }
+          });
+        }
+      } else if (carrier === 'gre' || carrier === 'frp_gre') {
+        const iranHost = sIran ? (sIran.host || '') : '';
+        if (iranHost) {
+          await api('POST', 'api/servers/' + sNode.name + '/action', {
+            action: 'gre_on',
+            args: {remote_ip: iranHost, tunnel_ip: '10.10.10.2', name: 'gre1'}
+          });
+        }
+      }
+    }
+
+    toast(`✓ مدار [${nodeName}] با موفقیت روی سرورها اعمال و فعال شد!`);
+    loadOv(iranSrv);
+    if (sNode) loadOv(sNode.name);
+  } catch (err) {
+    console.error('provisionPatchCircuit error', err);
+    toast('⚠️ خطا در ارسال تنظیمات به سرور: ' + err.message);
+  }
 }
 
 
@@ -1408,6 +1487,7 @@ function buildWiringModel() {
       exists.frp_transport = cc.frp_transport || exists.frp_transport;
       exists.profile = cc.profile || exists.profile;
       exists.gre_ip = cc.gre_ip || exists.gre_ip;
+      exists.status = 'ok';
     } else {
       const ir = irans.find(i => i.name === cc.iran) || { name: cc.iran, host: '' };
       const nd = nodes.find(n => n.name === cc.node) || { name: cc.node, host: '' };
@@ -2062,7 +2142,9 @@ async function addSrv(){
  if(px)b.proxy=px;
  if(tr==='api'){
   if(!requireInputs(['n','api_u','api_tok']))return;
-  b.api_url=$('api_u').value.trim();
+  let u = $('api_u').value.trim();
+  if(!/^https?:\/\//i.test(u)) u = 'http://' + u;
+  b.api_url=u;
   b.api_token=$('api_tok').value.trim();
  } else {
   if(!requireInputs(['n','hh','uu','pp']))return;
@@ -2563,7 +2645,7 @@ function setIranNodeCarrier(iran,name,next,cur){
 }
 
 function bhOnNode(n){formModal(t('t_bh_node'),bhNodeFields(),
-  v=>{const direct=/^[A-Za-z0-9_.-]+:[0-9]{1,5}$/.test(v.domain);closeModal();run(n,'backhaul_on',{mode:direct?'direct_ip':'nginx_tls',remote_addr:v.domain,token:v.token,transport:v.transport||(direct?'wsmux':'wssmux'),profile:v.profile||'balanced'});});
+  v=>{const hasPort = /:[0-9]{1,5}$/.test(v.domain); const direct = hasPort && !/:443$/.test(v.domain); closeModal();run(n,'backhaul_on',{mode:direct?'direct_ip':'nginx_tls',remote_addr:v.domain,token:v.token,transport:v.transport||(direct?'wsmux':'wssmux'),profile:v.profile||'balanced'});});
  const sel=$('f_iran');
  if(sel){sel.onchange=()=>bhAutofill(sel.value);
    const box=sel.closest('.row');

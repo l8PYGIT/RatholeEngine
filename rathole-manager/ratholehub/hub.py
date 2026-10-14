@@ -264,7 +264,10 @@ from hubcmds import (  # noqa: F401  (nam-ha dar sartasar-e hub estefade mishava
 
 # ---------- ejra-ye az rah dvr (Agent API ya SSH) ----------
 def build_agent_request(server, cmd_args, timeout=120):
-    url = (server.get("api_url") or "").rstrip("/") + "/api/exec"
+    url = (server.get("api_url") or "").rstrip("/")
+    if url and not (url.startswith("http://") or url.startswith("https://")):
+        url = "http://" + url
+    url = url + "/api/exec"
     token = server.get("api_token", "")
     payload = json.dumps({"cmd": cmd_args, "timeout": timeout}).encode("utf-8")
     headers = {
@@ -830,6 +833,37 @@ def parse_direct_status(text):
     if m: header = m.group(1)
     return {"enabled": enabled, "port": port, "header": header or "X-Cdn-Id"}
 
+def parse_backhaul_status(text):
+    text = text or ""
+    enabled = ("roshan" in text) or ("active" in text)
+    port = None
+    m = re.search(r":(\d+)", text)
+    if m: port = m.group(1)
+    nodes = []
+    m = re.search(r"node-haye backhaul[:：]\s*([A-Za-z0-9_,\s-]+)$", text, re.M)
+    if m:
+        nodes = [x.strip() for x in m.group(1).split(",") if x.strip()]
+    return {"enabled": enabled, "port": port, "nodes": nodes}
+
+def parse_frp_status(text):
+    text = text or ""
+    enabled = ("roshan" in text) or ("active" in text) or ("halat tunnel: frp" in text)
+    port = None
+    m = re.search(r"port\s+(\d+)", text)
+    if m: port = m.group(1)
+    if not port:
+        m = re.search(r":(\d+)", text)
+        if m: port = m.group(1)
+    return {"enabled": enabled, "port": port}
+
+def parse_gre_status(text):
+    text = text or ""
+    enabled = ("roshan" in text) or ("UP" in text) or ("active" in text)
+    name = "gre1"
+    m = re.search(r"gre\d+", text)
+    if m: name = m.group(0)
+    return {"enabled": enabled, "name": name}
+
 def parse_doctor(text):
     # alave bar shomaresh OK/FAIL, vaziat har node ra ham darmiavarad
     # (khatt-haye "OK node X rooye port P amade ast" / "WARN node X ... gvsh nmidhd")
@@ -1319,6 +1353,9 @@ class Handler(BaseHTTPRequestHandler):
             ov["plain"] = parse_plain_status(R(["ratholectl", "plain", "status"]).get("out", ""))
             ov["direct"] = parse_direct_status(R(["ratholectl", "direct", "status"]).get("out", ""))
             ov["game"] = parse_game_ls(R(["ratholectl", "game", "ls"]).get("out", ""))
+            ov["backhaul"] = parse_backhaul_status(R(["ratholectl", "backhaul", "status"]).get("out", ""))
+            ov["frp"] = parse_frp_status(R(["ratholectl", "frp", "status"]).get("out", ""))
+            ov["gre"] = parse_gre_status(R(["ratholectl", "gre", "status"]).get("out", ""))
             # doctor DAR overview: hatman ba mohafez-e timeout. probe-haye websocket-e doctor
             # mitavanand samt-e server gir konand (101 = connection-e baz mimanad) va an vaght
             # HAR bar-shodan-e safhe 120 sanie block mishod + yek process-e yatim rooye server
@@ -1356,6 +1393,9 @@ class Handler(BaseHTTPRequestHandler):
                 ov["status"] = {}
             ov["kcp"] = parse_kcp_status(R(["ratholenode", "kcp", "status"]).get("out", ""))
             ov["noise"] = parse_noise_status(R(["ratholenode", "noise", "status"]).get("out", ""))
+            ov["backhaul"] = parse_backhaul_status(R(["ratholenode", "backhaul", "status"]).get("out", ""))
+            ov["frp"] = parse_frp_status(R(["ratholenode", "frp", "status"]).get("out", ""))
+            ov["gre"] = parse_gre_status(R(["ratholenode", "gre", "status"]).get("out", ""))
             ups = parse_upstream_ls(R(["ratholenode", "upstream", "ls"]).get("out", ""))
             ov["upstreams"] = ups["upstreams"]
             if not ov.get("main_tunnel"):

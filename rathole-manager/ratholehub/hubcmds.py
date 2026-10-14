@@ -220,6 +220,10 @@ def build_iran_cmd(action, a):
         if token: cmd.append(token)
         if transport: cmd.append(transport)
         return cmd
+    if action in ("frp_node_on", "frp_node_off"):
+        name = a.get("name", "")
+        if not RE_NAME.match(name): return None
+        return ["ratholectl", "frp", "node", name, ("on" if action == "frp_node_on" else "off")]
     # ---- gre: tunnel-e shabake-ye L3 Linux (ip tunnel) ----
     if action == "gre_status": return ["ratholectl", "gre", "status"]
     if action == "gre_off":
@@ -370,8 +374,8 @@ def build_node_cmd(action, a):
         if not RE_BH_ANY.match(transport):   return None
         if not RE_PROFILE.match(profile):    return None
         if mode == "nginx_tls":
-            # client hamishe be nginx:443 mizanad → faghat variant-e TLS-dar، ba host/domain.
-            if not RE_HOST.match(remote) or not RE_BH_CLI.match(transport): return None
+            # client hamishe be nginx:443 mizanad → faghat variant-e TLS-dar، ba host/domain ya host:443.
+            if not (RE_HOST.match(remote) or RE_IPPORT.match(remote)) or not RE_BH_CLI.match(transport): return None
         else:
             # direct-IP: endpoint bayad host:port-e sarih bashad. har chahar transport mojaz ast —
             # ws/wsmux bedoon-e ramz، wss/wssmux ba gvahi-ye self-signed-e samt-e Iran.
@@ -555,7 +559,7 @@ WRITE_ACTIONS = {
     "noise_on", "noise_off", "noise_node_on", "noise_node_off",
     "backhaul_on", "backhaul_off", "backhaul_node_on", "backhaul_node_off",
     "proxy_add", "proxy_rm",
-    "frp_on", "frp_off", "gre_on", "gre_off",
+    "frp_on", "frp_off", "frp_node_on", "frp_node_off", "gre_on", "gre_off",
 
     "backup", "enable", "regen_full", "regen",
     # node

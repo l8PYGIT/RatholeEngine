@@ -160,6 +160,8 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
         panel)
           echo /usr/local/bin/ratholectl
           echo /usr/local/share/rathole/common.sh
+          echo /usr/local/share/rathole/ratholeagent.py
+          echo /usr/local/share/rathole/install-agent.sh
           echo /etc/rathole-manager
           echo /etc/rathole
           # file-e nginx az state (agar jq bashad) + config-haye sabet
@@ -169,13 +171,15 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /etc/nginx/conf.d/rathole.conf
           echo /etc/nginx/conf.d/rathole-upgrade-map.conf
           echo /etc/nginx/stream.d/rathole-stream.conf
-          _units_glob 'rathole-server.service' 'rathole-noise.service' 'rathole-backhaul-server.service' 'rathole-kcp-server.service' 'rathole-panel-fakeweb.service'
+          _units_glob 'rathole-server.service' 'rathole-noise.service' 'rathole-backhaul-server.service' 'rathole-kcp-server.service' 'rathole-panel-fakeweb.service' 'rathole-agent.service' 'rathole-frps.service'
           ;;
         node)
           echo /usr/local/bin/ratholenode
           echo /usr/local/share/rathole/common.sh
+          echo /usr/local/share/rathole/ratholeagent.py
+          echo /usr/local/share/rathole/install-agent.sh
           echo /etc/rathole
-          _units_glob 'rathole-client.service' 'rathole-client@*.service' 'rathole-backhaul-client.service' 'rathole-kcp-client.service' 'rathole-kcp-up-*.service'
+          _units_glob 'rathole-client.service' 'rathole-client@*.service' 'rathole-backhaul-client.service' 'rathole-kcp-client.service' 'rathole-kcp-up-*.service' 'rathole-agent.service' 'rathole-frpc.service'
           ;;
         hub)
           echo /opt/ratholehub
@@ -281,9 +285,11 @@ restart_services(){
       panel) systemctl restart rathole-server 2>/dev/null || true
              systemctl list-unit-files 2>/dev/null | grep -q '^rathole-noise\.service' && systemctl restart rathole-noise 2>/dev/null || true
              systemctl list-unit-files 2>/dev/null | grep -q '^rathole-backhaul-server\.service' && systemctl restart rathole-backhaul-server 2>/dev/null || true
+             systemctl list-unit-files 2>/dev/null | grep -q '^rathole-agent\.service' && systemctl restart rathole-agent 2>/dev/null || true
              command -v nginx >/dev/null 2>&1 && { nginx -t >/dev/null 2>&1 && { systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true; }; } ;;
       node) systemctl restart rathole-client 2>/dev/null || true
-            systemctl list-unit-files 2>/dev/null | grep -q '^rathole-backhaul-client\.service' && systemctl restart rathole-backhaul-client 2>/dev/null || true ;;
+            systemctl list-unit-files 2>/dev/null | grep -q '^rathole-backhaul-client\.service' && systemctl restart rathole-backhaul-client 2>/dev/null || true
+            systemctl list-unit-files 2>/dev/null | grep -q '^rathole-agent\.service' && systemctl restart rathole-agent 2>/dev/null || true ;;
       hub)  systemctl restart ratholehub 2>/dev/null || true ;;
     esac
   done
@@ -319,6 +325,18 @@ apply_update(){
     sed -i 's/\r$//' "$SCRIPT_DIR/common.sh"
     install -m 644 "$SCRIPT_DIR/common.sh" /usr/local/share/rathole/common.sh
     rm -f /usr/local/bin/common.sh
+  fi
+
+  # agent (ratholeagent.py va install-agent.sh) agar dar baste bashad
+  if [ -f "$SCRIPT_DIR/ratholeagent.py" ]; then
+    mkdir -p /usr/local/share/rathole
+    sed -i 's/\r$//' "$SCRIPT_DIR/ratholeagent.py"
+    install -m 755 "$SCRIPT_DIR/ratholeagent.py" /usr/local/share/rathole/ratholeagent.py
+  fi
+  if [ -f "$SCRIPT_DIR/install-agent.sh" ]; then
+    mkdir -p /usr/local/share/rathole
+    sed -i 's/\r$//' "$SCRIPT_DIR/install-agent.sh"
+    install -m 755 "$SCRIPT_DIR/install-agent.sh" /usr/local/share/rathole/install-agent.sh
   fi
 
   # core-e backhaul-e patch-shode (uTLS). binary-e backhaul-e nasb-shode az ghabl ba

@@ -113,7 +113,7 @@ gen_client(){
   # SERVER endpoint-e dial ast; TLS_HOSTNAME (ekhtiari) SNI/cert hostname ra joda negah midarad.
   # config-haye ghadimi SERVER-only sazgar mimanand; baraye IP+self-signed, TLS_TRUSTED_ROOT
   # faghat public cert/CA ast (hich kelid-e khosusi rooye node nemiayad).
-  local host="${TLS_HOSTNAME:-${SERVER%%:*}}"
+  local _srv="${SERVER:-}"; local host="${TLS_HOSTNAME:-${_srv%%:*}}"
   local trust="${TLS_TRUSTED_ROOT:-}"
   local mode="${TUNNEL:-ws}" remote tls hostline emitted_services=0
   if [ "$mode" = "kcp" ]; then
@@ -333,13 +333,19 @@ cmd_status(){
     plain) remote="${PLAIN_REMOTE:-$remote}"; tls=no; encrypted=no ;;
     noise) remote="${NOISE_REMOTE:-$remote}"; tls=no; encrypted=yes ;;
     kcp) remote="${KCP_REMOTE:-$remote}"; tls=no; encrypted=yes ;;
+    frp)
+      unit="$FRP_CLI_SVC"
+      remote="${FRP_REMOTE:-$remote}"
+      tls=no; encrypted=yes
+      ;;
     backhaul)
       unit="$BH_CLI_SVC"
       remote="${BH_REMOTE_ADDR:-${BH_REMOTE:+${BH_REMOTE}:443}}"
       case "${BH_TRANSPORT:-wssmux}" in ws|wsmux) tls=no; encrypted=no ;; *) tls=yes; encrypted=yes ;; esac
       ;;
   esac
-  local wd_enabled adaptive_enabled adaptive_class
+  local wd_enabled adaptive_enabled adaptive_class gre_name="${GRE_NAME:-}" gre_active="no"
+  [ -n "$gre_name" ] && ip link show "$gre_name" 2>/dev/null | grep -q "UP" && gre_active="yes"
   wd_enabled="$(_unit_enabled rathole-watchdog.timer)"
   adaptive_load_env; adaptive_enabled="${ADAPTIVE_ENABLED:-0}"
   adaptive_class="$(python3 -c "import json; print(json.load(open('$ADAPTIVE_STATE')).get('classification','unknown'))" 2>/dev/null || echo unknown)"
@@ -348,11 +354,13 @@ cmd_status(){
     NODE_MODE="$mode" NODE_REMOTE="$remote" NODE_TLS_HOST="$tls_host" NODE_TRUSTED_ROOT="$trusted_root" NODE_TLS="$tls" NODE_ENCRYPTED="$encrypted" \
     NODE_UNIT="$unit" NODE_ACTIVE="$(_unit_active "$unit")" NODE_ENABLED="$(_unit_enabled "$unit")" \
     NODE_WD="$wd_enabled" NODE_ADAPTIVE="$adaptive_enabled" NODE_ADAPTIVE_CLASS="$adaptive_class" \
-    python3 -c 'import json,os; b=lambda n:os.environ.get(n)=="yes"; print(json.dumps({"main":{"transport":os.environ["NODE_MODE"],"dial_endpoint":os.environ["NODE_REMOTE"],"tls_hostname":os.environ["NODE_TLS_HOST"],"tls_trusted_root":os.environ["NODE_TRUSTED_ROOT"],"tls":b("NODE_TLS"),"encrypted":b("NODE_ENCRYPTED"),"service":{"name":os.environ["NODE_UNIT"],"enabled":b("NODE_ENABLED"),"active":b("NODE_ACTIVE")},"live":"unknown"},"watchdog":{"enabled":b("NODE_WD")},"adaptive":{"enabled":os.environ["NODE_ADAPTIVE"]=="1","last_probe":os.environ["NODE_ADAPTIVE_CLASS"]}}))'
+    NODE_GRE_NAME="$gre_name" NODE_GRE_ACTIVE="$gre_active" \
+    python3 -c 'import json,os; b=lambda n:os.environ.get(n)=="yes"; print(json.dumps({"main":{"transport":os.environ["NODE_MODE"],"dial_endpoint":os.environ["NODE_REMOTE"],"tls_hostname":os.environ["NODE_TLS_HOST"],"tls_trusted_root":os.environ["NODE_TRUSTED_ROOT"],"tls":b("NODE_TLS"),"encrypted":b("NODE_ENCRYPTED"),"service":{"name":os.environ["NODE_UNIT"],"enabled":b("NODE_ENABLED"),"active":b("NODE_ACTIVE")},"live":"unknown"},"gre":{"name":os.environ.get("NODE_GRE_NAME") or None,"active":b("NODE_GRE_ACTIVE")},"watchdog":{"enabled":b("NODE_WD")},"adaptive":{"enabled":os.environ["NODE_ADAPTIVE"]=="1","last_probe":os.environ["NODE_ADAPTIVE_CLASS"]}}))'
     return
   fi
   printf 'tunnel: %s  dial: %s  tls-hostname: %s  trusted-root: %s\n' "$mode" "$remote" "$tls_host" "${trusted_root:--}"
   printf '  %s: %s\n' "$unit" "$(_unit_active "$unit")"
+  [ -n "$gre_name" ] && printf '  GRE (%s): %s\n' "$gre_name" "$gre_active"
 }
 cmd_logs(){ journalctl -u "$SVC" -n "${1:-50}" --no-pager || true; }
 
@@ -764,7 +772,7 @@ cmd_backhaul(){
       # domain-e bedoon port = masir-e ghadimi TLS/443; endpoint-e port-dar mitavanad direct-IP bashad.
       case "$transport" in
         wss|wssmux) remote="$target"; echo "$target" | grep -q ':' || remote="${target}:443" ;;
-        ws|wsmux) echo "$target" | grep -q ':' || die "baraye backhaul direct-IP bedoon TLS endpoint bayad host:port bashad."; remote="$target" ;;
+        ws|wsmux)   remote="$target"; echo "$target" | grep -q ':' || remote="${target}:3080" ;;
         *) die "transport: wss|wssmux|ws|wsmux (tcpmux mojaz nist)." ;;
       esac
       # profile bayad ba samt-e Iran YEKSAN bashad vagarna parametrhaye SMUX nemikhanand.
@@ -827,7 +835,7 @@ cmd_backhaul(){
 
 # ---------- FRP: core-e reverse-tunnel-e fatedier/frp (frpc) ----------
 gen_frp_client_toml(){
-  local server_ip="$1" server_port="$2" token="$3" transport="${4:-tcp}"
+  local server_ip="$1" server_port="$2" token="$3" transport="${4:-tcp}" remote_port="${5:-}"
   mkdir -p "$(dirname "$FRP_CLI_TOML")"
   local tmp; tmp="$(rth_mktemp)"
   {
@@ -839,14 +847,15 @@ gen_frp_client_toml(){
     echo "transport.tcpMux = true"
     echo
     if [ -f "$SVC_FILE" ]; then
-      while IFS='|' read -r name stoken inbound; do
+      while IFS='|' read -r name stoken inbound rport_file; do
         [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
+        local rport="${remote_port:-${rport_file:-$inbound}}"
         echo "[[proxies]]"
         echo "name = \"$name\""
         echo "type = \"tcp\""
         echo "localIP = \"127.0.0.1\""
         echo "localPort = $inbound"
-        echo "remotePort = $inbound"
+        echo "remotePort = $rport"
         echo
       done < "$SVC_FILE"
     fi
@@ -861,32 +870,37 @@ cmd_frp(){
     on)   cmd_frp_on "$@" ;;
     off)  cmd_frp_off ;;
     status) cmd_frp_status ;;
-    *) die "estefade: ratholenode frp <on <iran_ip:port> <token> [transport]|off|status>" ;;
+    *) die "estefade: ratholenode frp <on <iran_ip:port> <token> [transport] [remote_port]|off|status>" ;;
   esac
 }
 
 cmd_frp_on(){
-  local remote="${1:-}" token="${2:-}" transport="${3:-tcp}"
+  local remote="${1:-}" token="${2:-}" transport="${3:-tcp}" rport="${4:-}"
   if [ "$token" = "tcp" ] || [ "$token" = "kcp" ] || [ "$token" = "quic" ] || [ "$token" = "websocket" ]; then
     transport="$token"
     token=""
   fi
   load_env
   [ -n "$token" ] || token="${FRP_TOKEN:-}"
-  [ -n "$remote" ] && [ -n "$token" ] || die "estefade: ratholenode frp on <iran_ip:port> <token> [transport]"
+  [ -n "$remote" ] && [ -n "$token" ] || die "estefade: ratholenode frp on <iran_ip:port> <token> [transport] [remote_port]"
+  case "$remote" in
+    *:*) ;;
+    *)   remote="${remote}:7000" ;;
+  esac
   echo "$remote" | grep -qE '^[^:]+:[0-9]+$' || die "adres bayad be shkl IP:PORT bashad."
   local sip sport
   sip="${remote%:*}"
   sport="${remote##*:}"
   install_frp client
   frp_systemd_unit client
-  gen_frp_client_toml "$sip" "$sport" "$token" "$transport"
+  gen_frp_client_toml "$sip" "$sport" "$token" "$transport" "$rport"
   systemctl enable "$FRP_CLI_SVC" >/dev/null 2>&1 || true
   systemctl restart "$FRP_CLI_SVC" 2>/dev/null && log "$FRP_CLI_SVC start shod." || err "start-e $FRP_CLI_SVC nashod."
   env_set TUNNEL frp
   env_set FRP_REMOTE "$remote"
   env_set FRP_TOKEN "$token"
   env_set FRP_TRANSPORT "$transport"
+  [ -n "$rport" ] && env_set FRP_REMOTE_PORT "$rport"
   log "tunnel be halat FRP ($transport) switch shod → $remote"
 }
 
@@ -1031,13 +1045,84 @@ cmd_agent(){
   local action="${1:-status}" port="${2:-8089}" token="${3:-}"
   shift 2>/dev/null || true; shift 2>/dev/null || true; shift 2>/dev/null || true
   case "$action" in
-    start)   systemctl start ${AGENT_SVC} 2>/dev/null && log "agent faal shod." || warn "shekast dar start agent." ;;
-    stop)    systemctl stop ${AGENT_SVC} 2>/dev/null && log "agent motevaghef shod." || warn "agent ejra nabood." ;;
+    on|install|start)
+      local py_bin=""
+      command -v python3 >/dev/null 2>&1 && py_bin="$(command -v python3)"
+      [ -n "$py_bin" ] || die "python3 nasb nist (apt install -y python3)."
+      local agent_py="/usr/local/share/rathole/ratholeagent.py"
+      if [ ! -f "$agent_py" ]; then
+        if [ -f "$(dirname "$0")/ratholeagent.py" ]; then
+          agent_py="$(dirname "$0")/ratholeagent.py"
+        elif [ -f "/opt/rathole-manager/ratholeagent.py" ]; then
+          agent_py="/opt/rathole-manager/ratholeagent.py"
+        fi
+      fi
+      [ -f "$agent_py" ] || die "ratholeagent.py peyda nashod."
+
+      mkdir -p /etc/rathole-agent
+      if [ -z "$token" ]; then
+        if [ -f "/etc/rathole-agent/token" ]; then
+          token="$(cat /etc/rathole-agent/token | tr -d '[:space:]')"
+        fi
+        [ -n "$token" ] || token="$(python3 -c "import secrets; print(secrets.token_hex(20))" 2>/dev/null || openssl rand -hex 20)"
+      fi
+      echo "$token" > /etc/rathole-agent/token
+      chmod 600 /etc/rathole-agent/token
+
+      cat > /etc/systemd/system/${AGENT_SVC}.service <<UNIT
+[Unit]
+Description=rathole REST Agent Daemon
+After=network.target
+
+[Service]
+Type=simple
+Environment=RATHOLE_AGENT_TOKEN=${token}
+ExecStart=${py_bin} ${agent_py} --port ${port} --role node
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+      systemctl daemon-reload 2>/dev/null || true
+      systemctl enable --now ${AGENT_SVC} >/dev/null 2>&1 || true
+      systemctl restart ${AGENT_SVC} 2>/dev/null || true
+
+      local my_ip; my_ip="$(detect_ip 2>/dev/null || echo '127.0.0.1')"
+      log "Agent REST API faal shod rooye port $port"
+      echo
+      echo "$(c_y '──────── tanzimat etesal be Hub (REST API) ────────')"
+      echo "  Connection: Agent REST API"
+      echo "  API URL:    http://${my_ip}:${port}"
+      echo "  Token:      ${token}"
+      echo "$(c_y '────────────────────────────────────────────────────')"
+      ;;
+    off|stop)
+      systemctl disable --now ${AGENT_SVC} 2>/dev/null || true
+      rm -f /etc/systemd/system/${AGENT_SVC}.service
+      systemctl daemon-reload 2>/dev/null || true
+      log "Agent REST API khamoosh va service hazf shod."
+      ;;
     restart) systemctl restart ${AGENT_SVC} 2>/dev/null && log "agent restart shod." || warn "shekast dar restart agent." ;;
-    status)  systemctl --no-pager status ${AGENT_SVC} 2>/dev/null | head -n8 || echo "agent nasb nist." ;;
-    token)   [ -f "/etc/rathole-agent/token" ] && cat /etc/rathole-agent/token || echo "token peyda nashod (/etc/rathole-agent/token)." ;;
-    install) bash "$(dirname "$0")/install-agent.sh" --port "$port" --token "$token" --role "node" ;;
-    *)       die "estefade: ratholenode agent <start|stop|restart|status|token|install> [port] [token]" ;;
+    status)
+      if systemctl is-active --quiet ${AGENT_SVC} 2>/dev/null; then
+        echo "agent: $(c_g 'active')"
+        local tok; tok="$(cat /etc/rathole-agent/token 2>/dev/null || true)"
+        [ -n "$tok" ] && echo "  token: $tok"
+      else
+        echo "agent: $(c_r 'inactive')"
+      fi
+      ;;
+    token)
+      [ -f "/etc/rathole-agent/token" ] && cat /etc/rathole-agent/token || echo "token peyda nashod (/etc/rathole-agent/token)." ;;
+    show)
+      local tok my_ip
+      tok="$(cat /etc/rathole-agent/token 2>/dev/null || echo '<TOKEN>')"
+      my_ip="$(detect_ip 2>/dev/null || echo '127.0.0.1')"
+      echo "API URL: http://${my_ip}:${port}"
+      echo "Token:   ${tok}"
+      ;;
+    *)       die "estefade: ratholenode agent <on [port] [token]|off|status|token|show>" ;;
   esac
 }
 cmd_check(){
@@ -1088,7 +1173,7 @@ gen_up_client(){
   local SERVER HOST TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH toml
   unset SERVER HOST TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH
   load_env_file "$(up_env "$id")" || die "khvandn-e config upstream '$id' shekast khord."
-  HOST="${HOST:-${SERVER%%:*}}"
+  local _srv="${SERVER:-}"; HOST="${HOST:-${_srv%%:*}}"
   toml="$(up_toml "$id")"
   local mode="${TUNNEL:-ws}" remote tls
   if [ "$mode" = "kcp" ]; then
@@ -1754,7 +1839,7 @@ cmd_migrate(){
     echo "  ✓ az ghabl rooye kcp ast."
   else
     echo "  1) rooye server airane main:  ratholectl kcp on 443 balanced   (KEY ra bardar)"
-    echo "  2) hminja rooye node:        ratholenode kcp on ${SERVER%%:*}:443 <KEY> balanced"
+    local _srv="${SERVER:-}"; echo "  2) hminja rooye node:        ratholenode kcp on ${_srv%%:*}:443 <KEY> balanced"
   fi
   local e id srv t
   for e in "$UP_DIR"/*.env; do
@@ -1937,7 +2022,7 @@ adaptive_run_probe(){
   # TAVAHH: control channel-e rathole hamishe '/' ast va nginx ham WS-upgrade ra rooye '/' route
   # mikonad. pas probe HATMAN bayad be '/' beravad; taen path-e digar (masalan WS_PATH-e ghadimi)
   # fakeweb ra mibinad (na '101') va adaptive ESBHTBAHAN failover mikonad.
-  local host="${SERVER%%:*}" port="${SERVER##*:}" mode="${TUNNEL:-ws}"
+  local _srv="${SERVER:-}"; local host="${_srv%%:*}" port="${_srv##*:}" mode="${TUNNEL:-ws}"
   local tls_host="${TLS_HOSTNAME:-$host}" tls_trust="${TLS_TRUSTED_ROOT:-}"
   local cls ms result
   local t0; t0="$(date +%s%3N 2>/dev/null || echo 0)"

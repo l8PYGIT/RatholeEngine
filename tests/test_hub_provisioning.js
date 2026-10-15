@@ -155,3 +155,10 @@ test('fresh node state is initialized before applying its first service',async()
  assert.ok(result,'node provisioning stopped before initialization');
  assert.ok(c.calls.findIndex(x=>x.action==='set_main') < c.calls.findIndex(x=>x.action==='add_svc'));
 });
+
+test('provisionPatchCircuit with null port resolves port from existing node', async () => {
+  const c = context();
+  const result = await c.provisionPatchCircuit('iran', 'node', 'kcp', null, {});
+  assert.ok(result, 'provisioning failed: ' + c.messages.join('; '));
+  assert.equal(action(c, 'kcp_on').args.remote, '192.0.2.1:443');
+});

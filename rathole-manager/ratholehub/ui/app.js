@@ -798,15 +798,18 @@ function renderNode(n,ov){
    </div></div>`;
 
  s+=`<div class="sec"><h4>${t('unified_services')} <button class="g" onclick="addUnifiedSvc('${n}')">${t('add_svc')}</button></h4>`;
- const sv=(ov.services||[]).map(d=>({name:d.name,inbound:d.inbound,lane:'standard'}));
- const bsv=(ov.backhaul_services||[]).map(d=>({name:d.name,inbound:d.inbound,lane:'mux'}));
+ const curCarrier=nodeCarrier(ov);
+ const sv=(ov.services||[]).map(d=>({name:d.name,inbound:d.inbound,lane:curCarrier}));
+ const bsv=(ov.backhaul_services||[]).map(d=>({name:d.name,inbound:d.inbound,lane:'backhaul'}));
  const allSv=[...sv,...bsv];
  if(!allSv.length)s+=`<div class="empty">${t('no_svc')}</div>`;
  else{
   s+=tbl([t('c_svc'),t('l_lane'),t('c_inbound'),t('c_ops')]);
   allSv.forEach(d=>{
-   const isMux=d.lane==='mux';
-   const laneBadge=isMux?`<span class="lane-pill mux">${t('lane_mux')}</span>`:`<span class="lane-pill standard">${t('lane_standard')}</span>`;
+   const isMux=d.lane==='backhaul';
+   const cClass=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(d.lane)?d.lane:'ws';
+   const cLabel=isMux?t('lane_mux'):(t('carrier_'+d.lane)||d.lane.toUpperCase());
+   const laneBadge=`<span class="badge b-${cClass}" style="font-size:11px;padding:2px 8px;border-radius:4px;">${h(cLabel)}</span>`;
    const dot=isMux?`<span class="dot d-ok" style="margin-inline-end:6px"></span>`:svcDot(d.name);
    const rmFn=isMux?`rmBhSvc('${n}','${esc(d.name)}')`:`rmSvc('${n}','${esc(d.name)}')`;
    s+=`<tr><td>${dot}${esc(d.name)}</td><td>${laneBadge}</td><td>${esc(d.inbound)}</td>
@@ -1316,10 +1319,19 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
     const sNode = patchNodeServer(nodeName, extra.node_server);
     if (!sIran || !sNode) throw new Error('سرور مقصد مشخص نیست؛ نود خارجی را صریح انتخاب کنید.');
     if (!['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(carrier)) throw new Error('حامل نامعتبر است.');
-    if (!/^\d+$/.test(String(port)) || +port < 1 || +port > 65535) throw new Error('پورت اینباند باید بین ۱ و ۶۵۵۳۵ باشد.');
     if (extra.carrier_port && (!/^\d+$/.test(String(extra.carrier_port)) || +extra.carrier_port < 1 || +extra.carrier_port > 65535)) throw new Error('پورت حامل نامعتبر است.');
     const state = JSON.parse((await patchAction(iranSrv, 'status')).out);
     const old = (state.nodes || []).find(x => x.name === nodeName);
+    const nov = OVS[sNode.name] || {};
+    const nodeSvc = [...(nov.services || []), ...(nov.backhaul_services || [])].find(x => x.name === nodeName);
+    const memIran = ((OVS[iranSrv] || {}).nodes || []).find(x => x.name === nodeName);
+    if (!port || !/^\d+$/.test(String(port))) {
+      port = (old && (old.inbound_port || old.port)) ||
+             (nodeSvc && nodeSvc.inbound) ||
+             (memIran && (memIran.inbound_port || memIran.port)) ||
+             8443;
+    }
+    if (!/^\d+$/.test(String(port)) || +port < 1 || +port > 65535) throw new Error('پورت اینباند باید بین ۱ و ۶۵۵۳۵ باشد.');
     const features = state.features || {};
     const host = sIran.host || state.public_ip;
     const isGre = carrier === 'gre' || carrier === 'frp_gre';
@@ -1381,7 +1393,6 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
     }
     const conn = await patchRequest('GET', 'api/servers/' + iranSrv + '/nodeconnect/' + nodeName);
     if (!conn.name || !conn.token || !conn.inbound || !conn.remote_port) throw new Error('اطلاعات سرویس یا نگاشت پورت ایران ناقص است.');
-    const nov = OVS[sNode.name] || {};
     if (oldLane !== targetLane) {
       if (oldLane === 'frp' || oldLane === 'frp_gre') await A(sNode.name, 'frp_off').catch(()=>{});
       else if (oldLane === 'backhaul') await A(sNode.name, 'backhaul_off').catch(()=>{});
@@ -2478,10 +2489,13 @@ function applyNodePreset(n,preset){
   if(preset===cur){toast(t('saved'));return;}
   setCarrier(n,preset,cur);
 }
-function addUnifiedSvc(n){formModal(t('t_add_svc'),[
+function addUnifiedSvc(n){
+  const cur=nodeCarrier(OVS[n]||{});
+  const curLabel=t('carrier_'+cur)||cur.toUpperCase();
+  formModal(t('t_add_svc'),[
   {id:'name',label:t('f_name'),req:1},
   {id:'lane',label:t('l_lane'),type:'select',val:'standard',opts:[
-    {v:'standard',t:t('lane_standard')},
+    {v:'standard',t:`${t('lane_standard')} (${curLabel})`},
     {v:'mux',t:t('lane_mux')}
   ]},
   {id:'token',label:t('l_token'),req:1},
@@ -2821,8 +2835,12 @@ async function setIranNodeCarrier(iran,name,next,cur){
  const sNode=patchNodeServer(name);
  if(sNode){
    try {
+     const existingIran = ((OVS[iran]||{}).nodes||[]).find(x => x.name === name);
+     const ovNode = OVS[sNode.name] || {};
+     const nodeSvc = [...(ovNode.services || []), ...(ovNode.backhaul_services || [])].find(x => x.name === name);
+     const existingPort = (existingIran && (existingIran.inbound_port || existingIran.port)) || (nodeSvc && nodeSvc.inbound) || null;
      toast(`در حال همگام‌سازی حامل ${next.toUpperCase()} روی هر دو سرور ایران و نود...`);
-     const ok=await applyPatchConnection(iran,name,next,null,null,null,{node_server:sNode.name});
+     const ok=await applyPatchConnection(iran,name,next,existingPort,null,null,{node_server:sNode.name});
      if(ok){
        toast(`✓ حامل نود ${name} در هر دو سمت با موفقیت به ${next.toUpperCase()} تغییر یافت.`);
        await loadOv(iran); await loadOv(sNode.name);

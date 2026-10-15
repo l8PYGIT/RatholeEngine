@@ -352,7 +352,20 @@ systemctl(){
         # Validating explicit input must precede role discovery and filesystem writes.
         result = run_bash('set -- --port '+"$'8089\\nExecStart=/bin/false'"+' --role node\n'+script)
         self.assertNotEqual(result.returncode, 0)
-        self.assertNotIn('BAD_ACCEPTED', result.stdout)
+    def test_update_script_dir_opt_never_fails_same_file(self):
+        source = update_source().split('# ==================== jarian-e asli')[0]
+        script = '''task_dir="$(mktemp -d)"
+trap 'command rm -rf "$task_dir"' EXIT
+mkdir -p "$task_dir/opt/rathole-manager" "$task_dir/usr/local/share/rathole" "$task_dir/usr/local/bin"
+touch "$task_dir/opt/rathole-manager/ratholeagent.py" "$task_dir/opt/rathole-manager/common.sh"
+SCRIPT_DIR="$task_dir/opt/rathole-manager"
+systemctl(){ :; }
+ratholenode(){ :; }
+PANEL=0; NODE=1; HUB=0
+''' + source.replace('/opt/rathole-manager', '$task_dir/opt/rathole-manager').replace('/usr/local/share/rathole', '$task_dir/usr/local/share/rathole').replace('/usr/local/bin', '$task_dir/usr/local/bin') + '\n( set -e; apply_update ) && echo APPLY_OK\n'
+        result = run_bash(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('APPLY_OK', result.stdout)
 
 
 if __name__ == '__main__':

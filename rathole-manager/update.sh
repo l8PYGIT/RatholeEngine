@@ -290,7 +290,19 @@ health_check(){ # $@ = naghsh-ha ; return 0 = salem, 1 = kharab
         fi ;;
       node)
         local client_svc; client_svc="$(node_primary_service)"
-        systemctl is-active --quiet "$client_svc" || { err "health: $client_svc faal nist."; bad=1; } ;;
+        local has_svc=0
+        if [ -f /etc/rathole/services.conf ] && grep -qvE '^[[:space:]]*(#|$)' /etc/rathole/services.conf 2>/dev/null; then
+          has_svc=1
+        elif [ -f /etc/rathole/bh-services.conf ] && grep -qvE '^[[:space:]]*(#|$)' /etc/rathole/bh-services.conf 2>/dev/null; then
+          has_svc=1
+        elif [ -f /etc/rathole/node.env ] && grep -qE '^TUNNEL=frp$' /etc/rathole/node.env 2>/dev/null; then
+          has_svc=1
+        fi
+        if [ "$has_svc" -eq 1 ]; then
+          systemctl is-active --quiet "$client_svc" || { err "health: $client_svc faal nist."; bad=1; }
+        else
+          log "node hanooz service-i nadarad (services.conf khali)؛ barresi-ye $client_svc rad shod."
+        fi ;;
       hub)
         systemctl is-active --quiet ratholehub || { err "health: ratholehub faal nist."; bad=1; } ;;
     esac
@@ -371,8 +383,12 @@ apply_update(){
     sed -i 's/\r$//' "$SCRIPT_DIR/ratholeagent.py"
     install -m 755 "$SCRIPT_DIR/ratholeagent.py" /usr/local/share/rathole/ratholeagent.py
     # unit-haye ghadimi hanooz in masir ra ejra mikonand.
-    if [ -f /opt/rathole-manager/ratholeagent.py ]; then
+    if [ "$SCRIPT_DIR" != "/opt/rathole-manager" ]; then
+      mkdir -p /opt/rathole-manager
       install -m 755 "$SCRIPT_DIR/ratholeagent.py" /opt/rathole-manager/ratholeagent.py
+    elif [ ! -f /opt/rathole-manager/ratholeagent.py ]; then
+      mkdir -p /opt/rathole-manager
+      ln -sf /usr/local/share/rathole/ratholeagent.py /opt/rathole-manager/ratholeagent.py 2>/dev/null || true
     fi
   fi
   if [ -f "$SCRIPT_DIR/install-agent.sh" ]; then

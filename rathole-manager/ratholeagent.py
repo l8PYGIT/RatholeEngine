@@ -132,12 +132,19 @@ class AgentHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json(500, {"ok": False, "rc": 1, "out": "", "err": str(e)})
 
-def create_agent_server(host, port, token, role="node"):
+def create_agent_server(host, port, token, role="node", tls_cert="", tls_key=""):
     class CustomHandler(AgentHandler):
         pass
     CustomHandler.server_token = token
     CustomHandler.server_role = role
-    return ThreadingHTTPServer((host, port), CustomHandler)
+    server = ThreadingHTTPServer((host, port), CustomHandler)
+    if tls_cert and tls_key and os.path.exists(tls_cert) and os.path.exists(tls_key):
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=tls_cert, keyfile=tls_key)
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        sys.stderr.write(f"[agent] TLS/HTTPS enabled using cert={tls_cert}\n")
+    return server
 
 def main():
     parser = argparse.ArgumentParser(description="rathole REST Agent")
@@ -145,6 +152,8 @@ def main():
     parser.add_argument("--port", type=int, default=8089, help="Listen port (default 8089)")
     parser.add_argument("--token", default="", help="Auth Bearer token")
     parser.add_argument("--role", choices=["iran", "node"], default="node", help="Server role")
+    parser.add_argument("--tls-cert", default="", help="Path to TLS certificate for HTTPS")
+    parser.add_argument("--tls-key", default="", help="Path to TLS private key for HTTPS")
     args = parser.parse_args()
 
     token = args.token or os.environ.get("RATHOLE_AGENT_TOKEN", "")
@@ -164,8 +173,16 @@ def main():
                 pass
         sys.stderr.write("[agent] Authentication token loaded from protected local storage\n")
 
-    server = create_agent_server(args.host, args.port, token, args.role)
-    sys.stderr.write(f"[agent] Serving on {args.host}:{args.port} (role={args.role})\n")
+    tls_cert = args.tls_cert or os.environ.get("RATHOLE_AGENT_TLS_CERT", "")
+    tls_key = args.tls_key or os.environ.get("RATHOLE_AGENT_TLS_KEY", "")
+    if not tls_cert and os.path.exists("/etc/rathole-agent/cert.pem"):
+        tls_cert = "/etc/rathole-agent/cert.pem"
+    if not tls_key and os.path.exists("/etc/rathole-agent/key.pem"):
+        tls_key = "/etc/rathole-agent/key.pem"
+
+    server = create_agent_server(args.host, args.port, token, args.role, tls_cert, tls_key)
+    proto = "https" if (tls_cert and tls_key and os.path.exists(tls_cert) and os.path.exists(tls_key)) else "http"
+    sys.stderr.write(f"[agent] Serving on {proto}://{args.host}:{args.port} (role={args.role})\n")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -176,3 +176,9 @@ test('GRE resolves node IP from api_url when host is absent', async () => {
   assert.equal(iranGre.args.remote_ip, '78.135.77.57');
   assert.equal(nodeGre.args.remote_ip, '192.0.2.1');
 });
+
+test('silent option suppresses generic toast in provisionPatchCircuit', async () => {
+  const c = context();
+  await c.provisionPatchCircuit('iran', 'node', 'ws', 8080, { silent: true });
+  assert.equal(c.messages.length, 0, 'silent provisionPatchCircuit should not toast');
+});

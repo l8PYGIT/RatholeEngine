@@ -173,7 +173,14 @@ function headBadges(n,ov){
   hb=`<span class="badge ${ok?'b-ok':'b-bad'}">doctor ${(ov.health||{}).ok||0}/${((ov.health||{}).ok||0)+((ov.health||{}).fail||0)}</span>`;
   const k=ov.kcp||{}; hb+=k.enabled?` <span class="badge b-kcp">kcp ${h(k.profile||'')}${k.port?(' :'+h(k.port)):''}${k.stealth?' · QUIC':''}</span>`:' <span class="badge b-ws">ws/443</span>';
   const nz=ov.noise||{}; if(nz.enabled){hb+=` <span class="badge b-noise">noise${nz.port?(' :'+h(nz.port)):''}${nz.count?(' · '+h(nz.count)+' node'):''}</span>`;}
- }else{const m=ov.main_tunnel||(ov.kcp||{}).mode||'ws';
+ }else{
+  let m = (ov.status && ov.status.main && ov.status.main.transport) || ov.main_tunnel || (ov.kcp||{}).mode || 'ws';
+  if (!m || m === 'ws') {
+    if ((ov.frp||{}).enabled) m = 'frp';
+    else if ((ov.backhaul||{}).enabled) m = 'backhaul';
+    else if ((ov.noise||{}).enabled) m = 'noise';
+    else if ((ov.kcp||{}).enabled) m = 'kcp';
+  }
   const cClass=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(m)?m:'ws';
   const cTitle=m==='kcp'?`tunnel kcp ${h((ov.kcp||{}).profile||'')}`:(m==='ws'?'tunnel ws/443':`tunnel ${m}`);
   hb=`<span class="badge b-${cClass}">${cTitle}</span>`;
@@ -329,7 +336,8 @@ function updateCard(n){
   if((ov.game||[]).length)meta+=` <span class="badge b-info">${ov.game.length} ${t('n_game')}</span>`;
   if(ov.domain)meta+=` <span class="mono" style="font-size:11.5px;color:var(--text-muted);">${h(ov.domain)}</span>`;
  } else {
-  meta=`<span class="badge b-ok">${(ov.services||[]).length} ${t('n_svcs')}</span>`;
+  const svcCount = (ov.services||[]).length + (ov.backhaul_services||[]).length;
+  meta=`<span class="badge b-ok">${svcCount} ${t('n_svcs')}</span>`;
   if((ov.upstreams||[]).length)meta+=` <span class="badge b-info">${ov.upstreams.length} ${t('n_ups')}</span>`;
   if(ov.main_server)meta+=` <span class="mono" style="font-size:11.5px;color:var(--text-muted);">→ ${h(ov.main_server)}</span>`;
  }
@@ -1449,7 +1457,7 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
       }
     }
     await loadOv(iranSrv); await loadOv(sNode.name);
-    toast('✓ تنظیمات مدار اعمال شد؛ وضعیت اتصال را بررسی کنید.');
+    if (!extra.silent) toast('✓ تنظیمات مدار اعمال شد؛ وضعیت اتصال را بررسی کنید.');
     return {...conn,node_server:sNode.name};
   } catch (err) {
     if (changed) {
@@ -1557,7 +1565,7 @@ function buildWiringModel() {
     const health = (iov.health && iov.health.nodes) || {};
 
     nlist.forEach(nd => {
-      const nodeSrv = patchNodeServer(nd.name);
+      const nodeSrv = patchNodeServer(nd.name) || (nodes.length === 1 ? nodes[0] : null);
       const nov = nodeSrv ? (OVS[nodeSrv.name] || {}) : {};
       const carrier = nd.transport || (nov.main_tunnel || 'ws');
       const isOk = health[nd.name] === 'ok' || (iov.reachable !== false && health[nd.name] !== 'warn');
@@ -1939,7 +1947,7 @@ function renderMiniWiring(n, ov){
       const trBadge = '<span class="badge b-' + tr + '" style="font-size:10px;padding:1px 5px;">' + tr + '</span>';
       return `<span class="mini-circuit-pill" onclick="nav('#/server/${h(nd.name)}')" style="cursor:pointer;" title="${t('details')}">
         <span class="dot d-ok" style="width:7px;height:7px;"></span>
-        :443/${h(nd.name)} ${trBadge} ➔ :${h(nd.port)}
+        <span dir="ltr" class="mono" style="display:inline-flex;align-items:center;gap:4px;">:443/${h(nd.name)} ${trBadge} ➔ :${h(nd.port)}</span>
       </span>`;
     }).join(' ');
     return `<div class="mini-wiring-strip">
@@ -1952,7 +1960,7 @@ function renderMiniWiring(n, ov){
   } else {
     const main = ov.main_server || 'iran';
     const tr = ov.main_tunnel || 'ws';
-    const svcs = ov.services || [];
+    const svcs = [...(ov.services || []), ...(ov.backhaul_services || [])];
     const svcText = svcs.map(x => ':' + x.inbound).join(', ') || '-';
     return `<div class="mini-wiring-strip">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -2702,7 +2710,10 @@ function setCarrier(n,next,cur){
  if(next===cur)return;
  const sel=$('car_'+n);
  const revert=()=>{if(sel)sel.value=cur;};
- const c=buildWiringModel().circuits.find(x=>x.node===n||x.nodeServer===n);
+ const peers=SERVERS.filter(s=>s.role==='node');
+ const sNode=patchNodeServer(n)||(peers.length===1?peers[0]:null);
+ const circuits=buildWiringModel().circuits;
+ const c=circuits.find(x=>x.node===n||x.nodeServer===n||(sNode && x.nodeServer===sNode.name));
  if(c&&c.iran){
    quickCarrierModal(c.iran,c.node,next);
    revert();
@@ -2878,7 +2889,7 @@ async function setIranNodeCarrier(iran,name,next,cur){
      const nodeSvc = [...(ovNode.services || []), ...(ovNode.backhaul_services || [])].find(x => x.name === name);
      const existingPort = (existingIran && (existingIran.inbound_port || existingIran.port)) || (nodeSvc && nodeSvc.inbound) || null;
      toast(`در حال همگام‌سازی حامل ${next.toUpperCase()} روی هر دو سرور ایران و نود...`);
-     const ok=await applyPatchConnection(iran,name,next,existingPort,null,null,{node_server:sNode.name});
+     const ok=await applyPatchConnection(iran,name,next,existingPort,null,null,{node_server:sNode.name,silent:true});
      if(ok){
        toast(`✓ حامل نود ${name} در هر دو سمت با موفقیت به ${next.toUpperCase()} تغییر یافت.`);
        await loadOv(iran); await loadOv(sNode.name);

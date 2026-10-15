@@ -291,6 +291,14 @@ def run_on_agent(server, cmd_args, timeout=120):
     handlers = []
     if proxy:
         handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    url = (server.get("api_url") or "").strip()
+    if url.startswith("https://"):
+        import ssl
+        ctx = ssl.create_default_context()
+        if server.get("insecure_ssl") or os.environ.get("RATHOLE_AGENT_INSECURE_SSL") == "1":
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        handlers.append(urllib.request.HTTPSHandler(context=ctx))
     opener = urllib.request.build_opener(*handlers)
     req = build_agent_request(server, cmd_args, timeout=timeout)
     try:
@@ -1426,8 +1434,17 @@ class Handler(BaseHTTPRequestHandler):
             ov["gre"] = parse_gre_status(R(["ratholenode", "gre", "status"]).get("out", ""))
             ups = parse_upstream_ls(R(["ratholenode", "upstream", "ls"]).get("out", ""))
             ov["upstreams"] = ups["upstreams"]
-            if not ov.get("main_tunnel"):
-                ov["main_tunnel"] = (ups.get("main") or {}).get("tunnel", ov["kcp"].get("mode", "ws"))
+            if not ov.get("main_tunnel") or ov.get("main_tunnel") == "ws":
+                if ov.get("frp", {}).get("enabled"):
+                    ov["main_tunnel"] = "frp"
+                elif ov.get("backhaul", {}).get("enabled"):
+                    ov["main_tunnel"] = "backhaul"
+                elif ov.get("noise", {}).get("enabled"):
+                    ov["main_tunnel"] = "noise"
+                elif ov.get("kcp", {}).get("enabled"):
+                    ov["main_tunnel"] = "kcp"
+                elif not ov.get("main_tunnel"):
+                    ov["main_tunnel"] = (ups.get("main") or {}).get("tunnel", ov["kcp"].get("mode", "ws"))
             ov["version"] = parse_version(R(["ratholenode", "version"]).get("out", ""))
         return self._send(200, ov)
 

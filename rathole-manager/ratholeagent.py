@@ -61,6 +61,12 @@ class AgentHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"ok": False, "error": "Not found"})
             return
         if not self._auth():
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                if 0 < length <= 1048576:
+                    self.rfile.read(length)
+            except Exception:
+                pass
             return
 
         try:

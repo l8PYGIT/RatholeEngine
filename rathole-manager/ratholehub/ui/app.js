@@ -174,7 +174,9 @@ function headBadges(n,ov){
   const k=ov.kcp||{}; hb+=k.enabled?` <span class="badge b-kcp">kcp ${h(k.profile||'')}${k.port?(' :'+h(k.port)):''}${k.stealth?' · QUIC':''}</span>`:' <span class="badge b-ws">ws/443</span>';
   const nz=ov.noise||{}; if(nz.enabled){hb+=` <span class="badge b-noise">noise${nz.port?(' :'+h(nz.port)):''}${nz.count?(' · '+h(nz.count)+' node'):''}</span>`;}
  }else{const m=ov.main_tunnel||(ov.kcp||{}).mode||'ws';
-  hb=m==='noise'?`<span class="badge b-noise">tunnel noise</span>`:(m==='kcp'?`<span class="badge b-kcp">tunnel kcp ${h((ov.kcp||{}).profile||'')}</span>`:(m==='plain'?`<span class="badge b-plain">tunnel plain</span>`:'<span class="badge b-ws">tunnel ws/443</span>'));
+  const cClass=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(m)?m:'ws';
+  const cTitle=m==='kcp'?`tunnel kcp ${h((ov.kcp||{}).profile||'')}`:(m==='ws'?'tunnel ws/443':`tunnel ${m}`);
+  hb=`<span class="badge b-${cClass}">${cTitle}</span>`;
   if((ov.noise||{}).enabled&&m!=='noise'){hb+=' <span class="badge b-noise">noise</span>';}
   const ts=nodeTunnelStatus(n);
   if(ts)hb+=` <span class="badge ${ts==='ok'?'b-ok':'b-bad'}">${ts==='ok'?t('tun_up'):t('tun_down')}</span>`;
@@ -2832,7 +2834,8 @@ async function setIranNodeCarrier(iran,name,next,cur){
  const sel=$('icar_'+iran+'__'+name);
  const revert=()=>{if(sel)sel.value=cur;};
  if(!confirm(t('icarrier_confirm').replace('%s',t('carrier_'+next)||next).replace('%n',name))){revert();return;}
- const sNode=patchNodeServer(name);
+ const peers=SERVERS.filter(s=>s.role==='node');
+ const sNode=patchNodeServer(name)||(peers.length===1?peers[0]:null);
  if(sNode){
    try {
      const existingIran = ((OVS[iran]||{}).nodes||[]).find(x => x.name === name);
@@ -2846,8 +2849,13 @@ async function setIranNodeCarrier(iran,name,next,cur){
        await loadOv(iran); await loadOv(sNode.name);
        return;
      }
+     revert();
+     toast(`⚠️ همگام‌سازی حامل روی نود انجام نشد؛ تغییر لغو گردید تا تانل قطع نشود.`);
+     return;
    } catch(e){
-     toast(`⚠️ خطا در همگام‌سازی خودکار: ${e.message}؛ در حال اعمال روی سرور ایران...`);
+     revert();
+     toast(`⚠️ خطا در همگام‌سازی خودکار: ${e.message}؛ تغییر لغو شد.`);
+     return;
    }
  }
  // Fallback baraye node-haye standalone/gheyre-modiriat-shode dar inventory

@@ -344,7 +344,7 @@ if nginx -t; then
   systemctl reload nginx || systemctl restart nginx
   log "nginx reload shod."
 else
-  err "nginx -t khata dad; tadakhol/gvahi ra barresi kon (bkapha dar /etc/nginx/rathole-backup-* va *.rathole-orig.bak)."
+  die "nginx -t khata dad; tadakhol/gvahi ra barresi kon (bkapha dar /etc/nginx/rathole-backup-* va *.rathole-orig.bak)."
 fi
 
 # ---------- faalsazi service ----------

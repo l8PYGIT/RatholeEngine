@@ -45,6 +45,20 @@ rm -f /etc/systemd/system/rathole-client.service
 systemctl disable --now rathole-backhaul-client 2>/dev/null || true
 rm -f /etc/systemd/system/rathole-backhaul-client.service
 rm -f /usr/local/bin/backhaul-client
+# lane-ha va upstream-haye ezafi ham bayad gheyre-faal shavand.
+for pattern in frpc.service rathole-frpc.service rathole-kcp-client.service rathole-kcp-up-*.service rathole-client@*.service rathole-watchdog.timer rathole-watchdog.service rathole-adaptive.timer rathole-adaptive.service; do
+  for unit in /etc/systemd/system/$pattern; do
+    [ -f "$unit" ] || continue
+    systemctl disable --now "${unit##*/}" 2>/dev/null || true
+    rm -f "$unit"
+  done
+done
+# Agent eshteraki ast; agar naghsh-e digar mojood nist, dastresi REST ham hazf shavad.
+if [ ! -f /etc/systemd/system/rathole-server.service ]; then
+  systemctl disable --now rathole-agent.service 2>/dev/null || true
+  rm -f /etc/systemd/system/rathole-agent.service
+  rm -rf /etc/rathole-agent
+fi
 systemctl daemon-reload 2>/dev/null || true
 
 # ---------- hazf config va state ----------

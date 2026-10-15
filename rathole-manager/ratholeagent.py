@@ -4,7 +4,7 @@ ratholeagent — Pure Python stdlib REST API Agent for Rathole server and node m
 Allows managing remote servers over HTTP/HTTPS with token authentication and proxy support,
 eliminating direct SSH dependency.
 """
-import os, sys, json, hmac, hashlib, subprocess, socket, argparse
+import os, sys, json, hmac, hashlib, subprocess, socket, argparse, signal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 AGENT_VERSION = "1.0.0"
@@ -65,36 +65,61 @@ class AgentHandler(BaseHTTPRequestHandler):
 
         try:
             length = int(self.headers.get("Content-Length", 0))
+            if not 0 < length <= 1048576:
+                raise ValueError("Payload size must be between 1 and 1048576 bytes")
             data = json.loads(self.rfile.read(length).decode("utf-8"))
         except Exception as e:
             self._send_json(400, {"ok": False, "error": f"Invalid JSON payload: {e}"})
             return
 
+        if not isinstance(data, dict):
+            self._send_json(400, {"ok": False, "error": "Payload must be an object"})
+            return
         cmd = data.get("cmd")
-        if not cmd or not isinstance(cmd, list):
+        if (not isinstance(cmd, list) or not cmd
+                or any(not isinstance(arg, str) or "\0" in arg for arg in cmd)) :
             self._send_json(400, {"ok": False, "error": "Field 'cmd' must be a non-empty list"})
             return
 
-        bin_name = os.path.basename(str(cmd[0]))
+        timeout = data.get("timeout", 120)
+        if type(timeout) is not int or not 1 <= timeout <= 3600:
+            self._send_json(400, {"ok": False, "error": "Timeout must be an integer between 1 and 3600"})
+            return
+        # timeout-e tashkhisi ra ba subprocess emal kon; binary-e dakheli ham etebarsanji mishavad.
+        if cmd[0] == "timeout":
+            if len(cmd) < 3 or not cmd[1].isascii() or not cmd[1].isdigit() or not 1 <= int(cmd[1]) <= 3600:
+                self._send_json(400, {"ok": False, "error": "Invalid timeout wrapper"})
+                return
+            timeout = min(timeout, int(cmd[1]))
+            cmd = cmd[2:]
+        bin_name = os.path.basename(cmd[0])
         # Allow testing with current python executable
         is_cur_py = (cmd[0] == sys.executable)
         if not is_cur_py and bin_name not in ALLOWED_BINARIES:
             self._send_json(403, {"ok": False, "error": f"Binary '{bin_name}' is not permitted"})
             return
 
-        timeout = int(data.get("timeout", 120))
         try:
-            p = subprocess.run(
-                [str(x) for x in cmd],
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
+            # session-e joda: timeout bayad bache-process-ha va pipe-haye anha ra ham bebndad.
+            with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True, start_new_session=(os.name == "posix")) as p:
+                try:
+                    out, err = p.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    if os.name == "posix":
+                        try:
+                            os.killpg(p.pid, getattr(signal, "SIGKILL", 9))
+                        except ProcessLookupError:
+                            pass
+                    else:
+                        p.kill()
+                    p.communicate()
+                    raise
             self._send_json(200, {
                 "ok": True,
                 "rc": p.returncode,
-                "out": p.stdout,
-                "err": p.stderr
+                "out": out,
+                "err": err
             })
         except subprocess.TimeoutExpired:
             self._send_json(200, {"ok": False, "rc": 124, "out": "", "err": "Execution timed out"})
@@ -131,7 +156,7 @@ def main():
                     f.write(token)
             except Exception:
                 pass
-        sys.stderr.write(f"[agent] Using token: {token}\n")
+        sys.stderr.write("[agent] Authentication token loaded from protected local storage\n")
 
     server = create_agent_server(args.host, args.port, token, args.role)
     sys.stderr.write(f"[agent] Serving on {args.host}:{args.port} (role={args.role})\n")

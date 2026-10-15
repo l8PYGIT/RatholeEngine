@@ -1178,18 +1178,20 @@ function promptPatchProtocol(iranSrv, nodeName, defaultPort, p1Coord, p2Coord) {
   ];
 
   formModal(`🔌 اتصال سیم‌کشی جدید: ${iranSrv} ⟵⟶ ${nodeName}`, [
+    {id:'node_server', label:'سرور نود خارجی:', type:'select', val:(patchNodeServer(nodeName) || {}).name || '', opts:SERVERS.filter(s=>s.role==='node').map(s=>({v:s.name,t:s.name}))},
     {id:'carrier', label:'پروتکل و حامل ارتباطی تونل را انتخاب کنید:', type:'select', val:'frp_gre', opts:opts},
     {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:'quic', opts:frpTrOpts},
     {id:'bh_tr', label:'مد ترانسپورت Backhaul (برای Backhaul):', type:'select', val:'wssmux', opts:bhTrOpts},
     {id:'profile', label:'پروفایل شتاب KCP / Backhaul:', type:'select', val:'balanced', opts:profOpts},
     {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE یا FRP+GRE):', type:'text', val:'10.10.10.1', ph:'10.10.10.1'},
     {id:'carrier_port', label:'پورت اختصاصی حامل در ایران (اختیاری):', type:'text', val:'', ph:'پیش‌فرض: FRP=7000, BH=3080, Plain=8880, Noise=2334, KCP=443'},
-    {id:'port', label:'پورت اینباند داخلی سرور ایران (Backend Port):', type:'text', val:defaultPort || '8443', hint:'پورتی که ترافیک ورودی به آن فوروارد می‌شود'}
+    {id:'port', label:'پورت اینباند روی نود خارجی:', type:'text', val:((OVS[iranSrv] || {}).nodes || []).find(x=>x.name===nodeName)?.inbound_port || defaultPort || '8443', hint:'پورت بک‌اند ایران خودکار تخصیص داده و حفظ می‌شود'}
   ], async v => {
     closeModal();
     const carrier = v.carrier;
     const port = parseInt(v.port, 10) || defaultPort || 8443;
     applyPatchConnection(iranSrv, nodeName, carrier, port, p1Coord, p2Coord, {
+      node_server:v.node_server,
       frp_transport: v.frp_tr || 'quic',
       bh_transport: v.bh_tr || 'wssmux',
       profile: v.profile || 'balanced',
@@ -1199,14 +1201,16 @@ function promptPatchProtocol(iranSrv, nodeName, defaultPort, p1Coord, p2Coord) {
   });
 }
 
-function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = {}) {
+async function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = {}) {
+  const applied = await provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra);
+  if (!applied) return false;
   if (!OVS[iranSrv]) OVS[iranSrv] = {};
   if (!OVS[iranSrv].nodes) OVS[iranSrv].nodes = [];
 
   let existing = OVS[iranSrv].nodes.find(x => x.name === nodeName);
   if (existing) {
     existing.transport = carrier;
-    existing.port = port;
+    existing.inbound_port = +applied.inbound;
     existing.frp_transport = extra.frp_transport || existing.frp_transport;
     existing.bh_transport = extra.bh_transport || existing.bh_transport;
     existing.profile = extra.profile || existing.profile;
@@ -1215,9 +1219,9 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = 
   } else {
     OVS[iranSrv].nodes.push({
       name: nodeName,
-      port: port,
+      port: +applied.remote_port,
       transport: carrier,
-      inbound_port: port,
+      inbound_port: +applied.inbound,
       frp_transport: extra.frp_transport,
       bh_transport: extra.bh_transport,
       profile: extra.profile,
@@ -1263,91 +1267,148 @@ function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = 
   }
 
   highlightCircuit(cid);
-  const carrierTitle = carrier === 'frp_gre' ? 'FRP+GRE (ترکیبی)' : carrier.toUpperCase();
-  toast(`✨ سیم‌کشی جدید با موفقیت وصل شد: ${iranSrv} ➔ ${nodeName} [${carrierTitle}] ✓`);
-
-  provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra);
+  // provisionPatchCircuit natije ra check karde; inja faghat namaye UI refresh mishavad.
 
   // Clear animation flag after playback
   setTimeout(() => {
     if (custom) custom.newlyPlugged = false;
   }, 1000);
+  return true;
 }
 
-async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra) {
+// natije-ye HTTP ya rc-e remote bayad GHABL az gham-e badi check shavad.
+async function patchRequest(method, url, body) {
+  const {status, j} = await api(method, url, body);
+  if (status < 200 || status >= 300 || !j || j.ok === false || j.error ||
+      (body && j.rc !== 0)) {
+    throw new Error((j && (j.error || j.err || j.out)) || ('HTTP ' + status));
+  }
+  return j;
+}
+
+async function patchAction(server, action, args = {}) {
+  return patchRequest('POST', 'api/servers/' + server + '/action', {action, args});
+}
+
+function patchNodeServer(nodeName, selected) {
+  const peers = SERVERS.filter(s => s.role === 'node');
+  if (selected) return peers.find(s => s.name === selected);
+  const exact = peers.find(s => s.name === nodeName);
+  if (exact) return exact;
+  const matches = peers.filter(s => {
+    const ov = OVS[s.name] || {};
+    return [...(ov.services || []), ...(ov.backhaul_services || [])].some(x => x.name === nodeName);
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {}) {
+  let changed = false;
   try {
-    const sIran = SERVERS.find(s => s.name === iranSrv);
-    let sNode = SERVERS.find(s => s.name === nodeName || (OVS[s.name] && OVS[s.name].services && OVS[s.name].services.some(x => x.name === nodeName)));
-    if (!sNode) sNode = SERVERS.find(s => s.role === 'node');
-
-    // 1. Ensure node exists on Iran side
-    const iov = OVS[iranSrv] || {};
-    const nlist = iov.nodes || [];
-    if (!nlist.some(x => x.name === nodeName)) {
-      await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'add_node', args: {name: nodeName, inbound: String(port)}});
-    }
-
-    // 2. Turn on carrier on Iran side if needed
-    if (carrier === 'backhaul') {
-      await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'backhaul_node_on', args: {name: nodeName}});
-    } else if (carrier === 'noise') {
-      await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'noise_node_on', args: {name: nodeName}});
-    } else if (carrier === 'frp' || carrier === 'frp_gre') {
-      await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'frp_node_on', args: {name: nodeName}});
-    } else if (carrier === 'gre') {
-      const rem = sNode ? (sNode.host || '') : '';
-      if (rem) await api('POST', 'api/servers/' + iranSrv + '/action', {action: 'gre_on', args: {remote_ip: rem, tunnel_ip: extra.gre_ip || '10.10.10.1', name: 'gre1'}});
-    }
-
-    // 3. Configure Node side
-    if (sNode) {
-      const {j: conn} = await api('GET', 'api/servers/' + iranSrv + '/nodeconnect/' + nodeName);
-      if (conn && conn.ok) {
-        await api('POST', 'api/servers/' + sNode.name + '/action', {action: 'add_svc', args: {name: conn.name, token: conn.token, inbound: conn.inbound || String(port)}});
+    const sIran = SERVERS.find(s => s.name === iranSrv && s.role === 'iran');
+    const sNode = patchNodeServer(nodeName, extra.node_server);
+    if (!sIran || !sNode) throw new Error('سرور مقصد مشخص نیست؛ نود خارجی را صریح انتخاب کنید.');
+    if (!['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(carrier)) throw new Error('حامل نامعتبر است.');
+    if (!/^\d+$/.test(String(port)) || +port < 1 || +port > 65535) throw new Error('پورت اینباند باید بین ۱ و ۶۵۵۳۵ باشد.');
+    if (extra.carrier_port && (!/^\d+$/.test(String(extra.carrier_port)) || +extra.carrier_port < 1 || +extra.carrier_port > 65535)) throw new Error('پورت حامل نامعتبر است.');
+    const state = JSON.parse((await patchAction(iranSrv, 'status')).out);
+    const old = (state.nodes || []).find(x => x.name === nodeName);
+    const features = state.features || {};
+    const host = sIran.host || state.public_ip;
+    const isGre = carrier === 'gre' || carrier === 'frp_gre';
+    let greIp = extra.gre_ip || '10.10.10.1', nodeGreIp;
+    if (isGre) {
+      const octets = greIp.split('.').map(Number);
+      if (!sNode.host || !host || octets.length !== 4 || octets.some(x => !Number.isInteger(x) || x < 0 || x > 255) || ![1,2].includes(octets[3] % 4)) {
+        throw new Error('GRE به IP واقعی دو سرور و آدرس میزبان معتبر در شبکه /30 نیاز دارد.');
       }
-      if (carrier === 'backhaul') {
-        const {j: bconn} = await api('GET', 'api/servers/' + iranSrv + '/backhaulconnect');
-        if (bconn && bconn.ok) {
-          await api('POST', 'api/servers/' + sNode.name + '/action', {
-            action: 'backhaul_on',
-            args: {
-              mode: 'nginx_tls',
-              remote_addr: bconn.remote_addr || bconn.domain || (sIran ? sIran.host : ''),
-              token: bconn.token,
-              transport: extra.bh_transport || 'wssmux',
-              profile: extra.profile || 'balanced'
-            }
-          });
-        }
-      } else if (carrier === 'frp' || carrier === 'frp_gre') {
-        const iranHost = sIran ? (sIran.host || '') : '';
-        if (iranHost) {
-          await api('POST', 'api/servers/' + sNode.name + '/action', {
-            action: 'frp_on',
-            args: {
-              remote: iranHost + ':7000',
-              token: (conn && conn.token) || 'a0370655deadbeefcafe1234',
-              transport: extra.frp_transport || 'quic'
-            }
-          });
-        }
-      } else if (carrier === 'gre' || carrier === 'frp_gre') {
-        const iranHost = sIran ? (sIran.host || '') : '';
-        if (iranHost) {
-          await api('POST', 'api/servers/' + sNode.name + '/action', {
-            action: 'gre_on',
-            args: {remote_ip: iranHost, tunnel_ip: '10.10.10.2', name: 'gre1'}
-          });
+      nodeGreIp = [...octets.slice(0,3), octets[3] ^ 3].join('.');
+      const g = features.gre || {};
+      if (g.configured && (g.remote_ip !== sNode.host || g.tunnel_ip !== greIp)) throw new Error('gre1 قبلاً برای مسیر دیگری تنظیم شده؛ ابتدا آن مسیر را مدیریت کنید.');
+    }
+    // ghofl-e server-side joda ast; in flow transaction-e chand-serveri nist.
+    // dar shekast hich success-i neshan nemidahim va state-e vaghei refresh mishavad.
+    const A = async (server, action, args) => { changed = true; return patchAction(server, action, args); };
+    if (!old) await A(iranSrv, 'add_node', {name:nodeName,inbound:String(port)});
+    else if (+old.inbound_port !== +port) await A(iranSrv, 'edit_node', {name:nodeName,inbound:String(port)});
+
+    const targetLane = carrier === 'backhaul' ? 'backhaul' : carrier === 'noise' ? 'noise' : ['frp','frp_gre'].includes(carrier) ? 'frp' : 'ws';
+    const oldLane = old && old.transport || 'ws';
+    if (oldLane !== targetLane && ['backhaul','noise','frp'].includes(oldLane)) await A(iranSrv, oldLane + '_node_off', {name:nodeName});
+    if (isGre) {
+      await A(iranSrv, 'gre_on', {remote_ip:sNode.host,tunnel_ip:greIp,name:'gre1'});
+      await A(sNode.name, 'gre_on', {remote_ip:host,tunnel_ip:nodeGreIp,name:'gre1'});
+    }
+    let connection;
+    if (targetLane === 'frp') {
+      if (!(features.frp || {}).configured) await A(iranSrv, 'frp_on', {port:String(extra.carrier_port || 7000),transport:extra.frp_transport || 'tcp'});
+      connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/frpconnect');
+      if (!connection.token || !connection.port || !connection.transport) throw new Error('اطلاعات اتصال FRP ناقص است.');
+      if ((extra.carrier_port && +extra.carrier_port !== +connection.port) || (extra.frp_transport && extra.frp_transport !== connection.transport)) {
+        await A(iranSrv, 'frp_on', {port:String(extra.carrier_port || connection.port),token:connection.token,transport:extra.frp_transport || connection.transport});
+        connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/frpconnect');
+      }
+      await A(iranSrv, 'frp_node_on', {name:nodeName});
+    } else if (targetLane === 'noise') {
+      const f = features.noise || {};
+      if (!f.configured || (extra.carrier_port && +extra.carrier_port !== +f.port)) await A(iranSrv, 'noise_on', {port:String(extra.carrier_port || f.port || 2334)});
+      await A(iranSrv, 'noise_node_on', {name:nodeName});
+      connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/noiseconnect');
+    } else if (targetLane === 'backhaul') {
+      const f = features.backhaul || {};
+      const tr = extra.bh_transport || 'wssmux';
+      const mode = /^wss/.test(tr) ? 'nginx_tls' : 'direct_ip';
+      if (!f.configured) await A(iranSrv, 'backhaul_on', {port:String(extra.carrier_port || 3080),transport:tr.replace('wss','ws'),mode,profile:extra.profile || 'balanced'});
+      // be konfigurasion-e mojood ehtiram begzar; token/mode/profile-e server marja ast.
+      connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/backhaulconnect');
+      await A(iranSrv, 'backhaul_node_on', {name:nodeName});
+    } else if (carrier === 'kcp') {
+      await A(iranSrv, 'kcp_on', {port:String(extra.carrier_port || (state.ports || {}).kcp || 443),profile:extra.profile || 'balanced'});
+      connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/kcpconnect');
+    } else if (carrier === 'plain' || carrier === 'gre') {
+      const f = features.plain || {};
+      const listener = String(extra.carrier_port || f.port || 8880);
+      if (!f.configured || +listener !== +f.port) await A(iranSrv, 'plain_on', {port:listener});
+      if (!host && !isGre) throw new Error('آدرس سرور ایران مشخص نیست.');
+      connection = {remote:(isGre ? greIp : host) + ':' + listener};
+    }
+    const conn = await patchRequest('GET', 'api/servers/' + iranSrv + '/nodeconnect/' + nodeName);
+    if (!conn.name || !conn.token || !conn.inbound || !conn.remote_port) throw new Error('اطلاعات سرویس یا نگاشت پورت ایران ناقص است.');
+    const nov = OVS[sNode.name] || {};
+    if (targetLane === 'backhaul') {
+      // lane-e backhaul joda ast; service ra dar registry-e dorost sabt kon.
+      await A(sNode.name, 'backhaul_on', {mode:connection.mode,remote_addr:connection.remote_addr || connection.domain,token:connection.token,transport:connection.transport,profile:connection.profile});
+      await A(sNode.name, 'add_bh_svc', {name:conn.name,token:connection.token,inbound:conn.inbound});
+      if ((nov.services || []).some(x=>x.name===conn.name)) await A(sNode.name,'rm_svc',{name:conn.name});
+    } else {
+      const main = await patchRequest('GET', 'api/servers/' + iranSrv + '/mainconnect');
+      if (!main.server || (targetLane !== 'frp' && !main.control_path)) throw new Error('آدرس یا مسیر کنترل سرور ایران مشخص نیست.');
+      // set-main node.env ra ghabl az avalin apply misazad.
+      await A(sNode.name, 'set_main', {server:main.server,tls_hostname:main.tls_hostname || main.domain || ''});
+      if ((nov.backhaul_services || []).some(x=>x.name===conn.name)) await A(sNode.name,'rm_bh_svc',{name:conn.name});
+      await A(sNode.name, 'add_svc', {name:conn.name,token:conn.token,inbound:conn.inbound,remote_port:String(conn.remote_port)});
+      if (targetLane === 'frp') {
+        await A(sNode.name, 'frp_on', {remote:(isGre ? greIp + ':' + connection.port : connection.remote),token:connection.token,transport:connection.transport});
+      } else {
+        if (carrier === 'ws') await A(sNode.name,'plain_off');
+        else if (carrier === 'kcp') await A(sNode.name,'kcp_on',{remote:connection.remote,key:connection.key,profile:connection.profile});
+        else if (carrier === 'noise') await A(sNode.name,'noise_on',{remote:connection.remote,pubkey:connection.pubkey,pattern:connection.pattern || ''});
+        else await A(sNode.name,'plain_on',{remote:connection.remote});
+        if (carrier !== 'noise') {
+          if (main.control_path === '/') await A(sNode.name,'control_path_clear');
+          else await A(sNode.name,'control_path_set',{path:main.control_path});
         }
       }
     }
-
-    toast(`✓ مدار [${nodeName}] با موفقیت روی سرورها اعمال و فعال شد!`);
-    loadOv(iranSrv);
-    if (sNode) loadOv(sNode.name);
+    await loadOv(iranSrv); await loadOv(sNode.name);
+    toast('✓ تنظیمات مدار اعمال شد؛ وضعیت اتصال را بررسی کنید.');
+    return {...conn,node_server:sNode.name};
   } catch (err) {
-    console.error('provisionPatchCircuit error', err);
-    toast('⚠️ خطا در ارسال تنظیمات به سرور: ' + err.message);
+    if (changed) {
+      await Promise.allSettled([loadOv(iranSrv), ...SERVERS.filter(s=>s.role==='node').map(s=>loadOv(s.name))]);
+    }
+    toast('⚠️ تنظیم مدار کامل نشد: ' + err.message + (changed ? '؛ بخشی از تنظیمات ممکن است اعمال شده باشد.' : ''));
+    return false;
   }
 }
 
@@ -1369,7 +1430,7 @@ function quickCarrierModal(iran, node, curCarrier) {
     {v:'plain', t:'📡 ساده بدون رمز Plain (HTTP)'},
     {v:'gre', t:'🌐 تونل شبکه L3 لینوکس GRE'}
   ];
-  const c = buildWiringModel().circuits.find(x => x.node === node) || {};
+  const c = buildWiringModel().circuits.find(x => x.iran === iran && x.node === node) || {};
   const frpTrOpts = [
     {v:'quic', t:'QUIC (بر پایه UDP، ضد فیلتر و پرسرعت)'},
     {v:'kcp', t:'KCP (بر پایه UDP با تصحیح خطای FEC)'},
@@ -1388,6 +1449,7 @@ function quickCarrierModal(iran, node, curCarrier) {
     {v:'aggressive', t:'Aggressive (اختلال شدید)'}
   ];
   formModal(`تغییر پروتکل و حالت ارتباطی نود ${node}`, [
+    {id:'node_server', label:'سرور نود خارجی:', type:'select', val:c.nodeServer || '', opts:SERVERS.filter(s=>s.role==='node').map(s=>({v:s.name,t:s.name}))},
     {id:'carrier', label:'پروتکل و حامل جدید:', type:'select', val:curCarrier, opts:opts},
     {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:c.frp_transport || 'quic', opts:frpTrOpts},
     {id:'bh_tr', label:'مد ترانسپورت Backhaul (برای Backhaul):', type:'select', val:c.bh_transport || 'wssmux', opts:bhTrOpts},
@@ -1396,44 +1458,32 @@ function quickCarrierModal(iran, node, curCarrier) {
     {id:'carrier_port', label:'پورت اختصاصی حامل در ایران (اختیاری):', type:'text', val:c.carrier_port || '', ph:'پیش‌فرض: FRP=7000, BH=3080, Plain=8880, Noise=2334'}
   ], async v => {
     closeModal();
-    const carrierTitle = v.carrier === 'frp_gre' ? 'FRP+GRE' : v.carrier.toUpperCase();
-    toast(`پروتکل ${node} به ${carrierTitle} تغییر یافت ✓`);
-    if (c) {
-      c.carrier = v.carrier;
-      c.frp_transport = v.frp_tr || 'quic';
-      c.bh_transport = v.bh_tr || 'wssmux';
-      c.profile = v.profile || 'balanced';
-      c.gre_ip = v.gre_ip || '10.10.10.1';
-      c.carrier_port = v.carrier_port || '';
-      showCircuitInspector(c);
-      drawPatchBoard();
-      highlightCircuit(c.id);
-    }
+    await applyPatchConnection(iran, node, v.carrier, c.backendPort || 8443, null, null, {
+      node_server:v.node_server || c.nodeServer, frp_transport:v.frp_tr, bh_transport:v.bh_tr,
+      profile:v.profile, gre_ip:v.gre_ip, carrier_port:v.carrier_port
+    });
   });
 }
 
-function disconnectCircuit(cid) {
-  const wrap = $('patchboard_wrap');
-  if (wrap) wrap.classList.remove('patch-dim');
-
-  const M = buildWiringModel();
-  const c = M.circuits.find(x => x.id === cid);
-  if (c) {
-    const svg = document.querySelector('.patch-svg');
-    const pEl = document.querySelector(`.pin[data-cid="${cid}"]`);
-    if (svg && pEl) {
-      triggerSocketPuff(svg, parseFloat(pEl.getAttribute('data-x') || 0), parseFloat(pEl.getAttribute('data-y') || 0), '#f43f5e');
-    }
+async function disconnectCircuit(cid) {
+  const c = buildWiringModel().circuits.find(x => x.id === cid);
+  if (!c) return false;
+  try {
+    const node = patchNodeServer(c.node, c.nodeServer);
+    if (!node) throw new Error('نود مقصد مشخص نیست.');
+    const conn = await patchRequest('GET','api/servers/' + c.iran + '/nodeconnect/' + c.node);
+    await patchAction(c.iran,'rm_node',{name:c.node});
+    await patchAction(node.name,conn.transport === 'backhaul' ? 'rm_bh_svc' : 'rm_svc',{name:c.node});
+    PATCH_CUSTOM_CIRCUITS = PATCH_CUSTOM_CIRCUITS.filter(x => x.id !== cid);
+    await loadOv(c.iran); await loadOv(node.name);
+    resetCircuit(); drawPatchBoard();
+    toast('✂️ سرویس مدار از دو سرور حذف شد.');
+    return true;
+  } catch (err) {
+    await Promise.allSettled([loadOv(c.iran), ...SERVERS.filter(s=>s.role==='node').map(s=>loadOv(s.name))]);
+    toast('⚠️ حذف مدار کامل نشد: ' + err.message + '؛ وضعیت سرورها را بررسی کنید.');
+    return false;
   }
-
-  PATCH_CUSTOM_CIRCUITS = PATCH_CUSTOM_CIRCUITS.filter(x => x.id !== cid);
-  if (c && OVS[c.iran] && OVS[c.iran].nodes) {
-    OVS[c.iran].nodes = OVS[c.iran].nodes.filter(x => x.name !== c.node);
-  }
-
-  resetCircuit();
-  drawPatchBoard();
-  toast('✂️ اتصال سیم‌کشی این مدار با موفقیت قطع شد.');
 }
 
 function buildWiringModel() {
@@ -1447,7 +1497,7 @@ function buildWiringModel() {
     const health = (iov.health && iov.health.nodes) || {};
 
     nlist.forEach(nd => {
-      const nodeSrv = nodes.find(n => n.name === nd.name || n.name.includes(nd.name) || nd.name.includes(n.name));
+      const nodeSrv = patchNodeServer(nd.name);
       const nov = nodeSrv ? (OVS[nodeSrv.name] || {}) : {};
       const carrier = nd.transport || (nov.main_tunnel || 'ws');
       const isOk = health[nd.name] === 'ok' || (iov.reachable !== false && health[nd.name] !== 'warn');
@@ -1464,6 +1514,7 @@ function buildWiringModel() {
         iranHost: ir.host || '',
         node: nd.name,
         nodeHost: nodeSrv ? (nodeSrv.host || '') : '',
+        nodeServer: nodeSrv ? nodeSrv.name : '',
         carrier: carrier,
         status: isOk ? 'ok' : 'warn',
         ingressType: ingressType,
@@ -2348,16 +2399,18 @@ function addUnifiedSvc(n){formModal(t('t_add_svc'),[
     {v:'mux',t:t('lane_mux')}
   ]},
   {id:'token',label:t('l_token'),req:1},
-  {id:'inbound',label:t('l_inbound'),req:1}],
+  {id:'inbound',label:t('l_inbound'),req:1},
+  {id:'remote_port',label:'پورت بک‌اند ایران (برای FRP)',ph:'مثلاً 21001'}],
   v=>{
     closeModal();
     if(v.lane==='mux')run(n,'add_bh_svc',{name:v.name,token:v.token,inbound:v.inbound});
-    else run(n,'add_svc',{name:v.name,token:v.token,inbound:v.inbound});
+    else run(n,'add_svc',{name:v.name,token:v.token,inbound:v.inbound,remote_port:v.remote_port});
   });}
 function addSvc(n){formModal(t('t_add_svc'),[
   {id:'name',label:t('f_name'),req:1},
   {id:'token',label:t('l_token'),req:1},
-  {id:'inbound',label:t('l_inbound'),req:1}],
+  {id:'inbound',label:t('l_inbound'),req:1},
+  {id:'remote_port',label:'پورت بک‌اند ایران (برای FRP)',ph:'مثلاً 21001'}],
   v=>{closeModal();run(n,'add_svc',v);});}
 function rmSvc(n,name){if(confirm(t('cf_delsvc')+' ('+name+')'))run(n,'rm_svc',{name});}
 function addBhSvc(n){formModal(t('t_bh_addsvc'),[
@@ -2547,8 +2600,9 @@ function frpOnNode(n){
   formModal(t('t_frp_iran')+' ('+n+')',[
     {id:'remote',label:t('l_plain_remote'),val:def,ph:'5.202.4.40:7000',req:1},
     {id:'token',label:t('l_frp_token'),req:1},
-    {id:'transport',label:t('l_frp_tr'),type:'select',val:'tcp',opts:[{v:'tcp',t:'TCP'},{v:'kcp',t:'KCP'},{v:'quic',t:'QUIC'},{v:'websocket',t:'WebSocket'}]}],
-    v=>{closeModal();run(n,'frp_on',{remote:v.remote,token:v.token,transport:v.transport||'tcp'});});}
+    {id:'transport',label:t('l_frp_tr'),type:'select',val:'tcp',opts:[{v:'tcp',t:'TCP'},{v:'kcp',t:'KCP'},{v:'quic',t:'QUIC'},{v:'websocket',t:'WebSocket'}]},
+    {id:'remote_port',label:'پورت بک‌اند ایران (برای یک سرویس)',ph:'مثلاً 21001'}],
+    v=>{closeModal();run(n,'frp_on',{remote:v.remote,token:v.token,transport:v.transport||'tcp',remote_port:v.remote_port});});}
 
 function greOnIran(n){formModal(t('t_gre_iran'),[
   {id:'remote_ip',label:t('l_gre_remote'),req:1},
@@ -2729,7 +2783,7 @@ async function wireNode(iranName,nodeName){
     if(!j||!j.ok){toast(t('wire_fail'));outModal(t('wire_title'),(j&&(j.error||j.raw))||'?');return;}
     // 2) rooye node-e kharej (ya upstream-esh) be-onvan service ezafe kon
     if(up)run(dst,'upstream_add_svc',{id:up,name:j.name,token:j.token,inbound:j.inbound});
-    else  run(dst,'add_svc',{name:j.name,token:j.token,inbound:j.inbound});
+    else  run(dst,'add_svc',{name:j.name,token:j.token,inbound:j.inbound,remote_port:j.remote_port});
    });
 }
 // autofill: az server Iran-e entekhab-shode remote/key/profile-e daghigh ra migirad

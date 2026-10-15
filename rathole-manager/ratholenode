@@ -41,7 +41,7 @@ if ! declare -F rth_commit_config >/dev/null 2>&1; then
   exit 1
 fi
 
-NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN FRP_REMOTE FRP_TOKEN FRP_TRANSPORT GRE_REMOTE GRE_TUNNEL_IP GRE_NAME"
+NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN FRP_REMOTE FRP_TOKEN FRP_TRANSPORT FRP_REMOTE_PORT GRE_REMOTE GRE_TUNNEL_IP GRE_NAME"
 
 load_env_file(){
   local file="$1" line key val old_key
@@ -191,24 +191,33 @@ gen_client(){
 
 # restart kamel (fght baraye taghir trnspvrt mesl kcp on/off lazem ast)
 restart_svc(){
+  systemctl disable --now "$FRP_CLI_SVC" 2>/dev/null || true
   systemctl daemon-reload 2>/dev/null || true
   systemctl enable "$SVC" >/dev/null 2>&1 || true
-  systemctl restart "$SVC" 2>/dev/null && log "$SVC restart shod." || warn "restart $SVC nashod."
+  systemctl restart "$SVC" 2>/dev/null && log "$SVC restart shod." || { warn "restart $SVC nashod."; return 1; }
 }
 
 # hot-reload: fght agar service khamoosh bood start miknd; dar ghir ainsvrt rathole khodesh config ra mikhanad (bedoon ghati)
 reload_svc(){
+  systemctl disable --now "$FRP_CLI_SVC" 2>/dev/null || true
   systemctl daemon-reload 2>/dev/null || true
   systemctl enable "$SVC" >/dev/null 2>&1 || true
   if systemctl is-active --quiet "$SVC"; then
     log "client.toml berooz shd; rathole hot-reload mikonad (tunnelhaye faal mesl game ghat nmishvnd)."
   else
-    systemctl start "$SVC" 2>/dev/null && log "$SVC start shod." || warn "start $SVC nashod."
+    systemctl start "$SVC" 2>/dev/null && log "$SVC start shod." || { warn "start $SVC nashod."; return 1; }
   fi
 }
 
 cmd_apply(){
   need_root; load_env
+  if [ "${TUNNEL:-ws}" = frp ]; then
+    [ -n "${FRP_REMOTE:-}" ] && [ -n "${FRP_TOKEN:-}" ] || die "tanzimat-e FRP naghese ast."
+    gen_frp_client_toml "${FRP_REMOTE%:*}" "${FRP_REMOTE##*:}" "$FRP_TOKEN" "${FRP_TRANSPORT:-tcp}" "${FRP_REMOTE_PORT:-}" || return 1
+    systemctl restart "$FRP_CLI_SVC" || return 1
+    log "frpc.toml berooz shod."
+    return 0
+  fi
   # check tadakhol port baraye har service
   if [ -f "$SVC_FILE" ]; then
     while IFS='|' read -r name token inbound _rest; do
@@ -217,8 +226,8 @@ cmd_apply(){
     done < "$SVC_FILE"
 
   fi
-  gen_client
-  reload_svc
+  gen_client || return 1
+  reload_svc || return 1
   log "client.toml ba $(grep -cvE '^\s*(#|$)' "$SVC_FILE" 2>/dev/null || echo 0) service rooye yek tunnel sakhte shod."
 }
 
@@ -227,6 +236,7 @@ svc_exists(){ grep -qE "^$1\|" "$SVC_FILE" 2>/dev/null; }
 bh_svc_exists(){ grep -qE "^$1\|" "$BH_SVC_FILE" 2>/dev/null; }
 
 # aatbarsnji-ye moshtarak baraye name/token-e service (jelogiri az tzrigh be TOML/services.conf)
+valid_frp_port(){ [[ "$1" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
 valid_svc_name(){ echo "$1" | grep -qE '^[a-zA-Z0-9_-]+$'; }
 # token bayad az '|' (jodakonande-ye services.conf) va newline/space va metachar-e TOML khali bashad.
 valid_svc_token(){ echo "$1" | grep -qE '^[A-Za-z0-9._=+/-]+$'; }
@@ -239,7 +249,7 @@ cmd_add_svc(){
   valid_svc_token "$token" || die "token namotabar (faghat [A-Za-z0-9._=+/-] mjaz ast)."
   echo "$inbound" | grep -qE '^[0-9]+$' || die "port bayad adad bashad."
   if [ -n "$remote_port" ]; then
-    echo "$remote_port" | grep -qE '^[0-9]+$' || die "remote_port bayad adad bashad."
+    valid_frp_port "$remote_port" || die "remote_port bayad 1..65535 bashad."
   fi
   check_port_conflict "$inbound" "service '$name'" || die "tadakhol port — meghdar digari entekhab kon."
   touch "$SVC_FILE"; chmod 600 "$SVC_FILE"
@@ -525,8 +535,8 @@ cmd_kcp_on(){
   env_set KCP_LOCAL "$local_ep"
   env_set KCP_REMOTE "$remote"
   env_set KCP_PROFILE "$profile"
-  gen_client
-  restart_svc
+  gen_client || return 1
+  restart_svc || return 1
   log "tunnel be masir kcp/UDP+FEC switch shod. serviceha/tokenha/path karbaran taghir nakard."
   warn "agar serviceha vsl nshdnd, rooye Iran motmaen shv 'ratholectl kcp on' ba haman profile zade shode va UDP baz ast."
 }
@@ -535,8 +545,8 @@ cmd_kcp_off(){
   systemctl disable --now rathole-kcp-client 2>/dev/null || true
   rm -f "$KCP_CLI_UNIT"; systemctl daemon-reload 2>/dev/null || true
   env_set TUNNEL ws
-  gen_client
-  restart_svc
+  gen_client || return 1
+  restart_svc || return 1
   log "tunnel be halat websocket/443 bargasht."
 }
 
@@ -570,16 +580,16 @@ cmd_plain_on(){
   echo "$remote" | grep -qE '^[^:]+:[0-9]+$' || die "adres bayad be shkl IP:PORT bashad (masalan 1.2.3.4:8880)."
   env_set TUNNEL plain
   env_set PLAIN_REMOTE "$remote"
-  gen_client
-  restart_svc
+  gen_client || return 1
+  restart_svc || return 1
   log "tunnel be halat plain (bedoon TLS) switch shod → ws://$remote"
   warn "rooye server Iran motmaen shv 'ratholectl plain on [port]' zade shode va port TCP baz ast."
 }
 
 cmd_plain_off(){
   env_set TUNNEL ws
-  gen_client
-  restart_svc
+  gen_client || return 1
+  restart_svc || return 1
   log "tunnel be halat websocket/443 (ba TLS) bargasht."
 }
 
@@ -613,16 +623,16 @@ cmd_noise_on(){
   env_set NOISE_REMOTE "$remote"
   env_set NOISE_PUBKEY "$pubkey"
   [ -n "$pattern" ] && env_set NOISE_PATTERN "$pattern" || env_set NOISE_PATTERN "Noise_NK_25519_ChaChaPoly_BLAKE2s"
-  gen_client
-  restart_svc
+  gen_client || return 1
+  restart_svc || return 1
   log "tunnel be halat noise (ramznegari-shode) switch shod → noise://$remote"
   warn "rooye server Iran motmaen shv 'ratholectl noise on' zade shode va in node ba 'ratholectl noise node <name> on' faal shode va port TCP baz ast."
 }
 
 cmd_noise_off(){
   env_set TUNNEL ws
-  gen_client
-  restart_svc
+  gen_client || return 1
+  restart_svc || return 1
   log "tunnel be halat websocket/443 (ba TLS) bargasht."
 }
 
@@ -724,7 +734,7 @@ cmd_bh_add_svc(){
     sed -i "/^$name|/d" "$BH_SVC_FILE"
   fi
   echo "${name}|${token}|${inbound}" >> "$BH_SVC_FILE"
-  [ -n "${BH_REMOTE_ADDR:-${BH_REMOTE:-}}" ] && [ -n "${BH_TOKEN:-}" ] && gen_backhaul_client_toml
+  if [ -n "${BH_REMOTE_ADDR:-${BH_REMOTE:-}}" ] && [ -n "${BH_TOKEN:-}" ]; then gen_backhaul_client_toml || return 1; fi
   log "backhaul service '$name' -> 127.0.0.1:$inbound sabt shod (lane-e joda az rathole)."
 }
 
@@ -737,7 +747,7 @@ cmd_bh_rm_svc(){
   sed -i "/^$name|/d" "$BH_SVC_FILE"
   if [ -f "$ENV_FILE" ]; then
     load_env
-    [ -n "${BH_REMOTE_ADDR:-${BH_REMOTE:-}}" ] && [ -n "${BH_TOKEN:-}" ] && gen_backhaul_client_toml
+    if [ -n "${BH_REMOTE_ADDR:-${BH_REMOTE:-}}" ] && [ -n "${BH_TOKEN:-}" ]; then gen_backhaul_client_toml || return 1; fi
   fi
   log "backhaul service '$name' hazf shod."
 }
@@ -754,6 +764,10 @@ cmd_bh_ls(){
 
 start_rathole_lane_if_present(){
   load_env
+  if [ "${TUNNEL:-ws}" = frp ]; then
+    cmd_apply
+    return $?
+  fi
   if ! svc_file_has_entries "$SVC_FILE"; then
     systemctl disable --now "$SVC" 2>/dev/null || true
     return
@@ -762,8 +776,8 @@ start_rathole_lane_if_present(){
     warn "node.env-e ghadimi TUNNEL=backhaul ast; lane-e rathole khodkar start nashod. pas az bargardandan node-haye rathole rooye Iran, yekbar 'ratholenode plain off' bezan."
     return
   fi
-  gen_client
-  reload_svc
+  gen_client || return 1
+  reload_svc || return 1
   log "$SVC lane-e rathole hamzamam ba backhaul faal ast."
 }
 
@@ -784,16 +798,16 @@ cmd_backhaul(){
       esac
       # profile bayad ba samt-e Iran YEKSAN bashad vagarna parametrhaye SMUX nemikhanand.
       backhaul_mux_profile "$profile" >/dev/null || die "profile namotabar (balanced|lossy|aggressive)."
-      install_backhaul client
+      install_backhaul client || return 1
       env_set BH_REMOTE_ADDR "$remote"
       sed -i '/^BH_REMOTE=/d' "$ENV_FILE" 2>/dev/null || true
       env_set BH_TOKEN "$token"
       env_set BH_TRANSPORT "$transport"
       env_set BH_PROFILE "$profile"
-      gen_backhaul_client_toml
-      gen_backhaul_client_unit
+      gen_backhaul_client_toml || return 1
+      gen_backhaul_client_unit || return 1
       systemctl enable "$BH_CLI_SVC" >/dev/null 2>&1 || true
-      systemctl restart "$BH_CLI_SVC" 2>/dev/null && log "$BH_CLI_SVC start shod (mux → ${remote}, transport=${transport}, profile=${profile})." || err "start nashod; log: journalctl -u $BH_CLI_SVC -n 30"
+      systemctl restart "$BH_CLI_SVC" 2>/dev/null && log "$BH_CLI_SVC start shod (mux → ${remote}, transport=${transport}, profile=${profile})." || { err "start nashod; log: journalctl -u $BH_CLI_SVC -n 30"; return 1; }
       case "$transport" in
         ws|wsmux) warn "in masir TLS nadarad؛ baraye ramznegari/camouflage az wss/wssmux ya Noise estefade kon." ;;
         wss|wssmux)
@@ -803,7 +817,7 @@ cmd_backhaul(){
           echo "$remote" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}:' && \
             warn "TLS be IP-e khali: gvahi verify NEMISHAVAD — ramz dar barabar-e shenod-e ghayr-faal bargharar ast، vali MITM-e faal daf nemishavad." ;;
       esac
-      start_rathole_lane_if_present
+      start_rathole_lane_if_present || return 1
       if ! svc_file_has_entries "$BH_SVC_FILE"; then
         warn "bh-services.conf khali ast; in halat baraye sazgari ba nasb-e ghadimi kar mikonad. baraye dual-core, service-haye backhaul ra ba 'ratholenode backhaul add-svc' sabt kon."
       fi
@@ -818,7 +832,7 @@ cmd_backhaul(){
       sed -i '/^BH_REMOTE=/d;/^BH_REMOTE_ADDR=/d;/^BH_TOKEN=/d;/^BH_TRANSPORT=/d;/^BH_PROFILE=/d' "$ENV_FILE" 2>/dev/null || true
       # migration-e state-e ghadimi: TUNNEL=backhaul dige jozv carrier-haye rathole nist.
       [ "$old_mode" = "backhaul" ] && env_set TUNNEL ws
-      start_rathole_lane_if_present
+      start_rathole_lane_if_present || return 1
       log "backhaul client khamoosh va hazf shod; lane-e rathole (agar service dashte bashad) joda edame midahad."
       warn "rooye Iran ham 'ratholectl backhaul node <name> off' ra bezan ta service dobare be server.toml bargardad."
       ;;
@@ -906,16 +920,28 @@ cmd_frp_on(){
   local sip sport
   sip="${remote%:*}"
   sport="${remote##*:}"
-  install_frp client
-  frp_systemd_unit client
-  gen_frp_client_toml "$sip" "$sport" "$token" "$transport" "$rport"
+  valid_svc_token "$token" || die "token-e FRP namotabar ast."
+  case "$transport" in tcp|kcp|quic|websocket) ;; *) die "transport-e FRP namotabar ast." ;; esac
+  valid_frp_port "$sport" || die "port bayad 1..65535 bashad."
+  [ -z "$rport" ] || valid_frp_port "$rport" || die "remote_port bayad 1..65535 bashad."
+  install_frp client || return 1
+  frp_systemd_unit client || return 1
+  gen_frp_client_toml "$sip" "$sport" "$token" "$transport" "$rport" || return 1
   systemctl enable "$FRP_CLI_SVC" >/dev/null 2>&1 || true
-  systemctl restart "$FRP_CLI_SVC" 2>/dev/null && log "$FRP_CLI_SVC start shod." || err "start-e $FRP_CLI_SVC nashod."
+  systemctl restart "$FRP_CLI_SVC" 2>/dev/null && log "$FRP_CLI_SVC start shod." || { err "start-e $FRP_CLI_SVC nashod."; return 1; }
+  # mapping-e legacy-e tak service ra dar registry negah dar ta service-e dovom an ra avaz nakonad.
+  if [ -n "$rport" ] && [ -f "$SVC_FILE" ] && [ "$(grep -cvE '^[[:space:]]*(#|$)' "$SVC_FILE")" -eq 1 ]; then
+    local tmp; tmp="$(rth_mktemp)"
+    awk -F'|' -v OFS='|' -v p="$rport" 'NF>=3 && $1 !~ /^#/ && $4=="" {$4=p} {print}' "$SVC_FILE" > "$tmp" && cat "$tmp" > "$SVC_FILE"
+    rm -f "$tmp"
+  fi
+  systemctl disable --now "$SVC" 2>/dev/null || true
+  systemctl disable --now rathole-kcp-client 2>/dev/null || true
   env_set TUNNEL frp
   env_set FRP_REMOTE "$remote"
   env_set FRP_TOKEN "$token"
   env_set FRP_TRANSPORT "$transport"
-  [ -n "$rport" ] && env_set FRP_REMOTE_PORT "$rport"
+  env_set FRP_REMOTE_PORT "$rport"
   log "tunnel be halat FRP ($transport) switch shod → $remote"
 }
 
@@ -923,8 +949,8 @@ cmd_frp_off(){
   systemctl disable --now "$FRP_CLI_SVC" 2>/dev/null || true
   rm -f "$FRP_CLI_TOML"
   env_set TUNNEL ws
-  gen_client
-  restart_svc
+  gen_client || return 1
+  restart_svc || return 1
   log "tunnel be halat websocket/443 bargasht."
 }
 
@@ -1061,6 +1087,8 @@ cmd_agent(){
   shift 2>/dev/null || true; shift 2>/dev/null || true; shift 2>/dev/null || true
   case "$action" in
     on|install|start)
+      [[ "$port" =~ ^[0-9]{1,5}$ ]] && ((10#$port >= 1 && 10#$port <= 65535)) || die "port namotabar."
+      [[ -z "$token" || "$token" =~ ^[A-Za-z0-9._~-]+$ && ${#token} -le 256 ]] || die "token namotabar."
       local py_bin=""
       command -v python3 >/dev/null 2>&1 && py_bin="$(command -v python3)"
       [ -n "$py_bin" ] || die "python3 nasb nist (apt install -y python3)."
@@ -1090,8 +1118,9 @@ cmd_agent(){
         fi
         [ -n "$token" ] || token="$(python3 -c "import secrets; print(secrets.token_hex(20))" 2>/dev/null || openssl rand -hex 20)"
       fi
-      echo "$token" > /etc/rathole-agent/token
-      chmod 600 /etc/rathole-agent/token
+      ( umask 077
+        printf '%s\n' "$token" > /etc/rathole-agent/token && chmod 600 /etc/rathole-agent/token
+      ) || return 1
 
       cat > /etc/systemd/system/${AGENT_SVC}.service <<UNIT
 [Unit]
@@ -1100,7 +1129,6 @@ After=network.target
 
 [Service]
 Type=simple
-Environment=RATHOLE_AGENT_TOKEN=${token}
 ExecStart=${py_bin} ${agent_py} --port ${port} --role node
 Restart=always
 RestartSec=3
@@ -1795,8 +1823,8 @@ cmd_restore(){
   if [ -f "$BH_SVC_FILE" ]; then
     load_env
     if [ -n "${BH_REMOTE_ADDR:-${BH_REMOTE:-}}" ] && [ -n "${BH_TOKEN:-}" ]; then
-      gen_backhaul_client_toml
-      gen_backhaul_client_unit
+      gen_backhaul_client_toml || return 1
+      gen_backhaul_client_unit || return 1
       systemctl enable "$BH_CLI_SVC" >/dev/null 2>&1 || true
       systemctl restart "$BH_CLI_SVC" 2>/dev/null || warn "restart backhaul client nashod."
     fi
@@ -2296,7 +2324,7 @@ cmd_doctor(){
 main(){
   case "${1:-show}" in
     apply)   cmd_apply ;;
-    add-svc) shift; cmd_add_svc "${1:-}" "${2:-}" "${3:-}" ;;
+    add-svc) shift; cmd_add_svc "${1:-}" "${2:-}" "${3:-}" "${4:-}" ;;
     rm-svc)  shift; cmd_rm_svc "${1:-}" ;;
     ls)      cmd_ls ;;
     set)     shift; cmd_set "${1:-}" "${2:-}" ;;
@@ -2310,7 +2338,8 @@ main(){
     backhaul) shift; cmd_backhaul "$@" ;;
     frp)     shift; cmd_frp "$@" ;;
     gre)     shift; cmd_gre "$@" ;;
-    restart) need_root; restart_svc ;;
+    restart) need_root; load_env
+             if [ "${TUNNEL:-ws}" = frp ]; then cmd_apply; else restart_svc; fi ;;
 
     watchdog) shift; cmd_watchdog "$@" ;;
     migrate) cmd_migrate ;;

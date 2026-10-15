@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # rathole-agent installer — installs the pure Python stdlib REST API agent
 # on Iran panel or Foreign node for SSH-free RatholeHub management.
-set -uo pipefail
+set -euo pipefail
 
 die(){ echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 log(){ echo -e "\033[1;32m[INFO]\033[0m $*"; }
@@ -15,12 +15,17 @@ ROLE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --port) PORT="${2:-8089}"; shift 2 ;;
-    --token) TOKEN="${2:-}"; shift 2 ;;
-    --role) ROLE="${2:-}"; shift 2 ;;
-    *) shift ;;
+    --port) [ $# -ge 2 ] || die "--port meghdar niaz darad."; PORT="$2"; shift 2 ;;
+    --token) [ $# -ge 2 ] || die "--token meghdar niaz darad."; TOKEN="$2"; shift 2 ;;
+    --role) [ $# -ge 2 ] || die "--role meghdar niaz darad."; ROLE="$2"; shift 2 ;;
+    *) die "argument nashenakhte: $1" ;;
   esac
 done
+
+[[ "$PORT" =~ ^[0-9]{1,5}$ ]] && ((10#$PORT >= 1 && 10#$PORT <= 65535)) || die "port namotabar."
+[[ -z "$ROLE" || "$ROLE" = iran || "$ROLE" = node ]] || die "role namotabar."
+[[ -z "$TOKEN" || "$TOKEN" =~ ^[A-Za-z0-9._~-]+$ && ${#TOKEN} -le 256 ]] || die "token namotabar."
+umask 077
 
 if [ -z "$ROLE" ]; then
   if [ -f "/etc/rathole/server.toml" ] || [ -f "/etc/rathole-manager/state.json" ]; then
@@ -61,7 +66,6 @@ After=network.target
 
 [Service]
 Type=simple
-Environment=RATHOLE_AGENT_TOKEN=${TOKEN}
 ExecStart=/usr/bin/python3 /opt/rathole-manager/ratholeagent.py --port ${PORT} --role ${ROLE}
 Restart=always
 RestartSec=3

@@ -308,7 +308,7 @@ def run_on_server(server, cmd_args, timeout=120):
     if MOCK:
         return mock_run(server, cmd_args)
     cfg = get_config()
-    ssh = _ssh_base(cfg, server) + cmd_args  # har arg jda; ssh ba space be shl rimvt midahad
+    ssh = _ssh_base(cfg, server) + [shlex.join(cmd_args)]  # hefz-e argv dar shell-e remote
     try:
         p = subprocess.run(ssh, capture_output=True, text=True, timeout=timeout)
         return {"rc": p.returncode, "out": _strip_ansi(p.stdout), "err": _strip_ansi(p.stderr)}
@@ -345,8 +345,21 @@ def iran_main_server(s):
         domain = ""
     if domain and RE_HOST.match(domain):
         return "%s:443" % domain, domain
-    host = str(s.get("host", ""))
+    host = iran_public_host(s)
     return ("%s:443" % host if host else ""), ""
+
+def iran_public_host(server, fallback=""):
+    host = server.get("host")
+    if not host:
+        try:
+            response = run_on_server(server, ["ratholectl", "status", "--json"])
+            status = json.loads(response.get("out", "") or "{}")
+            host = status.get("public_ip") if response.get("rc") == 0 else ""
+        except (ValueError, TypeError, AttributeError):
+            host = ""
+    host = host or fallback
+    return host if isinstance(host, str) and RE_HOST.fullmatch(host) else ""
+
 
 def deploy_to_server(server):
     # apdit az GitHub: install.sh-e akharin Release ra rooye server migirad (ba mirror-haye
@@ -368,7 +381,6 @@ def deploy_to_server(server):
     chan = str(cfg.get("update_channel", "stable"))
     if not RE_CHAN.match(chan):
         return {"rc": 1, "out": "", "err": "update_channel namotabar dar config: %r (stable|beta)" % chan}
-    base = _ssh_base(cfg, server)
     # yek script-e khoddATka ke rooye server ejra mishavad. tanha meghdar-haye tazrigh-shode
     # slug (RE_SLUG) va kanal (RE_CHAN) hastand — har do etebarsanji-shode. mirror-ha hamsan-e install.sh.
     # baraye kanal-e beta: tag-e pre-release ra rooye KHODE server az releases.atom peyda mikonim
@@ -398,14 +410,7 @@ done
 [ "$ok" = 1 ] || { echo "download install.sh az hameye mirror-ha shekast khord (filtering?)" >&2; exit 1; }
 RATHOLE_GH="$GH" RATHOLE_RELEASE="$REL" bash "$T" --update
 ''' % (gh, chan)
-    try:
-        r = subprocess.run(base + ["bash", "-c", remote],
-                           capture_output=True, text=True, timeout=600)
-        return {"rc": r.returncode, "out": _strip_ansi(r.stdout), "err": _strip_ansi(r.stderr)}
-    except subprocess.TimeoutExpired:
-        return {"rc": 124, "out": "", "err": "SSH timeout (apdit-e GitHub bish az 600s tool keshid)"}
-    except Exception as e:
-        return {"rc": 1, "out": "", "err": str(e)}
+    return run_on_server(server, ["bash", "-c", remote], timeout=600)
 
 # ---------- provision khodkar (ba ramz SSH → nصب kelid + deploy + sabt) ----------
 def ensure_hub_key():
@@ -1050,6 +1055,9 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/details$", p)
         if m:
             return self._details(m.group(1))
+        m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/frpconnect$", p)
+        if m:
+            return self._frpconnect(m.group(1))
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/kcpconnect$", p)
         if m:
             return self._kcpconnect(m.group(1))
@@ -1280,6 +1288,8 @@ class Handler(BaseHTTPRequestHandler):
         iran = self._find(iran_name); node = self._find(node_name)
         if not iran or iran.get("role") != "iran" or not node or node.get("role") != "node":
             return self._send(400, {"error": "iran/node pair not found"})
+        if node.get("transport") == "api":
+            return self._send(400, {"error": "Public certificate upload requires SSH transport on node"})
         ip = str(iran.get("host", ""))
         try:
             import ipaddress
@@ -1427,6 +1437,23 @@ class Handler(BaseHTTPRequestHandler):
             parts.append("===== %s =====\n%s" % (label, body or "(khali)"))
         return self._send(200, {"server": name, "text": "\n\n".join(parts)})
 
+    def _frpconnect(self, name):
+        s = self._find(name)
+        if not s:
+            return self._send(404, {"error": "server not found"})
+        if s.get("role") != "iran":
+            return self._send(400, {"error": "frpconnect fght baraye server iran ast"})
+        show = run_on_server(s, ["ratholectl", "frp", "show"])
+        match = re.search(r"ratholenode\s+frp\s+on\s+(\S+):(\d{1,5})\s+([A-Za-z0-9._=+/-]{6,255})\s+(tcp|kcp|quic|websocket)\b", show.get("out", ""))
+        if show.get("rc") != 0 or not match or not 1 <= int(match[2]) <= 65535:
+            return self._send(200, {"ok": False, "error": "FRP token/port peida nashod"})
+        host = iran_public_host(s, match[1])
+        if not RE_HOST.fullmatch(host):
+            return self._send(200, {"ok": False, "error": "FRP host peida nashod"})
+        return self._send(200, {"ok": True, "host": host, "port": match[2],
+                                "remote": "%s:%s" % (host, match[2]),
+                                "token": match[3], "transport": match[4]})
+
     def _kcpconnect(self, name):
         # az server Iran khatte etesal KCP (remote/key/profile daghigh) ra migirad ta
         # form node bedoon typo por shavad (elate asli 'dasti kar mikard vali panel na').
@@ -1447,7 +1474,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": False, "error": "kcp roshan nist ya key peida nashod",
                                     "raw": show.get("out", "") + show.get("err", "")})
         # 3) remote = host-e inventory (haman IP-i ke hub baa an be Iran vasl mishavad) + port-e KCP.
-        remote = "%s:%s" % (s.get("host"), port)
+        host = iran_public_host(s, (info or {}).get("remote", "").rsplit(":", 1)[0])
+        if not host:
+            return self._send(200, {"ok": False, "error": "host-e Iran peida nashod"})
+        remote = "%s:%s" % (host, port)
         return self._send(200, {"ok": True, "remote": remote, "key": key, "profile": profile})
 
     def _noiseconnect(self, name):
@@ -1463,7 +1493,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": False, "error": "noise roshan nist ya pubkey peida nashod",
                                     "raw": show.get("out", "") + show.get("err", "")})
         # remote = host-e inventory + port-e noise (az khatte connect).
-        remote = "%s:%s" % (s.get("host"), info.get("port", "2334"))
+        match = re.search(r"noise\s+on\s+(\S+):\d+", show.get("out", ""))
+        host = iran_public_host(s, match[1] if match else "")
+        if not host:
+            return self._send(200, {"ok": False, "error": "host-e Iran peida nashod"})
+        remote = "%s:%s" % (host, info.get("port", "2334"))
         return self._send(200, {"ok": True, "remote": remote, "pubkey": info["pubkey"],
                                 "pattern": info.get("pattern", "")})
 
@@ -1519,8 +1553,18 @@ class Handler(BaseHTTPRequestHandler):
         if not info:
             return self._send(200, {"ok": False, "error": "node peida nashod ya token/inbound darnayamad",
                                     "raw": show.get("out", "") + show.get("err", "")})
+        try:
+            result = run_on_server(s, ["ratholectl", "status", "--json"])
+            status = json.loads(result.get("out", "") or "{}")
+            peer = next((n for n in status.get("nodes", []) if n.get("name") == node), {})
+            port = int(peer.get("port", 0))
+        except (ValueError, TypeError, AttributeError):
+            port = 0
+        if result.get("rc") != 0 or not 1 <= port <= 65535:
+            return self._send(200, {"ok": False, "error": "port-e Iran peida nashod"})
         return self._send(200, {"ok": True, "name": info["name"], "token": info["token"],
-                                "inbound": info["inbound"],
+                                "inbound": info["inbound"], "remote_port": str(port),
+                                "transport": peer.get("transport") or "ws",
                                 "api_token": info.get("api_token", ""),
                                 "api_inbound": info.get("api_inbound", "")})
 
@@ -1536,10 +1580,18 @@ class Handler(BaseHTTPRequestHandler):
         if s.get("role") != "iran":
             return self._send(400, {"error": "mainconnect fght baraye server iran ast"})
         server, domain = iran_main_server(s)
-        dial_ip = "%s:443" % s.get("host", "") if s.get("host") else ""
+        result = run_on_server(s, ["ratholectl", "control-path", "show"])
+        match = re.search(r"^control_path=(/[^\s]*)$", result.get("out", ""), re.M)
+        control_path = match[1] if match else ""
+        if result.get("rc") == 0 and "default '/'" in result.get("out", ""):
+            control_path = "/"
+        if control_path and not re.fullmatch(r"/(?:[A-Za-z0-9_./-]{1,120})?", control_path):
+            control_path = ""
+        host = iran_public_host(s)
+        dial_ip = "%s:443" % host if host else ""
         return self._send(200, {"ok": bool(server), "server": server,
-                                "domain": domain, "tls_hostname": domain,
-                                "dial_ip": dial_ip, "host": s.get("host", "")})
+                                "domain": domain, "tls_hostname": domain, "control_path": control_path,
+                                "dial_ip": dial_ip, "host": host})
 
     def _discover(self, name):
         s = self._find(name)

@@ -51,7 +51,13 @@ case "$(uname -m)" in
 esac
 
 # ---------- nasb rathole ----------
-if ! command -v rathole >/dev/null 2>&1; then
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUNDLED_CORE=0
+if [ -f "$SCRIPT_DIR/core/SHA256SUMS" ] && [ -f "$SCRIPT_DIR/core-install.sh" ]; then
+  bash "$SCRIPT_DIR/core-install.sh" || die "nasb core-e bundle shekast khord."
+  BUNDLED_CORE=1
+fi
+if [ "$BUNDLED_CORE" -eq 0 ] && ! command -v rathole >/dev/null 2>&1; then
   log "nasb pish-niazha va download rathole ${RATHOLE_VERSION}..."
   export DEBIAN_FRONTEND=noninteractive
   export NEEDRESTART_MODE=a
@@ -82,12 +88,6 @@ if ! command -v rathole >/dev/null 2>&1; then
   done
   rm -rf "$tmp"
   [ "$ok" -eq 1 ] || die "download rathole shekast khord (shabake/filtr?)."
-fi
-
-# agar core/SHA256SUMS vojood darad, az binary-e patched-e bundle estefade kon
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$SCRIPT_DIR/core/SHA256SUMS" ] && [ -f "$SCRIPT_DIR/core-install.sh" ]; then
-  bash "$SCRIPT_DIR/core-install.sh" 2>/dev/null || command -v rathole > /dev/null || die "nasb binary shekast khord."
 fi
 
 mkdir -p /etc/rathole

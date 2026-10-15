@@ -38,6 +38,9 @@ SHA256_FILE="$RATHOLE_CORE_DIR/SHA256SUMS"
 
 # ---- verify checksum ----
 log "barresi checksum baraye $TARGET..."
+# --ignore-missing tanha file-haye list-shode ra check mikonad; binary-e entekhabi bayad dar list bashad.
+awk -v target="$TARGET/rathole" '$2 == target || $2 == "*" target || $2 == "./" target || $2 == "*./" target { found=1 } END { exit !found }' "$SHA256_FILE" || \
+  die "checksum-e binary-e entekhabi dar SHA256SUMS nist: $TARGET/rathole"
 ( cd "$RATHOLE_CORE_DIR" && sha256sum -c SHA256SUMS --ignore-missing --quiet ) || \
   die "checksum-e binary motabar nist! binary-e dastkar-shode ya nashenas."
 

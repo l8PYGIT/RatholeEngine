@@ -18,14 +18,17 @@ import re
 # ghabool mikonad (masalan "trk01\n") — ke mitavanad be command-e SSH/audit tzrigh shavad.
 RE_NAME    = re.compile(r"^[A-Za-z0-9_-]{1,40}\Z")
 RE_HOST    = re.compile(r"^[A-Za-z0-9_.-]{1,255}\Z")
-RE_PORT    = re.compile(r"^[0-9]{1,5}\Z")
+# port-e motabar: 1..65535; vorodi ghabl az SSH/API rad mishavad.
+_PORT = r"(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])"
+RE_PORT    = re.compile(r"^" + _PORT + r"\Z")
 RE_PROFILE = re.compile(r"^(balanced|lossy|aggressive)\Z")
-RE_IPPORT  = re.compile(r"^[A-Za-z0-9_.-]{1,255}:[0-9]{1,5}\Z")
+RE_IPPORT  = re.compile(r"^[A-Za-z0-9_.-]{1,255}:" + _PORT + r"\Z")
 RE_KEY     = re.compile(r"^[A-Fa-f0-9]{8,64}\Z")
 RE_B64     = re.compile(r"^[A-Za-z0-9+/]{40,64}={0,2}\Z")   # kelid-e omomi-ye noise (base64)
 RE_ID      = re.compile(r"^[A-Za-z0-9_-]{1,40}\Z")
 RE_PW      = re.compile(r"^.{6,128}\Z")   # hdaghl 6 karaktr baraye ramz
 RE_EMAIL   = re.compile(r"^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,20}\Z")
+RE_CONTROL_PATH = re.compile(r"^/[A-Za-z0-9_./-]{0,120}\Z")
 RE_PATH    = re.compile(r"^/[A-Za-z0-9_./-]{1,255}\Z")   # masir file gvahi (mtlgh)
 RE_SLUG    = re.compile(r"^[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,64}\Z")   # owner/repo-ye GitHub
 RE_CHAN    = re.compile(r"^(stable|beta)\Z")                                # kanal-e apdit-e hub
@@ -330,6 +333,11 @@ def build_iran_cmd(action, a):
     return None
 
 def build_node_cmd(action, a):
+    if action == "control_path_clear": return ["ratholenode", "control-path", "clear"]
+    if action == "control_path_set":
+        path = a.get("path", "")
+        if not isinstance(path, str) or not RE_CONTROL_PATH.match(path): return None
+        return ["ratholenode", "control-path", "set", path]
     if action == "show":        return ["ratholenode", "show"]
     if action == "ls":          return ["ratholenode", "ls"]
     if action == "logs":
@@ -572,7 +580,7 @@ WRITE_ACTIONS = {
 
     "backup", "enable", "regen_full", "regen",
     # node
-    "add_svc", "rm_svc", "add_bh_svc", "rm_bh_svc", "kcp_on", "kcp_off", "apply", "restart", "set_server", "set_main",
+    "control_path_set", "control_path_clear", "add_svc", "rm_svc", "add_bh_svc", "rm_bh_svc", "kcp_on", "kcp_off", "apply", "restart", "set_server", "set_main",
     "upstream_add", "upstream_add_svc", "upstream_rm", "upstream_rm_svc",
     "upstream_kcp_on", "upstream_kcp_off", "upstream_apply", "upstream_restart",
     "upstream_plain_on", "upstream_plain_off",

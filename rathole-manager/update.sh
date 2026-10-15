@@ -164,6 +164,9 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /usr/local/share/rathole/install-agent.sh
           echo /etc/rathole-manager
           echo /etc/rathole
+          echo /etc/frp
+          echo /etc/rathole-agent
+          echo /opt/rathole-manager/ratholeagent.py
           # file-e nginx az state (agar jq bashad) + config-haye sabet
           if command -v jq >/dev/null 2>&1 && [ -f /etc/rathole-manager/state.json ]; then
             jq -r '.nginx_conf // "/etc/nginx/conf.d/rathole.conf"' /etc/rathole-manager/state.json 2>/dev/null
@@ -171,7 +174,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /etc/nginx/conf.d/rathole.conf
           echo /etc/nginx/conf.d/rathole-upgrade-map.conf
           echo /etc/nginx/stream.d/rathole-stream.conf
-          _units_glob 'rathole-server.service' 'rathole-noise.service' 'rathole-backhaul-server.service' 'rathole-kcp-server.service' 'rathole-panel-fakeweb.service' 'rathole-agent.service' 'rathole-frps.service'
+          _units_glob 'rathole-server.service' 'rathole-noise.service' 'rathole-backhaul-server.service' 'rathole-kcp-server.service' 'rathole-panel-fakeweb.service' 'rathole-agent.service' 'rathole-frps.service' 'frps.service'
           ;;
         node)
           echo /usr/local/bin/ratholenode
@@ -179,7 +182,10 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /usr/local/share/rathole/ratholeagent.py
           echo /usr/local/share/rathole/install-agent.sh
           echo /etc/rathole
-          _units_glob 'rathole-client.service' 'rathole-client@*.service' 'rathole-backhaul-client.service' 'rathole-kcp-client.service' 'rathole-kcp-up-*.service' 'rathole-agent.service' 'rathole-frpc.service'
+          echo /etc/frp
+          echo /etc/rathole-agent
+          echo /opt/rathole-manager/ratholeagent.py
+          _units_glob 'rathole-client.service' 'rathole-client@*.service' 'rathole-backhaul-client.service' 'rathole-kcp-client.service' 'rathole-kcp-up-*.service' 'rathole-agent.service' 'rathole-frpc.service' 'frpc.service' 'rathole-watchdog.*' 'rathole-adaptive.*'
           ;;
         hub)
           echo /opt/ratholehub
@@ -196,7 +202,8 @@ snapshot_now(){ # $@ = naghsh-ha ; khorooji: masir-e snapshot dir (rooye stdout 
   local roles="$*" ts dir paths
   ts="$(date +%Y%m%d-%H%M%S)"
   dir="$BACKUP_ROOT/pre-update-$ts"
-  mkdir -p "$dir"
+  mkdir -p "$dir" || return 1
+  chmod 700 "$dir" || return 1
   # list-e masir-haye mojood
   mapfile -t paths < <(snapshot_paths "$@")
   if [ "${#paths[@]}" -eq 0 ]; then
@@ -219,7 +226,9 @@ snapshot_now(){ # $@ = naghsh-ha ; khorooji: masir-e snapshot dir (rooye stdout 
   local rels=(); local p
   for p in "${paths[@]}"; do rels+=("${p#/}"); done
   tar -czf "$dir/backup.tar.gz" -C / "${rels[@]}" 2>/dev/null || {
-    warn "sakht-e tar-e backup ba khata (edame midahim vali rollback mumken ast naghes bashad)." >&2
+    rm -f "$dir/backup.tar.gz"
+    err "sakht-e tar-e backup shekast khord; update motevaghef shod."
+    return 1
   }
   log "snapshot gereftه shod: $dir  (${#paths[@]} file/pvshh)" >&2
   # retention: faghat akharin RETENTION ta ra negah dar
@@ -257,6 +266,17 @@ list_backups(){
   [ "$found" -eq 1 ] || echo "(khali)"
 }
 
+node_primary_service(){
+  local client_svc=rathole-client
+  if [ -f /etc/rathole/node.env ] && grep -qE '^TUNNEL=frp$' /etc/rathole/node.env; then
+    client_svc=frpc
+  elif [ -f /etc/rathole/bh-services.conf ] && grep -qvE '^[[:space:]]*(#|$)' /etc/rathole/bh-services.conf \
+    && { [ ! -f /etc/rathole/services.conf ] || ! grep -qvE '^[[:space:]]*(#|$)' /etc/rathole/services.conf; }; then
+    client_svc=rathole-backhaul-client
+  fi
+  echo "$client_svc"
+}
+
 # ---------- health-check baraye har naghsh ----------
 health_check(){ # $@ = naghsh-ha ; return 0 = salem, 1 = kharab
   local role bad=0
@@ -269,7 +289,8 @@ health_check(){ # $@ = naghsh-ha ; return 0 = salem, 1 = kharab
           systemctl is-active --quiet nginx || { err "health: nginx faal nist."; bad=1; }
         fi ;;
       node)
-        systemctl is-active --quiet rathole-client || { err "health: rathole-client faal nist."; bad=1; } ;;
+        local client_svc; client_svc="$(node_primary_service)"
+        systemctl is-active --quiet "$client_svc" || { err "health: $client_svc faal nist."; bad=1; } ;;
       hub)
         systemctl is-active --quiet ratholehub || { err "health: ratholehub faal nist."; bad=1; } ;;
     esac
@@ -279,7 +300,8 @@ health_check(){ # $@ = naghsh-ha ; return 0 = salem, 1 = kharab
 
 # ---------- restart-e service-haye har naghsh (baad az rollback) ----------
 restart_services(){
-  local role
+  local role pattern unit primary
+  local patterns=()
   for role in "$@"; do
     case "$role" in
       panel) systemctl restart rathole-server 2>/dev/null || true
@@ -287,11 +309,27 @@ restart_services(){
              systemctl list-unit-files 2>/dev/null | grep -q '^rathole-backhaul-server\.service' && systemctl restart rathole-backhaul-server 2>/dev/null || true
              systemctl list-unit-files 2>/dev/null | grep -q '^rathole-agent\.service' && systemctl restart rathole-agent 2>/dev/null || true
              command -v nginx >/dev/null 2>&1 && { nginx -t >/dev/null 2>&1 && { systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true; }; } ;;
-      node) systemctl restart rathole-client 2>/dev/null || true
-            systemctl list-unit-files 2>/dev/null | grep -q '^rathole-backhaul-client\.service' && systemctl restart rathole-backhaul-client 2>/dev/null || true
+      node) primary="$(node_primary_service)"
+            systemctl restart "$primary" 2>/dev/null || true
+            if [ "$primary" != rathole-backhaul-client ] && systemctl is-enabled --quiet rathole-backhaul-client 2>/dev/null; then
+              systemctl restart rathole-backhaul-client 2>/dev/null || true
+            fi
             systemctl list-unit-files 2>/dev/null | grep -q '^rathole-agent\.service' && systemctl restart rathole-agent 2>/dev/null || true ;;
       hub)  systemctl restart ratholehub 2>/dev/null || true ;;
     esac
+    patterns=()
+    case "$role" in
+      panel) patterns=(frps.service rathole-kcp-server.service rathole-panel-fakeweb.service) ;;
+      node) patterns=(frpc.service rathole-kcp-client.service 'rathole-kcp-up-*.service' 'rathole-client@*.service' rathole-watchdog.timer rathole-adaptive.timer) ;;
+    esac
+    for pattern in "${patterns[@]}"; do
+      for unit in /etc/systemd/system/$pattern; do
+        [ -f "$unit" ] || continue
+        if systemctl is-enabled --quiet "${unit##*/}" 2>/dev/null; then
+          systemctl restart "${unit##*/}" 2>/dev/null || true
+        fi
+      done
+    done
   done
 }
 
@@ -332,6 +370,10 @@ apply_update(){
     mkdir -p /usr/local/share/rathole
     sed -i 's/\r$//' "$SCRIPT_DIR/ratholeagent.py"
     install -m 755 "$SCRIPT_DIR/ratholeagent.py" /usr/local/share/rathole/ratholeagent.py
+    # unit-haye ghadimi hanooz in masir ra ejra mikonand.
+    if [ -f /opt/rathole-manager/ratholeagent.py ]; then
+      install -m 755 "$SCRIPT_DIR/ratholeagent.py" /opt/rathole-manager/ratholeagent.py
+    fi
   fi
   if [ -f "$SCRIPT_DIR/install-agent.sh" ]; then
     mkdir -p /usr/local/share/rathole
@@ -430,8 +472,16 @@ UNIT
     if [ -f /etc/rathole/node.env ]; then
       log "baztolid client.toml va restart (ratholenode apply)..."
       systemctl enable rathole-client >/dev/null 2>&1 || true
-      ratholenode apply || warn "apply ba hoshdar hamrah bood."
+      ratholenode apply || return 1
     fi
+  fi
+
+  if [ -f /etc/systemd/system/rathole-agent.service ]; then
+    # token faghat dar file-e root-only bemanad, na unit-e ghabel-e-khandan baraye hame.
+    sed -i '/^[[:space:]]*Environment=["\x27]*RATHOLE_AGENT_TOKEN=/d' /etc/systemd/system/rathole-agent.service
+    [ ! -f /etc/rathole-agent/token ] || chmod 600 /etc/rathole-agent/token
+    systemctl daemon-reload
+    systemctl restart rathole-agent || return 1
   fi
 
   # --- samt hub ---
@@ -517,15 +567,20 @@ fi
 log "naghsh-haye tashkhis-dade-shode: ${ROLES[*]}"
 # gard-e zed-e downgrade: GHABL az snapshot/apply — agar baste ghadimi-tar bashad hich kar nemikonim.
 downgrade_guard
-SNAP_DIR="$(snapshot_now "${ROLES[@]}")"
+SNAP_DIR="$(snapshot_now "${ROLES[@]}")" || die "snapshot shekast khord; update anjam nashod."
 [ -n "$SNAP_DIR" ] || warn "snapshot gerefte nashod؛ update bدون emkan-e rollback edame miyabad."
 
 # اعمال آپدیت
-apply_update "$@"
+# apply dar subshell ba errexit: khata-ye har marhale rollback ra faal mikonad.
+# if apply_update ... errexit-e dakhel-e tabe ra khamoosh mikonad; inja az an parhiz kon.
+set +e
+( set -e; apply_update "$@" )
+APPLY_RC=$?
+set -e
 
 # health-check
 echo
-if health_check "${ROLES[@]}"; then
+if [ "$APPLY_RC" -eq 0 ] && health_check "${ROLES[@]}"; then
   log "health-check pas shod؛ update salem ast."
 else
   err "health-check baad az update SHEKAST khord."
@@ -537,7 +592,7 @@ else
       die "update kharab bود va rollback-e khodkar ham natoanest salem konad. dasti: sudo bash update.sh --rollback $(basename "$SNAP_DIR" | sed 's/^pre-update-//')"
     fi
   else
-    warn "rollback-e khodkar khamoosh ast (ya snapshot naboud). baraye bazgasht: sudo bash update.sh --rollback"
+    die "update shekast khord; rollback-e khodkar khamoosh ast (ya snapshot naboud). baraye bazgasht: sudo bash update.sh --rollback"
   fi
 fi
 

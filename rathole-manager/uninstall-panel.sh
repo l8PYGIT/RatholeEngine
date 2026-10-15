@@ -48,6 +48,20 @@ rm -f /etc/systemd/system/rathole-noise.service /etc/rathole/noise-server.toml
 systemctl disable --now rathole-backhaul-server 2>/dev/null || true
 rm -f /etc/systemd/system/rathole-backhaul-server.service /etc/rathole/backhaul-server.toml
 rm -f /usr/local/bin/backhaul-server
+# lane-ha va upstream-haye ezafi ham bayad gheyre-faal shavand.
+for pattern in frps.service rathole-frps.service rathole-kcp-server.service rathole-panel-fakeweb.service; do
+  for unit in /etc/systemd/system/$pattern; do
+    [ -f "$unit" ] || continue
+    systemctl disable --now "${unit##*/}" 2>/dev/null || true
+    rm -f "$unit"
+  done
+done
+# Agent eshteraki ast; agar naghsh-e digar mojood nist, dastresi REST ham hazf shavad.
+if [ ! -f /etc/systemd/system/rathole-client.service ]; then
+  systemctl disable --now rathole-agent.service 2>/dev/null || true
+  rm -f /etc/systemd/system/rathole-agent.service
+  rm -rf /etc/rathole-agent
+fi
 systemctl daemon-reload 2>/dev/null || true
 
 # ---------- riastvr config nginx ----------

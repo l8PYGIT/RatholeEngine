@@ -21,7 +21,9 @@ class TestHubTransports(unittest.TestCase):
             "api_url": "http://198.51.100.5:8089",
             "api_token": "secret123"
         }
-        res = hub.run_on_server(server, ["ratholenode", "version"])
+        # isolate proxy configuration from other test modules and host files.
+        with patch("hub.get_proxy", return_value=""):
+            res = hub.run_on_server(server, ["ratholenode", "version"])
         self.assertEqual(res["rc"], 0)
         self.assertIn("rathole 0.5.0", res["out"])
         

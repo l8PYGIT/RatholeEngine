@@ -167,7 +167,7 @@ function nodeTunnelStatus(n){
 // ---------- badge-haye khoolase (moshtarak beyne kart va safhe-ye server) ----------
 function headBadges(n,ov){
  const role=fnd(n).role;
- if(!ov||ov.reachable===false)return `<span class="badge b-bad">${t('no_ssh')}</span>`;
+ if(!ov||ov.reachable===false)return `<span class="badge b-bad">${t(fnd(n).transport==='api'?'no_agent':'no_ssh')}</span>`;
  let hb='';
  if(role==='iran'){const ok=(ov.health||{}).fail===0;
   hb=`<span class="badge ${ok?'b-ok':'b-bad'}">doctor ${(ov.health||{}).ok||0}/${((ov.health||{}).ok||0)+((ov.health||{}).fail||0)}</span>`;
@@ -221,7 +221,7 @@ function updateHubStrip(){
  let up=0,down=0,unk=0;
  SERVERS.forEach(s=>{const ov=OVS[s.name];
   if(!ov)unk++;else if(ov.reachable===false)down++;else up++;});
- x+=` <span class="badge ${down?'b-bad':'b-ok'}">${up}/${SERVERS.length} SSH</span>`;
+ x+=` <span class="badge ${down?'b-bad':'b-ok'}">${up}/${SERVERS.length} ${t('hs_connected')}</span>`;
  const px = st.proxy || '';
  if(px){
   x+=` <button class="badge b-plain" type="button" onclick="editHubProxy()" title="${t('hub_proxy_lbl')} ${h(px)}">🛡️ ${t('badge_proxied')}: <span class="mono">${h(px)}</span></button>`;
@@ -357,7 +357,9 @@ function renderServerPage(n){
    </div></div>`;
  let body;
  if(!ov){body=`<div class="empty">${t('loading')}</div>`;loadOv(n);}
- else if(ov.reachable===false){body=`<div class="sec"><div class="empty">${t('ssh_help')}<br><code>ssh-copy-id -i /root/.ssh/id_ed25519.pub root@${h(s.host)}</code><br><br>${h(ov.error||'')}</div></div>`;}
+ else if(ov.reachable===false){body=s.transport==='api'
+  ?`<div class="sec"><div class="empty">${t('agent_help')}<br><br>${h(ov.error||'')}</div></div>`
+  :`<div class="sec"><div class="empty">${t('ssh_help')}<br><code>ssh-copy-id -i /root/.ssh/id_ed25519.pub root@${h(s.host)}</code><br><br>${h(ov.error||'')}</div></div>`;}
  else{body=renderMiniWiring(n,ov)+(s.role==='iran'?renderIran(n,ov):renderNode(n,ov));}
  // baraye node: dot-haye vaziat az doctor-e Iran miayand — agar overview-e Iran-i nadarim, biar
  if(s.role==='node')SERVERS.filter(x=>x.role==='iran'&&!OVS[x.name]).forEach(x=>loadOv(x.name));
@@ -941,7 +943,7 @@ function drawConsole(){
     <span style="flex:1"></span><span class="sub" style="font-size:11px">${t('rc_legend')}</span>
     <button class="gh" onclick="nav('#/server/${h(s.name)}')">${t('details')}</button></div>`;
   if(!ov){x+=`<div class="rc-empty" style="padding:14px">${t('loading')}</div></div>`;return;}
-  if(ov.reachable===false){x+=`<div class="rc-empty" style="padding:14px"><span class="badge b-bad">${t('rc_unreach')}</span></div></div>`;return;}
+  if(ov.reachable===false){x+=`<div class="rc-empty" style="padding:14px"><span class="badge b-bad">${t(s.transport==='api'?'rc_agent_unreach':'rc_unreach')}</span></div></div>`;return;}
   const lanes=ingressLanes(ov),nodes=ov.nodes||[];
   x+=`<div class="rc-body">
     <div class="rc-col"><h5>${t('rc_ingress')} <span class="cnt">${lanes.filter(l=>l.on).length}/${lanes.length}</span></h5>
@@ -2836,7 +2838,17 @@ function editNode(n,name){formModal(t('t_edit_node')+' ('+name+')',[
 function renameNode(n,name){formModal(t('t_rename'),[
   {id:'new',label:t('l_new_name'),val:name,req:1}],
   v=>{if(v.new===name){closeModal();return;}closeModal();run(n,'rename_node',{old:name,new:v.new});});}
-function editServer(n){const s=fnd(n);formModal(t('t_edit_srv')+' ('+n+')',[
+function editServer(n){const s=fnd(n);
+ if(s.transport==='api'){
+  formModal(t('t_edit_srv')+' ('+n+')',[
+   {id:'api_url',label:t('f_api_url'),val:s.api_url||'',req:1},
+   {id:'api_token',label:t('f_api_token'),val:'',type:'password'}],
+   async v=>{const body={api_url:v.api_url.trim()};if(v.api_token.trim())body.api_token=v.api_token.trim();
+    const {status,j}=await api('PUT','api/servers/'+n,body);
+    if(status!==200){toast('error: '+(j.error||status));return;}closeModal();toast(t('saved'));loadAll();});
+  return;
+ }
+ formModal(t('t_edit_srv')+' ('+n+')',[
   {id:'host',label:t('f_host'),val:s.host,req:1},
   {id:'ssh_user',label:t('f_user'),val:s.ssh_user||'root',req:1},
   {id:'ssh_port',label:t('f_port'),val:s.ssh_port||'22',req:1}],

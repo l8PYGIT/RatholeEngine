@@ -87,6 +87,40 @@ const uiContext=()=>{
  Object.assign(c,{PATCH_CUSTOM_CIRCUITS:[],drawPatchBoard:()=>{},highlightCircuit:()=>{},resetCircuit:()=>{},$:()=>null,document:{querySelector:()=>null},setTimeout:()=>{},buildWiringModel:()=>({circuits:[{id:'c_iran_node',iran:'iran',node:'node',nodeServer:'node'}]})});
  return c;
 };
+test('REST API outage is labeled as Agent connectivity, not SSH',()=>{
+  const c=context();
+  const page={innerHTML:''}, strip={innerHTML:''};
+  c.SERVERS=[{name:'hub',role:'iran',transport:'api',api_url:'http://127.0.0.1:8089'}];
+  c.OVS={hub:{reachable:false,error:'Agent connection error: Connection refused'}};
+  Object.assign(c,{
+    t:key=>key, h:x=>String(x??''), icon:()=>'', ovDotCls:()=>'',
+    $:id=>id==='page'?page:(id==='hubstrip'?strip:null),
+    fnd:name=>c.SERVERS.find(s=>s.name===name)||{},
+    nodeTunnelStatus:()=>null, latestVer:()=>'',
+    HUBST:{services:{},uptime:1}, fmtDur:()=>'', fmtGB:()=>'',
+  });
+  vm.runInContext(definition('headBadges'),c);
+  assert.match(c.headBadges('hub',c.OVS.hub),/no_agent/);
+  assert.doesNotMatch(c.headBadges('hub',c.OVS.hub),/no_ssh/);
+  vm.runInContext(definition('renderServerPage'),c);
+  c.renderServerPage('hub');
+  assert.match(page.innerHTML,/agent_help/);
+  assert.doesNotMatch(page.innerHTML,/ssh-copy-id|ssh_help/);
+  vm.runInContext(definition('updateHubStrip'),c);
+  c.updateHubStrip();
+  assert.doesNotMatch(strip.innerHTML,/SSH/);
+});
+test('API server can edit its URL without SSH fields',async()=>{
+  const c=context(); let fields,save;
+  c.SERVERS=[{name:'hub',role:'iran',transport:'api',api_url:'http://127.0.0.1:8089'}];
+  Object.assign(c,{fnd:name=>c.SERVERS.find(s=>s.name===name),formModal:(title,f,cb)=>{fields=f;save=cb;},t:key=>key,api:async(method,url,body)=>{c.calls.push({method,url,body});return {status:200,j:{ok:true}};},closeModal:()=>{},loadAll:()=>{}});
+  const start=source.indexOf('function editServer('), end=source.indexOf('\nasync function savePw(',start);
+  vm.runInContext(source.slice(start,end),c);
+  c.editServer('hub');
+  assert.deepEqual(Array.from(fields,f=>f.id),['api_url','api_token']);
+  await save({api_url:'http://192.0.2.5:8089',api_token:''});
+  assert.deepEqual(JSON.parse(JSON.stringify(c.calls[0])),{method:'PUT',url:'api/servers/hub',body:{api_url:'http://192.0.2.5:8089'}});
+});
 test('failed provisioning cannot optimistically change the wiring model',async()=>{
  const c=uiContext();c.provisionPatchCircuit=async()=>false;
  vm.runInContext(definition('applyPatchConnection'),c);

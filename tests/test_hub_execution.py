@@ -4,6 +4,20 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'rathole-ma
 import hub
 
 class ExecutionTests(unittest.TestCase):
+    def test_api_server_url_can_be_corrected_without_rotating_token(self):
+        handler = object.__new__(hub.Handler)
+        handler._send = lambda code, body: (code, body)
+        handler._user = lambda: 'test'
+        inventory = [{'name': 'hub', 'role': 'iran', 'transport': 'api',
+                      'api_url': 'http://127.0.0.1:8089', 'api_token': 'existing'}]
+        with patch.object(hub, 'get_inventory', return_value=inventory), \
+             patch.object(hub, 'set_inventory') as save, \
+             patch.object(hub, 'audit_log'):
+            code, body = handler._edit_server('hub', {'api_url': 'http://192.0.2.5:8089'})
+            self.assertEqual(code, 200)
+            self.assertEqual(body['server']['api_token'], 'existing')
+            self.assertEqual(save.call_args.args[0][0]['api_url'], 'http://192.0.2.5:8089')
+
     def test_ssh_preserves_remote_argv(self):
         args = ['bash', '-c', 'printf "%s" "a b"; exit 7']
         with patch.object(hub, 'MOCK', False), patch.object(hub, 'get_config', return_value={}), patch.object(hub.subprocess, 'run', return_value=Mock(returncode=7, stdout='', stderr='')) as run:

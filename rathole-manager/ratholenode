@@ -1136,9 +1136,10 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 UNIT
-      systemctl daemon-reload 2>/dev/null || true
-      systemctl enable --now ${AGENT_SVC} >/dev/null 2>&1 || true
-      systemctl restart ${AGENT_SVC} 2>/dev/null || true
+      systemctl daemon-reload || die "agent: systemd reload shekast khord."
+      systemctl enable --now ${AGENT_SVC} || die "agent: service start shekast khord."
+      systemctl restart ${AGENT_SVC} || die "agent: service restart shekast khord."
+      systemctl is-active --quiet ${AGENT_SVC} || die "agent: service active nist; journalctl -u ${AGENT_SVC} -n 50 ra bebinid."
 
       local my_ip; my_ip="$(detect_ip 2>/dev/null || echo '127.0.0.1')"
       log "Agent REST API faal shod rooye port $port"

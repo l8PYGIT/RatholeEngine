@@ -263,6 +263,28 @@ stat -c %a "$task_dir/etc/rathole-agent/token"
                 if os.name != 'nt':  # Git Bash reports emulated modes on NTFS.
                     self.assertIn('TOKEN_MODE\n600', result.stdout)
 
+    def test_cli_agent_on_reports_systemd_start_failure(self):
+        for filename in ['ratholectl', 'ratholenode']:
+            with self.subTest(installer=filename):
+                source = (ROOT / 'rathole-manager' / filename).read_text(encoding='utf-8')
+                start = source.index('cmd_agent(){')
+                source = source[start:source.index('\n}\n', start)+3]
+                source = source.replace('/etc/', '$task_dir/etc/').replace('/usr/local/share/', '$task_dir/share/')
+                script = '''set -euo pipefail
+task_dir="$(mktemp -d)"
+trap 'command rm -rf "$task_dir"' EXIT
+mkdir -p "$task_dir/etc/systemd/system" "$task_dir/share/rathole"
+touch "$task_dir/share/rathole/ratholeagent.py"
+need_root(){ :; }
+systemctl(){ return 1; }
+log(){ :; }
+detect_ip(){ echo 127.0.0.1; }
+die(){ echo "$*" >&2; exit 1; }
+''' + source + '\nAGENT_SVC=rathole-agent; cmd_agent on 8089 test_token\n'
+                result = run_bash(script)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('Agent REST API faal shod', result.stdout)
+
     def test_update_removes_legacy_agent_unit_token(self):
         source = update_source()
         start = source.index('  if [ -f /etc/systemd/system/rathole-agent.service ]; then')

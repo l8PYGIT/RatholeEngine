@@ -276,6 +276,16 @@ def build_agent_request(server, cmd_args, timeout=120):
     }
     return urllib.request.Request(url, data=payload, headers=headers)
 
+def valid_agent_url(value):
+    try:
+        parsed = urlparse(value)
+        return (parsed.scheme in ("http", "https") and bool(parsed.hostname)
+                and parsed.port != 0 and not parsed.username and not parsed.password
+                and parsed.path in ("", "/") and not parsed.query and not parsed.fragment
+                and not any(ord(ch) < 32 for ch in value))
+    except ValueError:
+        return False
+
 def run_on_agent(server, cmd_args, timeout=120):
     proxy = get_proxy(server)
     handlers = []
@@ -1162,7 +1172,7 @@ class Handler(BaseHTTPRequestHandler):
         if transport == "api":
             api_url = str(d.get("api_url", "")).strip()
             api_token = str(d.get("api_token", "")).strip()
-            if not RE_NAME.match(name) or role not in ("iran", "node") or not api_url or not api_token:
+            if not RE_NAME.match(name) or role not in ("iran", "node") or not valid_agent_url(api_url) or not api_token:
                 return self._send(400, {"error": "invalid fields for api transport"})
             srv = {"name": name, "role": role, "transport": "api", "api_url": api_url, "api_token": api_token}
             if proxy: srv["proxy"] = proxy
@@ -1254,6 +1264,12 @@ class Handler(BaseHTTPRequestHandler):
         # viraishe mtaditai atsal (host/user/port) bedoon hazf/afzoodan dvbarh.
         # aval hame-ye field-ha ra etebar-sanji va jam mikonim, sps atomic emal mikonim.
         changes = {}
+        if "api_url" in d:
+            api_url = str(d["api_url"]).strip()
+            if not valid_agent_url(api_url): return self._send(400, {"error": "bad API URL"})
+            changes["api_url"] = api_url
+        if "api_token" in d and str(d["api_token"]).strip():
+            changes["api_token"] = str(d["api_token"]).strip()
         if "host" in d:
             if not RE_HOST.match(str(d["host"])): return self._send(400, {"error": "bad host"})
             changes["host"] = str(d["host"])
@@ -1275,6 +1291,8 @@ class Handler(BaseHTTPRequestHandler):
                     target = srv; break
             if not target:
                 return self._send(404, {"error": "server not found"})
+            if target.get("transport") != "api" and ("api_url" in changes or "api_token" in changes):
+                return self._send(400, {"error": "server does not use Agent API"})
             target.update(changes)
             found = dict(target)
             set_inventory(inv)

@@ -3166,10 +3166,15 @@ cmd_doctor(){
       fi
     fi
     if [ -n "$bhp" ] && [ "$bhp" != null ]; then
-      local ws_bh
-      ws_bh="$(rth_probe "https://$domain/channel" "$domain" "${wsh[@]}")"
+      local ws_bh bhtok wsh_bh
+      bhtok="$(jq -r '.backhaul_token // empty' "$STATE" 2>/dev/null)"
+      wsh_bh=("${wsh[@]}")
+      [ -n "$bhtok" ] && wsh_bh+=(-H "Authorization: $bhtok")
+      ws_bh="$(rth_probe "https://$domain/channel" "$domain" "${wsh_bh[@]}")"
       if [ "$ws_bh" = 101 ]; then
         printf '  %s backhaul WS (/channel) → 101 (core salem)\n' "$(c_g 'OK ')"; ok=$((ok+1))
+      elif [ "$ws_bh" = 401 ]; then
+        printf '  %s backhaul WS (/channel) → 401 (core zendeh ast va Nginx dorost proxy mikonad)\n' "$(c_g 'OK ')"; ok=$((ok+1))
       else
         printf '  %s backhaul WS (/channel) → %s (entezar 101)\n' "$(c_r 'FAIL')" "$ws_bh"; bad=$((bad+1))
       fi

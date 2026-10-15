@@ -944,6 +944,7 @@ cmd_frp_on(){
   systemctl disable --now "$SVC" 2>/dev/null || true
   systemctl disable --now rathole-kcp-client 2>/dev/null || true
   systemctl disable --now "$BH_CLI_SVC" 2>/dev/null || true
+  systemctl disable --now rathole-adaptive.timer 2>/dev/null || true
   env_set TUNNEL frp
   env_set FRP_REMOTE "$remote"
   env_set FRP_TOKEN "$token"
@@ -2105,6 +2106,12 @@ adaptive_run_probe(){
         ws|wsmux) result="$(adaptive_probe_ws_plain "$bhh" "$bhp" "/channel" "Authorization: Bearer ${BH_TOKEN}"$'\r\n' 2>/dev/null)" ;;
         *) result="$(adaptive_probe_ws_tls "$bhh" "$bhp" "/channel" "Authorization: Bearer ${BH_TOKEN}"$'\r\n' 2>/dev/null)" ;;
       esac ;;
+    frp)
+      if systemctl is-active --quiet "$FRP_CLI_SVC" 2>/dev/null; then
+        result="healthy:0"
+      else
+        result="dead:0"
+      fi ;;
     *)    result="healthy:0" ;;
   esac
 
@@ -2252,7 +2259,14 @@ print('consecutive_failures:', d.get('consecutive_failures','?'))
         switch="$(adaptive_should_switch "$failures" "$ADAPTIVE_FAILURES" 0 0)"
         if [ "$switch" = "yes" ]; then
           local cur="${TUNNEL:-ws}" next
-          case "$cur" in ws) next=kcp ;; kcp) next=ws ;; *) next=ws ;; esac
+          case "$cur" in
+            ws)  next=kcp ;;
+            kcp) next=ws ;;
+            *)
+              warn "adaptive: carrier '$cur' dast-saz ya kanooni ast; switch khodkar anjam nmishavad."
+              exit 0
+              ;;
+          esac
           warn "adaptive: switch az '$cur' be '$next' (failures=$failures)"
           env_set TUNNEL "$next"
           gen_client
@@ -2302,6 +2316,16 @@ cmd_doctor(){
     local svc_count; svc_count="$(grep -cE '^[^#]' "$SVC_FILE" 2>/dev/null || echo 0)"
     printf '  %s %d service dar %s\n' "$(c_g 'OK ')" "$svc_count" "$SVC_FILE"
     ok=$((ok+1))
+    while IFS='|' read -r s_name s_tok s_inb s_rem || [ -n "$s_name" ]; do
+      [ -z "$s_name" ] || [ "${s_name#\#}" != "$s_name" ] && continue
+      [ -z "$s_inb" ] && continue
+      if command -v ss >/dev/null 2>&1 && ss -tulpn 2>/dev/null | grep -qE "(:${s_inb}\b|\b${s_inb}\b)"; then
+        printf '  %s backend service %s rooye port %s gvsh midahad\n' "$(c_g 'OK ')" "$s_name" "$s_inb"
+        ok=$((ok+1))
+      else
+        printf '  %s backend service %s rooye 127.0.0.1:%s GVSH NEMIDAHAD! (Xray rooye in port faal nist → Connection refused)\n' "$(c_y 'WARN')" "$s_name" "$s_inb"
+      fi
+    done < "$SVC_FILE"
   else
     printf '  %s %s peyda nashod\n' "$(c_y 'WARN')" "$SVC_FILE"
   fi

@@ -368,14 +368,26 @@ def iran_main_server(s):
 
 def iran_public_host(server, fallback=""):
     host = server.get("host")
-    if not host:
+    is_loopback = bool(host and (host in ("localhost", "::1") or str(host).startswith("127.") or str(host).startswith("0.0.0.0")))
+    if not host or is_loopback:
+        host = ""
         try:
             response = run_on_server(server, ["ratholectl", "status", "--json"])
             status = json.loads(response.get("out", "") or "{}")
-            host = status.get("public_ip") if response.get("rc") == 0 else ""
+            pub_ip = str(status.get("public_ip", "") or "").strip()
+            if pub_ip and not (pub_ip in ("localhost", "::1") or pub_ip.startswith("127.") or pub_ip.startswith("0.0.0.0")):
+                host = pub_ip
+            else:
+                domain = str(status.get("domain", "") or "").strip()
+                if domain and not (domain in ("localhost", "::1") or domain.startswith("127.")):
+                    host = domain
         except (ValueError, TypeError, AttributeError):
             host = ""
-    host = host or fallback
+    if not host or (host in ("localhost", "::1") or str(host).startswith("127.") or str(host).startswith("0.0.0.0")):
+        if fallback and not (fallback in ("localhost", "::1") or str(fallback).startswith("127.") or str(fallback).startswith("0.0.0.0")):
+            host = fallback
+        else:
+            host = ""
     return host if isinstance(host, str) and RE_HOST.fullmatch(host) else ""
 
 
@@ -715,6 +727,7 @@ def parse_iran_ls(text):
             # sotoon-haye jadid (transport/sni) az CLI-e taze miayand; ba CLI-e ghadimi
             # (bedoon-e in do sotoon) ham sazgar bemanim: age nabashand, path hamon p[4] ast.
             n = {"name": p[0], "port": p[1], "inbound": p[2] if len(p) > 2 else "",
+                 "inbound_port": p[2] if len(p) > 2 else "",
                  "api": p[3] if len(p) > 3 else "-"}
             if len(p) >= 7:  # NAME PORT INBOUND API TRANSPORT SNI PATH
                 tr = p[4]

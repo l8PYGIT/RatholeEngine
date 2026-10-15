@@ -367,6 +367,35 @@ class TestLoginRateLimit(unittest.TestCase):
             self.assertNotIn("old-ip-2", hub._LOGIN_FAILS)
 
 
+class TestIranPublicHostAndLs(unittest.TestCase):
+    def test_iran_public_host_bypasses_loopback_with_fallback(self):
+        server = {"name": "iran", "host": "127.0.0.1"}
+        with mock.patch.object(hub, "run_on_server", return_value={"rc": 1, "out": ""}):
+            res = hub.iran_public_host(server, fallback="45.234.54.9")
+            self.assertEqual(res, "45.234.54.9")
+
+    def test_iran_public_host_preserves_public_ip(self):
+        server = {"name": "iran", "host": "198.51.100.5"}
+        res = hub.iran_public_host(server, fallback="45.234.54.9")
+        self.assertEqual(res, "198.51.100.5")
+
+    def test_iran_public_host_queries_status_when_loopback_and_no_fallback(self):
+        server = {"name": "iran", "host": "127.0.0.1"}
+        with mock.patch.object(hub, "run_on_server") as mock_run:
+            mock_run.return_value = {"rc": 0, "out": '{"public_ip":"45.234.54.9","domain":"iran.example.com"}'}
+            res = hub.iran_public_host(server, fallback="127.0.0.1")
+            self.assertEqual(res, "45.234.54.9")
+
+    def test_parse_iran_ls_includes_inbound_port(self):
+        text = "trknetlen 1001 1001 - ws - /"
+        nodes = hub.parse_iran_ls(text)
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0]["name"], "trknetlen")
+        self.assertEqual(nodes[0]["inbound"], "1001")
+        self.assertEqual(nodes[0]["inbound_port"], "1001")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 

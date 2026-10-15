@@ -226,7 +226,7 @@ mkdir -p /etc/rathole /etc/rathole-manager /usr/local/share/rathole
 install -m 755 "$SCRIPT_DIR/ratholectl" /usr/local/bin/ratholectl
 [ -f "$SCRIPT_DIR/common.sh" ] && { mkdir -p /usr/local/share/rathole; install -m 644 "$SCRIPT_DIR/common.sh" /usr/local/share/rathole/common.sh; rm -f /usr/local/bin/common.sh; log "common.sh nasb shod."; }
 [ -f "$SCRIPT_DIR/ratholeagent.py" ] && install -m 755 "$SCRIPT_DIR/ratholeagent.py" /usr/local/share/rathole/ratholeagent.py
-[ -f "$SCRIPT_DIR/install-agent.sh" ] && install -m 755 "$SCRIPT_DIR/install-agent.sh" /usr/local/share/rathole/install-agent.sh
+[ -f "$SCRIPT_DIR/install-agent.sh" ] && { install -m 755 "$SCRIPT_DIR/install-agent.sh" /usr/local/share/rathole/install-agent.sh; ln -sf /usr/local/share/rathole/install-agent.sh /usr/local/bin/install-agent.sh; }
 # core-e backhaul-e patch-shode (uTLS) agar dar baste bashad — install_backhaul an ra tarjih
 # midahad va dige be download az GitHub niaz nist.
 if [ -f "$SCRIPT_DIR/core-backhaul/SHA256SUMS" ]; then

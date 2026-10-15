@@ -48,16 +48,19 @@ mkdir -p /etc/rathole-agent
 echo "$TOKEN" > /etc/rathole-agent/token
 chmod 600 /etc/rathole-agent/token
 
-mkdir -p /opt/rathole-manager
+mkdir -p /opt/rathole-manager /usr/local/share/rathole
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/ratholeagent.py" ]; then
-  cp "$SCRIPT_DIR/ratholeagent.py" /opt/rathole-manager/ratholeagent.py
+  cp -f "$SCRIPT_DIR/ratholeagent.py" /usr/local/share/rathole/ratholeagent.py
+elif [ -f "/usr/local/share/rathole/ratholeagent.py" ]; then
+  : # already in /usr/local/share/rathole
 elif [ -f "/opt/rathole-manager/ratholeagent.py" ]; then
-  : # already present
+  cp -f "/opt/rathole-manager/ratholeagent.py" /usr/local/share/rathole/ratholeagent.py
 else
-  die "File ratholeagent.py dar $SCRIPT_DIR peyda nashod."
+  die "File ratholeagent.py peyda nashod."
 fi
-chmod 755 /opt/rathole-manager/ratholeagent.py
+chmod 755 /usr/local/share/rathole/ratholeagent.py
+cp -f /usr/local/share/rathole/ratholeagent.py /opt/rathole-manager/ratholeagent.py 2>/dev/null || true
 
 cat > /etc/systemd/system/rathole-agent.service <<UNIT
 [Unit]
@@ -66,7 +69,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/rathole-manager/ratholeagent.py --port ${PORT} --role ${ROLE}
+ExecStart=/usr/bin/python3 /usr/local/share/rathole/ratholeagent.py --port ${PORT} --role ${ROLE}
 Restart=always
 RestartSec=3
 

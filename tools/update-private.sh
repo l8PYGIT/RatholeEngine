@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# update-e repo-ye private: API-ye GitHub -> release assets -> bootstrap --local --update.
+# update-e repo-ye private: release assets ya source-e main -> bootstrap --local --update.
 # baraye node/panel/hub yeksan ast; naghsh az nasb-e mojood tashkhis dade mishavad.
 set +x
 set -euo pipefail
@@ -29,6 +29,27 @@ fetch(){
       --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 300 --retry 2 \
       -H "Accept: $3" "$1" -o "$2"
 }
+if [ "$release" = main ]; then
+  command -v tar >/dev/null || die 'tar nasb nist.'
+  fetch "$api/tarball/main" "$tmp/source.tar.gz" application/vnd.github+json || die 'daryaft main shekast khord.'
+  mkdir -p "$tmp/source"
+  tar -xzf "$tmp/source.tar.gz" -C "$tmp/source" || die 'archive-e main namotabar ast.'
+  src=""
+  for candidate in "$tmp/source"/*; do
+    if [ -f "$candidate/bootstrap.sh" ] && [ -f "$candidate/package.sh" ] && [ -d "$candidate/rathole-manager" ]; then
+      src="$candidate"; break
+    fi
+  done
+  [ -n "$src" ] || die 'file-haye bootstrap/package dar archive peyda nashod.'
+  unset github_token RATHOLE_GH_TOKEN GH_TOKEN GITHUB_TOKEN
+  bash "$src/package.sh" || die 'sakht bundle az main shekast khord.'
+  bundle="$src/rathole-manager.zip"
+  [ -f "$bundle" ] || bundle="$src/rathole-manager.tar.gz"
+  [ -f "$bundle" ] || die 'bundle-e main sakhte nashod.'
+  printf '[+] main daryaft shod; update ba backup va health-check shoroo mishavad.\n'
+  RATHOLE_GH="$repo" bash "$src/bootstrap.sh" --local "$bundle" --update
+  exit $?
+fi
 endpoint="$api/releases/latest"
 [ "$release" = latest ] || endpoint="$api/releases/tags/$release"
 fetch "$endpoint" "$tmp/release.json" application/vnd.github+json || die 'daryaft release nashod; dastresi Contents:read va tag ra check kon.'

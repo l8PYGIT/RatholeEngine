@@ -379,6 +379,7 @@ apply_update(){
     mkdir -p /usr/local/share/rathole
     sed -i 's/\r$//' "$SCRIPT_DIR/install-agent.sh"
     install -m 755 "$SCRIPT_DIR/install-agent.sh" /usr/local/share/rathole/install-agent.sh
+    ln -sf /usr/local/share/rathole/install-agent.sh /usr/local/bin/install-agent.sh 2>/dev/null || true
   fi
 
   # core-e backhaul-e patch-shode (uTLS). binary-e backhaul-e nasb-shode az ghabl ba

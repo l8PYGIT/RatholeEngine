@@ -16,7 +16,7 @@ function context(options={}) {
   const ctx={calls,messages, SERVERS:[{name:'iran',role:'iran',host:'192.0.2.1'},
     {name:'node',role:'node',host:'192.0.2.2'}],
     OVS:{iran:{nodes:[{name:'node',port:21001,inbound_port:8080}]},node:{services:[],backhaul_services:[],main_tunnel:'ws'}},
-    toast:x=>messages.push(x),loadOv:()=>{},console,
+    toast:x=>messages.push(x),loadOv:()=>{},console,URL:globalThis.URL,
     api:async(method,url,body)=>{
       calls.push({method,url,...body});
       if(body && body.action===options.failAction) return {status:200,j:{rc:1,err:'failed action'}};
@@ -31,7 +31,7 @@ function context(options={}) {
       return {status:200,j};
     }};
   vm.createContext(ctx);
-  for(const name of ['patchRequest','patchAction','patchNodeServer','provisionPatchCircuit']) {
+  for(const name of ['patchRequest','patchAction','patchNodeServer','serverPublicIp','provisionPatchCircuit']) {
     if(source.includes('function '+name+'(')) vm.runInContext(definition(name),ctx);
   }
   return ctx;
@@ -161,4 +161,18 @@ test('provisionPatchCircuit with null port resolves port from existing node', as
   const result = await c.provisionPatchCircuit('iran', 'node', 'kcp', null, {});
   assert.ok(result, 'provisioning failed: ' + c.messages.join('; '));
   assert.equal(action(c, 'kcp_on').args.remote, '192.0.2.1:443');
+});
+
+test('GRE resolves node IP from api_url when host is absent', async () => {
+  const c = context();
+  c.SERVERS = [
+    {name: 'iran', role: 'iran', host: '127.0.0.1'},
+    {name: 'node', role: 'node', transport: 'api', api_url: 'http://78.135.77.57:8089'}
+  ];
+  const result = await c.provisionPatchCircuit('iran', 'node', 'gre', 8080, {});
+  assert.ok(result, 'provisioning failed: ' + c.messages.join('; '));
+  const iranGre = c.calls.find(x => x.action === 'gre_on' && x.url.includes('/iran/'));
+  const nodeGre = c.calls.find(x => x.action === 'gre_on' && x.url.includes('/node/'));
+  assert.equal(iranGre.args.remote_ip, '78.135.77.57');
+  assert.equal(nodeGre.args.remote_ip, '192.0.2.1');
 });

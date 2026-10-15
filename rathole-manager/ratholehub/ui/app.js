@@ -736,8 +736,13 @@ function iranNodeMode(ov,name){
  // olaviat-e GHATIE: game(SNI) > backhaul > noise > ws. game yek switch-e L4 rooye 443 ast
  // ke bar hame ghaleb ast, pas AVAL check mishavad (che az ov.game va che az sni-e khod-e node).
  if((ov.game||[]).some(x=>x&&x.name===name)||nd.sni)return 'game';
+ if(nd.transport==='frp')return 'frp';
+ if(nd.transport==='frp_gre')return 'frp_gre';
+ if(nd.transport==='gre')return 'gre';
  if(nd.transport==='backhaul')return 'backhaul';
  if(nd.transport==='noise'||((ov.noise||{}).nodes||[]).indexOf(name)>=0)return 'noise';
+ if(nd.transport==='kcp')return 'kcp';
+ if(nd.transport==='plain')return 'plain';
  return 'ws';
 }
 // ---------- backhaul: 1:1 ast — neshan bede kodam node-ha rooyash hastand ----------
@@ -766,8 +771,8 @@ function bhUsageLine(ov){
 
 // badge-e mode ba class/rang-e hamsan ba baghye-ye UI.
 function modeBadge(mode){
- const cls={ws:'b-ws',kcp:'b-kcp',plain:'b-plain',noise:'b-noise',backhaul:'b-backhaul',game:'b-game'}[mode]||'b-ws';
- return `<span class="badge ${cls}">${h(t('mode_'+mode))}</span>`;
+ const cls={ws:'b-ws',kcp:'b-kcp',plain:'b-plain',noise:'b-noise',backhaul:'b-backhaul',game:'b-game',frp:'b-frp',gre:'b-gre',frp_gre:'b-frp_gre'}[mode]||'b-ws';
+ return `<span class="badge ${cls}">${h(t('mode_'+mode)||mode.toUpperCase())}</span>`;
 }
 
 function renderNode(n,ov){
@@ -1181,7 +1186,7 @@ function promptPatchProtocol(iranSrv, nodeName, defaultPort, p1Coord, p2Coord) {
 
   formModal(`🔌 اتصال سیم‌کشی جدید: ${iranSrv} ⟵⟶ ${nodeName}`, [
     {id:'node_server', label:'سرور نود خارجی:', type:'select', val:(patchNodeServer(nodeName) || {}).name || '', opts:SERVERS.filter(s=>s.role==='node').map(s=>({v:s.name,t:s.name}))},
-    {id:'carrier', label:'پروتکل و حامل ارتباطی تونل را انتخاب کنید:', type:'select', val:'frp_gre', opts:opts},
+    {id:'carrier', label:'پروتکل و حامل ارتباطی تونل را انتخاب کنید:', type:'select', val:'ws', opts:opts},
     {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:'quic', opts:frpTrOpts},
     {id:'bh_tr', label:'مد ترانسپورت Backhaul (برای Backhaul):', type:'select', val:'wssmux', opts:bhTrOpts},
     {id:'profile', label:'پروفایل شتاب KCP / Backhaul:', type:'select', val:'balanced', opts:profOpts},
@@ -1377,6 +1382,11 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
     const conn = await patchRequest('GET', 'api/servers/' + iranSrv + '/nodeconnect/' + nodeName);
     if (!conn.name || !conn.token || !conn.inbound || !conn.remote_port) throw new Error('اطلاعات سرویس یا نگاشت پورت ایران ناقص است.');
     const nov = OVS[sNode.name] || {};
+    if (oldLane !== targetLane) {
+      if (oldLane === 'frp' || oldLane === 'frp_gre') await A(sNode.name, 'frp_off').catch(()=>{});
+      else if (oldLane === 'backhaul') await A(sNode.name, 'backhaul_off').catch(()=>{});
+      else if (oldLane === 'noise') await A(sNode.name, 'noise_off').catch(()=>{});
+    }
     if (targetLane === 'backhaul') {
       // lane-e backhaul joda ast; service ra dar registry-e dorost sabt kon.
       await A(sNode.name, 'backhaul_on', {mode:connection.mode,remote_addr:connection.remote_addr || connection.domain,token:connection.token,transport:connection.transport,profile:connection.profile});
@@ -1390,7 +1400,12 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
       if ((nov.backhaul_services || []).some(x=>x.name===conn.name)) await A(sNode.name,'rm_bh_svc',{name:conn.name});
       await A(sNode.name, 'add_svc', {name:conn.name,token:conn.token,inbound:conn.inbound,remote_port:String(conn.remote_port)});
       if (targetLane === 'frp') {
-        await A(sNode.name, 'frp_on', {remote:(isGre ? greIp + ':' + connection.port : connection.remote),token:connection.token,transport:connection.transport});
+        await A(sNode.name, 'frp_on', {
+          remote: (isGre ? greIp + ':' + connection.port : connection.remote),
+          token: connection.token,
+          transport: connection.transport,
+          remote_port: String(conn.remote_port)
+        });
       } else {
         if (carrier === 'ws') await A(sNode.name,'plain_off');
         else if (carrier === 'kcp') await A(sNode.name,'kcp_on',{remote:connection.remote,key:connection.key,profile:connection.profile});
@@ -1648,6 +1663,7 @@ function showCircuitInspector(c) {
     </div>
     <div style="margin-inline-start:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <span class="sub" style="font-size:11.5px;color:${stColor};font-weight:700;margin-inline-end:4px;">${stText}</span>
+      <button class="s" type="button" style="padding:6px 12px;font-size:12px;" onclick="testCircuitProbe('${h(c.iran)}','${h(c.node)}','${h(c.ingressPath)}','${h(c.domain)}')">🔍 تست سلامت مدار</button>
       <button class="g" type="button" style="padding:6px 12px;font-size:12px;" onclick="copyV2rayRecipe('${h(c.domain)}','${h(c.ingressPort)}','${h(c.ingressPath)}')">📋 ${t('wb_copy_v2ray')}</button>
       <button class="s" type="button" style="padding:6px 12px;font-size:12px;" onclick="quickCarrierModal('${h(c.iran)}','${h(c.node)}','${h(c.carrier)}')">⚡ پروتکل و مد</button>
       <button class="gh" type="button" style="padding:6px 12px;font-size:12px;" onclick="nav('#/server/${h(c.node)}')">${t('wb_open_node')}</button>
@@ -1655,6 +1671,43 @@ function showCircuitInspector(c) {
       <button class="ci-close" type="button" onclick="resetCircuit()" title="${t('close')}">×</button>
     </div>
   `;
+}
+
+function newPatchCircuitModal() {
+  const irs = iranServers();
+  const nds = SERVERS.filter(s => s.role === 'node');
+  if (!irs.length) { toast(t('no_iran')); return; }
+  const iran = irs[0].name;
+  const node = nds.length ? nds[0].name : 'node1';
+  promptPatchProtocol(iran, node, 8443, null, null);
+}
+
+async function refreshPatchData() {
+  toast('در حال بازخوانی وضعیت مدارها...');
+  await Promise.allSettled(SERVERS.map(s => loadOv(s.name)));
+  drawPatchBoard();
+  toast('✓ وضعیت مدارها بروزرسانی شد.');
+}
+
+async function testCircuitProbe(iran, node, path, domain) {
+  toast(`در حال تست سلامت مدار ${node} روی سرور ${iran}...`);
+  try {
+    const {status, j} = await api('POST', 'api/servers/' + iran + '/action', {action: 'doctor', args: {}});
+    const out = (j && (j.out || j.err)) || '';
+    const lines = out.split('\n');
+    const matched = lines.filter(l => l.includes(node) || l.includes('FAIL') || l.includes('amade ast') || l.includes('gvsh'));
+    let msg = `🔍 گزارش زنده تست مدار [${node}]:\n\n`;
+    if (matched.length) {
+      msg += matched.join('\n') + '\n\n';
+    } else {
+      msg += `وضعیت پورت یا نود در خروجی:\n` + lines.slice(0, 15).join('\n') + '\n\n';
+    }
+    const sumLine = lines.find(l => l.includes('khlash:')) || '';
+    if (sumLine) msg += `نتیجه کلی: ${sumLine}`;
+    alert(msg);
+  } catch (e) {
+    alert('خطا در اجرای تست: ' + e.message);
+  }
 }
 
 function drawPatchBoard() {
@@ -1676,9 +1729,40 @@ function drawPatchBoard() {
   const xNode = 610, wNode = 200;
   const xSvc = 850, wSvc = 160;
 
+  const okCount = circuits.filter(x => x.status === 'ok').length;
+  const warnCount = circuits.length - okCount;
+
   let svg = `<div id="patchboard_wrap" class="patch-board-wrap">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px 12px;">
-      <span class="sub" style="font-size:12px;">💡 <b>راهنمای سیم‌کشی:</b> روی هر کابل یا سوکت کلیک کنید تا منوی شناور باز شود. برای اتصال دستی، پین خروجی سرور ایران را با موس بگیرید و به سمت نود بکشید (Drag & Drop) یا روی هر دو پین کلیک کنید.</span>
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin:4px 8px 14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-weight:700;font-size:13.5px;color:var(--text);display:flex;align-items:center;gap:8px;">
+            <span>🎛️ میز سیم‌کشی و مدارها (Patchboard / Reverse Tunnel Wiring)</span>
+            <span class="badge b-ok" style="font-size:11px;">${okCount} مدار فعال</span>
+            ${warnCount > 0 ? `<span class="badge b-bad" style="font-size:11px;">${warnCount} نیازمند توجه</span>` : ''}
+          </div>
+          <div class="sub" style="font-size:11.5px;margin-top:4px;color:var(--text-muted);line-height:1.6;">
+            این بخش جریان ترافیک کاربران را از ورودی دامنه تا هسته Xray نود خارجی به شکل زنده نشان می‌دهد:
+            <b>ورودی کاربران</b> ➔ <b>پورت لوکال ایران</b> ➔ <b>کابل ترانسپورت تانل معکوس</b> ➔ <b>اینباند Xray روی نود</b>.
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="g" type="button" style="padding:6px 14px;font-size:12px;" onclick="newPatchCircuitModal()">🔌 سیم‌کشی مدار جدید</button>
+          <button class="s" type="button" style="padding:6px 12px;font-size:12px;" onclick="refreshPatchData()">🔄 بازخوانی زنده</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-muted);flex-wrap:wrap;">
+        <span><b>راهنمای کابل‌ها:</b></span>
+        <span>🟦 <b style="color:#38bdf8">WS</b>: وب‌سوکت با TLS روی ۴۴۳</span>
+        <span>🟧 <b style="color:#f97316">FRP</b>: تونل معکوس پرسرعت (QUIC/TCP/KCP)</span>
+        <span>🟨 <b style="color:#fbbf24">Backhaul</b>: مالتی‌پلکس پایدار SMUX</span>
+        <span>🟪 <b style="color:#818cf8">KCP</b>: پروتکل ضد پکت‌لاس اینترنت ملی</span>
+        <span>🔒 <b style="color:#c084fc">Noise</b>: تونل اختصاصی رمزنگاری‌شده</span>
+        <span>📡 <b style="color:#fb923c">Plain</b>: وب‌سوکت سبک بدون TLS</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 8px 10px;">
+      <span class="sub" style="font-size:11.5px;">💡 <b>نحوه کار:</b> روی هر کابل یا سوکت کلیک کنید تا منوی شناور باز شود. برای اتصال دستی، پین خروجی سرور ایران را با موس بگیرید و به سمت نود بکشید (Drag & Drop) یا روی هر دو پین کلیک کنید.</span>
     </div>
     <svg class="patch-svg" viewBox="0 0 ${WID} ${rackH}" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -2572,7 +2656,13 @@ function setCarrier(n,next,cur){
  if(next===cur)return;
  const sel=$('car_'+n);
  const revert=()=>{if(sel)sel.value=cur;};
- if(!confirm(t('carrier_confirm').replace('%s',t('carrier_'+next)))){revert();return;}
+ const c=buildWiringModel().circuits.find(x=>x.node===n||x.nodeServer===n);
+ if(c&&c.iran){
+   quickCarrierModal(c.iran,c.node,next);
+   revert();
+   return;
+ }
+ if(!confirm(t('carrier_confirm').replace('%s',t('carrier_'+next)||next))){revert();return;}
  switch(next){
    case 'ws':       run(n,carrierOffAction(cur)); break;
    case 'kcp':      kcpOnNode(n); break;
@@ -2596,15 +2686,57 @@ function frpOnIran(n){formModal(t('t_frp_iran'),[
   {id:'transport',label:t('l_frp_tr'),type:'select',val:'tcp',opts:[{v:'tcp',t:'TCP'},{v:'kcp',t:'KCP'},{v:'quic',t:'QUIC'},{v:'websocket',t:'WebSocket'}]}],
   v=>{closeModal();run(n,'frp_on',{port:v.port,token:v.token||'',transport:v.transport||'tcp'});});}
 
+async function frpAutofill(iranName,nodeName){
+ if(!iranName)return;
+ toast(t('autofilling'));
+ const {j:conn}=await api('GET','api/servers/'+iranName+'/frpconnect');
+ if(conn&&conn.ok){
+   if($('f_remote'))$('f_remote').value=conn.remote||(conn.host+':'+conn.port);
+   if($('f_token'))$('f_token').value=conn.token||'';
+   if($('f_transport')&&conn.transport)$('f_transport').value=conn.transport;
+ }
+ if(nodeName){
+   const {j:nconn}=await api('GET','api/servers/'+iranName+'/nodeconnect/'+nodeName);
+   if(nconn&&nconn.ok&&$('f_remote_port'))$('f_remote_port').value=nconn.remote_port||'';
+ }
+ toast(t('autofilled'));
+}
+
+function frpNodeFields(n){
+ const irs=iranServers();
+ const def=irs.length?(irs[0].host+':7000'):'';
+ const f=[];
+ if(irs.length){
+   f.push({id:'iran',label:t('l_autofill'),type:'select',val:irs[0].name,opts:irs.map(s=>({v:s.name,t:s.name+' ('+s.host+')'}))});
+ }
+ f.push({id:'remote',label:t('l_plain_remote'),val:def,ph:'5.202.4.40:7000',req:1});
+ f.push({id:'token',label:t('l_frp_token'),req:1});
+ f.push({id:'transport',label:t('l_frp_tr'),type:'select',val:'tcp',opts:[{v:'tcp',t:'TCP'},{v:'kcp',t:'KCP'},{v:'quic',t:'QUIC'},{v:'websocket',t:'WebSocket'}]});
+ f.push({id:'remote_port',label:'پورت بک‌اند ایران (برای نود)',ph:'مثلاً 1001'});
+ return f;
+}
+
 function frpOnNode(n){
-  const irs=iranServers();
-  const def=irs.length?(irs[0].host+':7000'):'';
-  formModal(t('t_frp_iran')+' ('+n+')',[
-    {id:'remote',label:t('l_plain_remote'),val:def,ph:'5.202.4.40:7000',req:1},
-    {id:'token',label:t('l_frp_token'),req:1},
-    {id:'transport',label:t('l_frp_tr'),type:'select',val:'tcp',opts:[{v:'tcp',t:'TCP'},{v:'kcp',t:'KCP'},{v:'quic',t:'QUIC'},{v:'websocket',t:'WebSocket'}]},
-    {id:'remote_port',label:'پورت بک‌اند ایران (برای یک سرویس)',ph:'مثلاً 21001'}],
-    v=>{closeModal();run(n,'frp_on',{remote:v.remote,token:v.token,transport:v.transport||'tcp',remote_port:v.remote_port});});}
+ formModal(t('t_frp_iran')+' ('+n+')',frpNodeFields(n),
+   v=>{
+     closeModal();
+     run(n,'frp_on',{remote:v.remote,token:v.token,transport:v.transport||'tcp',remote_port:v.remote_port});
+     if(v.iran){
+       run(v.iran,'frp_node_on',{name:n});
+     }
+   });
+ const sel=$('f_iran');
+ if(sel){
+   sel.onchange=()=>frpAutofill(sel.value,n);
+   const box=sel.closest('.row');
+   if(box){
+     const b=document.createElement('button');b.className='s';b.textContent='↻';
+     b.title=t('l_autofill');b.onclick=e=>{e.preventDefault();frpAutofill(sel.value,n);};
+     box.appendChild(b);
+   }
+   frpAutofill(sel.value,n);
+ }
+}
 
 function greOnIran(n){formModal(t('t_gre_iran'),[
   {id:'remote_ip',label:t('l_gre_remote'),req:1},
@@ -2668,36 +2800,51 @@ function upNoiseOn(n,id){formModal(t('t_noise_node')+' ('+id+')',noiseNodeFields
  }}
 
 // ============ MODE-e per-node SAMT-e IRAN (select mesl-e node) ============
-// rooye Iran faghat noise/backhaul PER-NODE hastand (har node .transport-e khodash ra
-// darad). kcp/plain HAMEL-e SARASARI-ye server-e Iran hastand (yek listener/core baraye
-// hame), pas inja nemiayand va toggle-e sarasari-e khodeshan ra negah midarand. game ham
-// transport nist — yek service-e L4-e joda (SNI) ast. pas select-e per-node = {ws,noise,backhaul}.
-const IRAN_NODE_CARRIERS=['ws','noise','backhaul'];
+const IRAN_NODE_CARRIERS=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'];
 
 // select-e per-node baraye node-haye Iran. baraye node-haye game (L4) select bi-mani ast.
 function iranNodeCarrierSel(iran,ov,name){
  const mode=iranNodeMode(ov,name);
  if(mode==='game')return `<span class="badge b-game">${h(t('mode_game'))}</span>`;
- const cur=(mode==='noise'||mode==='backhaul')?mode:'ws';
+ const cur=IRAN_NODE_CARRIERS.indexOf(mode)>=0?mode:'ws';
  const id='icar_'+iran+'__'+name;
- const opts=IRAN_NODE_CARRIERS.map(c=>`<option value="${c}"${c===cur?' selected':''}>${h(t('carrier_'+c))}</option>`).join('');
+ const opts=IRAN_NODE_CARRIERS.map(c=>`<option value="${c}"${c===cur?' selected':''}>${h(t('carrier_'+c)||c.toUpperCase())}</option>`).join('');
  return `<select id="${id}" title="${h(t('carrier'))}" onchange="setIranNodeCarrier('${iran}','${esc(name)}',this.value,'${cur}')">${opts}</select>`;
 }
 
-// avaz kardan-e transport-e YEK node samt-e Iran. faghat action-haye mojood-e allow-list ra
-// seda mizanad (noise_node_on/off, backhaul_node_on/off). YADAVARI: in nim-e Iran ast —
-// samt-e node ham bayad hamon hamel bashad (carrierSelect-e safhe-ye node).
-function setIranNodeCarrier(iran,name,next,cur){
+// avaz kardan-e transport-e YEK node samt-e Iran ba hamahang-sazi-ye khodkar-e do-tarafe.
+async function setIranNodeCarrier(iran,name,next,cur){
  if(next===cur)return;
  const sel=$('icar_'+iran+'__'+name);
  const revert=()=>{if(sel)sel.value=cur;};
- if(!confirm(t('icarrier_confirm').replace('%s',t('carrier_'+next)).replace('%n',name))){revert();return;}
- switch(next){
-   case 'ws':       run(iran, cur==='backhaul'?'backhaul_node_off':'noise_node_off',{name}); break;
-   case 'noise':    run(iran,'noise_node_on',{name}); break;
-   case 'backhaul': run(iran,'backhaul_node_on',{name}); break;
-   default: revert();
+ if(!confirm(t('icarrier_confirm').replace('%s',t('carrier_'+next)||next).replace('%n',name))){revert();return;}
+ const sNode=patchNodeServer(name);
+ if(sNode){
+   try {
+     toast(`در حال همگام‌سازی حامل ${next.toUpperCase()} روی هر دو سرور ایران و نود...`);
+     const ok=await applyPatchConnection(iran,name,next,null,null,null,{node_server:sNode.name});
+     if(ok){
+       toast(`✓ حامل نود ${name} در هر دو سمت با موفقیت به ${next.toUpperCase()} تغییر یافت.`);
+       await loadOv(iran); await loadOv(sNode.name);
+       return;
+     }
+   } catch(e){
+     toast(`⚠️ خطا در همگام‌سازی خودکار: ${e.message}؛ در حال اعمال روی سرور ایران...`);
+   }
  }
+ // Fallback baraye node-haye standalone/gheyre-modiriat-shode dar inventory
+ if(cur==='frp'||cur==='frp_gre') await run(iran,'frp_node_off',{name});
+ else if(cur==='backhaul') await run(iran,'backhaul_node_off',{name});
+ else if(cur==='noise') await run(iran,'noise_node_off',{name});
+
+ if(next==='frp'||next==='frp_gre'){
+   await run(iran,'frp_node_on',{name});
+ } else if(next==='backhaul'){
+   await run(iran,'backhaul_node_on',{name});
+ } else if(next==='noise'){
+   await run(iran,'noise_node_on',{name});
+ }
+ await loadOv(iran);
 }
 
 function bhOnNode(n){formModal(t('t_bh_node'),bhNodeFields(),

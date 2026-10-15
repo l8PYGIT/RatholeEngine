@@ -48,6 +48,7 @@ test('FRP uses its shared credential, actual listener and Iran backend port',asy
   const frp=action(c,'frp_on');
   assert.equal(frp.args.token,'22222222222222222222222222222222');
   assert.equal(frp.args.remote,'192.0.2.1:7443');
+  assert.equal(frp.args.remote_port,'21001');
   assert.equal(action(c,'add_svc').args.remote_port,'21001');
 });
 test('FRP+GRE configures both interfaces and dials FRP over GRE',async()=>{

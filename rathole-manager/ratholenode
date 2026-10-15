@@ -873,8 +873,10 @@ gen_frp_client_toml(){
         [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
         local rport="${rport_file:-}"
         if [ -z "$rport" ]; then
-          if [ "$svc_count" -le 1 ] && [ -n "$remote_port" ]; then
+          if [ -n "$remote_port" ]; then
             rport="$remote_port"
+          elif [ -n "${FRP_REMOTE_PORT:-}" ]; then
+            rport="$FRP_REMOTE_PORT"
           else
             rport="$inbound"
           fi
@@ -923,6 +925,10 @@ cmd_frp_on(){
   valid_svc_token "$token" || die "token-e FRP namotabar ast."
   case "$transport" in tcp|kcp|quic|websocket) ;; *) die "transport-e FRP namotabar ast." ;; esac
   valid_frp_port "$sport" || die "port bayad 1..65535 bashad."
+  [ -n "$rport" ] || rport="${FRP_REMOTE_PORT:-}"
+  if [ -z "$rport" ] && [ -f "$SVC_FILE" ]; then
+    rport="$(awk -F'|' 'NF>=4 && $4!="" {print $4; exit}' "$SVC_FILE" 2>/dev/null)"
+  fi
   [ -z "$rport" ] || valid_frp_port "$rport" || die "remote_port bayad 1..65535 bashad."
   install_frp client || return 1
   frp_systemd_unit client || return 1
@@ -937,12 +943,13 @@ cmd_frp_on(){
   fi
   systemctl disable --now "$SVC" 2>/dev/null || true
   systemctl disable --now rathole-kcp-client 2>/dev/null || true
+  systemctl disable --now "$BH_CLI_SVC" 2>/dev/null || true
   env_set TUNNEL frp
   env_set FRP_REMOTE "$remote"
   env_set FRP_TOKEN "$token"
   env_set FRP_TRANSPORT "$transport"
-  env_set FRP_REMOTE_PORT "$rport"
-  log "tunnel be halat FRP ($transport) switch shod → $remote"
+  [ -z "$rport" ] || env_set FRP_REMOTE_PORT "$rport"
+  log "tunnel be halat FRP ($transport) switch shod → $remote (backend_port: ${rport:-hamle-be-inbound})"
 }
 
 cmd_frp_off(){

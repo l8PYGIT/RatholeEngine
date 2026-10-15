@@ -2949,7 +2949,7 @@ cmd_frp(){
           local tmp; tmp="$(mktemp)"; jq --arg n "$name" '(.nodes[] | select(.name==$n) | .transport) |= "frp"' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
           log "node '$name' be transport-e FRP switch shod."
           regenerate || return 1
-          print_frp_connect
+          print_frp_connect "$name"
           ;;
         off)
           local tmp; tmp="$(mktemp)"; jq --arg n "$name" '(.nodes[] | select(.name==$n and .transport=="frp")) |= del(.transport)' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
@@ -2971,22 +2971,33 @@ cmd_frp(){
         echo "FRP (reverse tunnel): $(c_y 'khamoosh')"
       fi
       ;;
-    show) print_frp_connect ;;
+    show) shift || true; print_frp_connect "$@" ;;
     *) die "estefade: ratholectl frp <on [port] [token] [transport]|off|node <name> on|off|status|show>" ;;
   esac
 }
 
 print_frp_connect(){
-  local fp ft ftr ip
+  local target_node="${1:-}"
+  local fp ft ftr ip nport=""
   fp="$(jq -r '.frp_port // empty' "$STATE" 2>/dev/null)"
   [ -n "$fp" ] && [ "$fp" != null ] || { warn "FRP khamoosh ast; aval: ratholectl frp on"; return; }
   ft="$(jq -r '.frp_token // empty' "$STATE" 2>/dev/null)"
   ftr="$(jq -r '.frp_transport // "tcp"' "$STATE" 2>/dev/null)"
   ip="$(detect_ip)"
+  if [ -n "$target_node" ]; then
+    nport="$(jq -r --arg n "$target_node" '.nodes[] | select(.name==$n) | .port // empty' "$STATE" 2>/dev/null)"
+  fi
+  if [ -z "$nport" ] && [ "$(jq '.nodes | length' "$STATE" 2>/dev/null)" -eq 1 ]; then
+    nport="$(jq -r '.nodes[0].port // empty' "$STATE" 2>/dev/null)"
+    target_node="$(jq -r '.nodes[0].name // empty' "$STATE" 2>/dev/null)"
+  fi
   echo
   echo "$(c_y '──────── faalsazi FRP rooye node kharej ────────')"
   echo "rooye node in dastoor ra bezan:"
-  echo "  ratholenode frp on ${ip:-<IRAN_IP>}:${fp} ${ft} ${ftr}"
+  echo "  ratholenode frp on ${ip:-<IRAN_IP>}:${fp} ${ft} ${ftr}${nport:+ $nport}"
+  if [ -n "$nport" ]; then
+    echo "  (port-e backend-e Iran baraye node ${target_node:-}: $nport)"
+  fi
   echo
   echo "bazgasht be halat adi: ratholenode frp off"
   echo "$(c_y '───────────────────────────────────────────────')"
@@ -3085,6 +3096,12 @@ cmd_doctor(){
   if [ -n "$bhp" ] && [ "$bhp" != null ]; then
     chk "backhaul-server faal ast" check_active "$BH_SVC"
     chk "backhaul rooye 127.0.0.1:$bhp gvsh midahad" check_listen "$bhp"
+  fi
+  local frpp
+  frpp="$(jq -r '.frp_port // empty' "$STATE" 2>/dev/null)"
+  if [ -n "$frpp" ] && [ "$frpp" != null ]; then
+    chk "frp-server faal ast" check_active "$FRP_SVC"
+    chk "frp rooye :$frpp gvsh midahad" ss -luntH "sport = :$frpp"
   fi
   jq -r '.nodes[] | [.name,(.port|tostring)] | @tsv' "$STATE" |
   while IFS=$'\t' read -r n p; do

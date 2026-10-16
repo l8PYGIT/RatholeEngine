@@ -72,18 +72,16 @@ let VIEW=localStorage.getItem('rh_view')||'grid';      // chinesh dashboard: gri
 let ROUTE={page:'dashboard',param:null};
 function parseHash(){const hh=location.hash||'#/dashboard';
  let m=hh.match(/^#\/server\/([A-Za-z0-9_-]+)$/); if(m)return{page:'server',param:m[1]};
- m=hh.match(/^#\/(dashboard|routing|wiring|audit|settings)$/); return m?{page:m[1],param:null}:{page:'dashboard',param:null};}
+ m=hh.match(/^#\/(dashboard|routing|audit|settings)$/); return m?{page:m[1],param:null}:{page:'dashboard',param:null};}
 function nav(hh){if(location.hash===hh){router();}else{location.hash=hh;}}
 window.addEventListener('hashchange',()=>{if(TOKEN)router();});
 function markNav(){document.querySelectorAll('.sitem').forEach(e=>{
  const active=e.dataset.pg===ROUTE.page;e.classList.toggle('active',active);e.setAttribute('aria-current',active?'page':'false');});}
 async function router(){
  if(!TOKEN)return; ROUTE=parseHash(); markNav();
- if(ROUTE.page!=='wiring'&&ROUTE.page!=='routing'&&typeof resetCircuit==='function')resetCircuit();
  await ensureServers();
  if(ROUTE.page==='server')renderServerPage(ROUTE.param);
- else if(ROUTE.page==='wiring'){ GVIEW='board'; localStorage.setItem('rh_gview','board'); renderRouting(); }
- else if(ROUTE.page==='routing'){ if(GVIEW==='board') GVIEW='graph'; if(typeof resetCircuit==='function')resetCircuit(); renderRouting(); }
+ else if(ROUTE.page==='routing')renderRouting();
  else if(ROUTE.page==='audit')renderAuditPage();
  else if(ROUTE.page==='settings')renderSettingsPage();
  else renderDashboard();
@@ -99,7 +97,7 @@ function onOv(n){
   updateHubStrip();}
  else if(ROUTE.page==='server'&&ROUTE.param===n)renderServerPage(n);
  else if(ROUTE.page==='server'&&fnd(n).role==='iran'&&fnd(ROUTE.param).role==='node')renderServerPage(ROUTE.param);
- else if(ROUTE.page==='routing'||ROUTE.page==='wiring')scheduleGraph();
+ else if(ROUTE.page==='routing')scheduleGraph();
 }
 async function loadOv(n){const {j}=await api('GET','api/servers/'+n+'/overview');OVS[n]=j||{};onOv(n);}
 
@@ -118,7 +116,6 @@ function shell(){
    <div class="brand"><span class="brand-mark">${icon('brand')}</span><div class="brand-name">rathole<span>hub</span></div></div>
    <nav class="nav-list" aria-label="${h(t('nav_label'))}">
     <button class="sitem" type="button" data-pg="dashboard" onclick="nav('#/dashboard')">${icon('dashboard')}<span>${t('nav_dash')}</span></button>
-    <button class="sitem" type="button" data-pg="wiring" onclick="nav('#/wiring')">${icon('cable')}<span>${t('wb_tab_board')}</span></button>
     <button class="sitem" type="button" data-pg="routing" onclick="nav('#/routing')">${icon('route')}<span>${t('nav_routing')}</span></button>
     <button class="sitem" type="button" data-pg="audit" onclick="nav('#/audit')">${icon('history')}<span>${t('audit')}</span></button>
     <button class="sitem" type="button" data-pg="settings" onclick="nav('#/settings')">${icon('settings')}<span>${t('settings')}</span></button>
@@ -141,7 +138,7 @@ function pollByPage(){
  if(ROUTE.page==='server'&&ROUTE.param){loadOv(ROUTE.param);
   // vaziat-e tunnel-e node az doctor-e Iran miayad → overview-e Iran-ha ham lazem ast
   if(fnd(ROUTE.param).role==='node')SERVERS.filter(s=>s.role==='iran').forEach(s=>loadOv(s.name));}
- else if(ROUTE.page==='dashboard'||ROUTE.page==='routing'||ROUTE.page==='wiring'){SERVERS.forEach(s=>loadOv(s.name));}
+ else if(ROUTE.page==='dashboard'||ROUTE.page==='routing'){SERVERS.forEach(s=>loadOv(s.name));}
  if(ROUTE.page==='dashboard')loadHubStatus();
 }
 async function doLogin(){const {status,j}=await api('POST','api/login',{password:$('pw').value});
@@ -155,7 +152,7 @@ function setDot(n,cls){const d=$('dot_'+n); if(d)d.className='dot '+cls;}
 // jam mishavad: 'ok' (hameye service-ha vasl), 'warn' (hadaghal yeki ghat), ya null (namalum).
 function nodeTunnelStatus(n){
  const ov=OVS[n]; if(!ov||ov.reachable===false)return null;
- const keys=[n].concat((ov.services||[]).map(x=>x.name));
+ const keys=[n].concat([...(ov.services||[]),...(ov.backhaul_services||[])].map(x=>x.name));
  (ov.upstreams||[]).forEach(u=>(u.services||[]).forEach(x=>keys.push(x.name)));
  let seen=false,bad=false;
  SERVERS.filter(s=>s.role==='iran').forEach(s=>{
@@ -175,16 +172,10 @@ function headBadges(n,ov){
   const nz=ov.noise||{}; if(nz.enabled){hb+=` <span class="badge b-noise">noise${nz.port?(' :'+h(nz.port)):''}${nz.count?(' · '+h(nz.count)+' node'):''}</span>`;}
  }else{
   let m = (ov.status && ov.status.main && ov.status.main.transport) || ov.main_tunnel || (ov.kcp||{}).mode || 'ws';
-  if (!m || m === 'ws') {
-    if ((ov.frp||{}).enabled) m = 'frp';
-    else if ((ov.backhaul||{}).enabled) m = 'backhaul';
-    else if ((ov.noise||{}).enabled) m = 'noise';
-    else if ((ov.kcp||{}).enabled) m = 'kcp';
-  }
   const cClass=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(m)?m:'ws';
-  const cTitle=m==='kcp'?`tunnel kcp ${h((ov.kcp||{}).profile||'')}`:(m==='ws'?'tunnel ws/443':`tunnel ${m}`);
+  const cTitle=h(carrierLabel(m,ov));
   hb=`<span class="badge b-${cClass}">${cTitle}</span>`;
-  if((ov.noise||{}).enabled&&m!=='noise'){hb+=' <span class="badge b-noise">noise</span>';}
+  if((ov.backhaul_services||[]).length&&m!=='backhaul')hb+=` <span class="badge b-backhaul">${h(carrierLabel('backhaul',ov))}</span>`;
   const ts=nodeTunnelStatus(n);
   if(ts)hb+=` <span class="badge ${ts==='ok'?'b-ok':'b-bad'}">${ts==='ok'?t('tun_up'):t('tun_down')}</span>`;
  }
@@ -265,7 +256,7 @@ function toggleConnType(){
 function renderDashboard(){
  const pg=$('page'); if(!pg)return;
  pg.innerHTML=`<div class="ptitle"><h2>${t('nav_dash')}</h2><span class="page-count">${SERVERS.length}</span><span class="ptitle-spacer"></span>
-   <div class="page-actions"><button class="g" type="button" style="background:linear-gradient(135deg,var(--primary),#0284c7);color:#fff;" onclick="nav('#/wiring')">${icon('cable')}${t('wb_tab_board')}</button><button class="g" id="updall" type="button" onclick="updateAll()">${icon('download')}${t('upd_all')}</button>
+   <div class="page-actions"><button class="g" id="updall" type="button" onclick="updateAll()">${icon('download')}${t('upd_all')}</button>
    <div class="vswitch" role="group" aria-label="${h(t('view'))}"><button id="vg" type="button" class="${VIEW==='grid'?'on':''}" aria-pressed="${VIEW==='grid'}" onclick="setView('grid')">${icon('grid')}${t('view_grid')}</button>
    <button id="vl" type="button" class="${VIEW==='list'?'on':''}" aria-pressed="${VIEW==='list'}" onclick="setView('list')">${icon('list')}${t('view_list')}</button></div></div></div>
   <div id="updpanel"></div>
@@ -370,7 +361,7 @@ function renderServerPage(n){
  else if(ov.reachable===false){body=s.transport==='api'
   ?`<div class="sec"><div class="empty">${t('agent_help')}<br><br>${h(ov.error||'')}</div></div>`
   :`<div class="sec"><div class="empty">${t('ssh_help')}<br><code>ssh-copy-id -i /root/.ssh/id_ed25519.pub root@${h(s.host)}</code><br><br>${h(ov.error||'')}</div></div>`;}
- else{body=renderMiniWiring(n,ov)+(s.role==='iran'?renderIran(n,ov):renderNode(n,ov));}
+ else{body=(s.role==='iran'?renderIran(n,ov):renderNode(n,ov));}
  // baraye node: dot-haye vaziat az doctor-e Iran miayand — agar overview-e Iran-i nadarim, biar
  if(s.role==='node')SERVERS.filter(x=>x.role==='iran'&&!OVS[x.name]).forEach(x=>loadOv(x.name));
  pg.innerHTML=`<div class="spage">${head}<div id="body_${h(n)}">${body}</div></div>`;
@@ -458,15 +449,14 @@ function renderIran(n,ov){
      const nnodes=(ov.noise||{}).nodes||[]; const hn=(ov.health||{}).nodes||{};
      nodes.forEach(d=>{ const isN=nnodes.indexOf(d.name)>=0;
       const st=hn[d.name]; const hdot=st?`<span class="dot ${st==='ok'?'d-ok':'d-bad'}" title="${st==='ok'?t('nd_up'):t('nd_down')}" style="margin-inline-end:6px"></span>`:'';
-      const nbadge=` ${modeBadge(iranNodeMode(ov,d.name))}`;
-      const csel=iranNodeCarrierSel(n,ov,d.name);
+      const nbadge=` <span class="badge">${h(carrierLabel(iranNodeMode(ov,d.name),ov))}</span>`;
       s+=`<tr><td>${hdot}${esc(d.name)}${nbadge}</td><td class="mono">${esc(d.port)}</td><td class="mono">${esc(d.inbound)}</td><td class="mono">${esc(d.api)}</td>
       <td class="btns"><button class="gh" onclick="run('${n}','show_node',{name:'${esc(d.name)}'})">${t('show_token')}</button>
       <button class="g" onclick="wireNode('${n}','${esc(d.name)}')">${t('wire_to_node')}</button>
       <button class="gh" onclick="editNode('${n}','${esc(d.name)}')">${t('edit')}</button>
       <button class="gh" onclick="renameNode('${n}','${esc(d.name)}')">${t('rename')}</button>
       <button class="gh" onclick="if(confirmT('cf_rotate','${esc(d.name)}'))run('${n}','rotate_node',{name:'${esc(d.name)}'})">${t('rotate')}</button>
-      ${csel}
+      ${serviceButtons('iran',n,d.name)}
       <button class="r" onclick="rmNode('${n}','${esc(d.name)}')">${t('remove')}</button></td></tr>`;});
      s+='</table>';}
     s+='</div>';
@@ -787,10 +777,7 @@ function modeBadge(mode){
 
 function renderNode(n,ov){
  let s='<div id="det_'+n+'"></div>';
- // HAMEL-e tunnel: rooye node har panj dastur HAMAN motaghayer-e TUNNEL ra minevisand
- // (ratholenode: env_set TUNNEL kcp|plain|noise|backhaul|ws), pas ENHESARI ast — yek
- // select، na chand dokme-ye mostaghel. dokme-haye ghadimi be karbar tavahom-e tarkib
- // midadand dar hali ke akharin dastur bi-seda barande mishod.
+ // Hamel-e rathole moshtarak ast; backhaul registry-e joda darad.
  s+=`<div class="sec"><h4>${t('main_tunnel')} ${esc(ov.main_server||'?')} <button class="g" onclick="setMainSrv('${n}')">${t('set_main')}</button></h4>
    <div class="preset-bar">
      <span class="preset-title">${t('preset_title')}:</span>
@@ -818,12 +805,12 @@ function renderNode(n,ov){
   allSv.forEach(d=>{
    const isMux=d.lane==='backhaul';
    const cClass=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(d.lane)?d.lane:'ws';
-   const cLabel=isMux?t('lane_mux'):(t('carrier_'+d.lane)||d.lane.toUpperCase());
+   const cLabel=carrierLabel(d.lane,ov);
    const laneBadge=`<span class="badge b-${cClass}" style="font-size:11px;padding:2px 8px;border-radius:4px;">${h(cLabel)}</span>`;
-   const dot=isMux?`<span class="dot d-ok" style="margin-inline-end:6px"></span>`:svcDot(d.name);
+   const dot=svcDot(d.name);
    const rmFn=isMux?`rmBhSvc('${n}','${esc(d.name)}')`:`rmSvc('${n}','${esc(d.name)}')`;
    s+=`<tr><td>${dot}${esc(d.name)}</td><td>${laneBadge}</td><td>${esc(d.inbound)}</td>
-    <td class="btns"><button class="r" onclick="${rmFn}">${t('remove')}</button></td></tr>`;
+    <td class="btns">${serviceButtons('node',n,d.name)}<button class="r" onclick="${rmFn}">${t('remove')}</button></td></tr>`;
   });
   s+='</table>';
  }
@@ -865,9 +852,10 @@ function renderNode(n,ov){
 
 // ---------- safhe: routing (graph-e topology, SVG dasti bedoon lib) ----------
 let _gTimer=null,_gDragging=false;
-let GVIEW=localStorage.getItem('rh_gview')||'board';     // namaye routing: graph|table
-function scheduleGraph(){clearTimeout(_gTimer);_gTimer=setTimeout(()=>{if((ROUTE.page==='routing'||ROUTE.page==='wiring')&&!_gDragging){if(GVIEW==='console')drawConsole();else if(GVIEW==='board')drawPatchBoard();else drawGraph();}},150);}
-function setGView(v){if(v!=='board'&&typeof resetCircuit==='function')resetCircuit();GVIEW=v;localStorage.setItem('rh_gview',v);renderRouting();}
+let GVIEW=localStorage.getItem('rh_gview')||'graph';
+if(!['graph','table','console'].includes(GVIEW))GVIEW='graph';     // namaye routing: graph|table
+function scheduleGraph(){clearTimeout(_gTimer);_gTimer=setTimeout(()=>{if((ROUTE.page==='routing')&&!_gDragging){if(GVIEW==='console')drawConsole();else drawGraph();}},150);}
+function setGView(v){GVIEW=['graph','table','console'].includes(v)?v:'graph';localStorage.setItem('rh_gview',v);renderRouting();}
 // tartib-e dasti-e box-ha (drag): dar localStorage mimanad
 function gOrder(col){try{return JSON.parse(localStorage.getItem('rh_gorder_'+col)||'[]');}catch(e){return[];}}
 function gResetOrder(){localStorage.removeItem('rh_gorder_iran');localStorage.removeItem('rh_gorder_node');drawGraph();toast(t('saved'));}
@@ -880,15 +868,14 @@ function gApplyOrder(names,col){ // sort-e stable: avval tartib-e save-shode, ba
 function renderRouting(){
  const pg=$('page'); if(!pg)return;
  const isC=GVIEW==='console';
- const isB=GVIEW==='board';
- pg.innerHTML=`<div class="ptitle"><h2>${isB?t('wb_title'):t('nav_routing')}</h2><span style="flex:1"></span>
-   <div class="vswitch"><button class="${GVIEW==='board'?'on':''}" onclick="setGView('board')">${icon('cable')} ${t('wb_tab_board')}</button>
+ pg.innerHTML=`<div class="ptitle"><h2>${t('nav_routing')}</h2><span style="flex:1"></span>
+   <div class="vswitch">
    <button class="${GVIEW==='console'?'on':''}" onclick="setGView('console')">⚡ ${t('view_console')}</button>
    <button class="${GVIEW==='graph'?'on':''}" onclick="setGView('graph')">◈ ${t('view_graph')}</button>
    <button class="${GVIEW==='table'?'on':''}" onclick="setGView('table')">☰ ${t('view_table')}</button></div>
    ${GVIEW==='graph'?`<button class="gh" onclick="gResetOrder()">${t('g_reset')}</button>`:''}
    <button class="gh" onclick="pollByPage()">${t('refresh')}</button></div>
-  ${(GVIEW==='graph'||GVIEW==='board')?`<div class="legend"><b style="color:var(--tx)">${t('g_legend')}:</b>
+  ${(GVIEW==='graph')?`<div class="legend"><b style="color:var(--tx)">${t('g_legend')}:</b>
    <span class="li"><span class="lw lw-ws"></span> ws/443</span>
    <span class="li"><span class="lw lw-kcp"></span> kcp</span>
    <span class="li"><span class="lw" style="background:#fbbf24"></span> backhaul</span>
@@ -899,7 +886,7 @@ function renderRouting(){
    <span class="li"><span class="lw lw-bad"></span> ${t('e_bad')}</span></div>`:''}
   ${isC?`<div class="rc" id="rcwrap"></div>`:`<div class="gwrap" id="gwrap"></div>
   <div class="sub" style="margin-top:8px">${GVIEW==='graph'?(t('g_hint')+' '+t('g_drag')):t('g_hint')}</div>`}`;
- if(isC)drawConsole(); else if(GVIEW==='board')drawPatchBoard(); else drawGraph();
+ if(isC)drawConsole();  else drawGraph();
  SERVERS.forEach(s=>{if(!OVS[s.name])loadOv(s.name);});
 }
 // ---------- namaye console: vorodi (ingress) → router → khorooji (node) ----------
@@ -998,284 +985,97 @@ function copyRecipe(id){const el=$(id);if(!el)return;const txt=(el.getAttribute(
  navigator.clipboard&&navigator.clipboard.writeText(txt);toast(t('rc_copied'));}
 
 
-// ============ Visual Wiring Patch Panel (Interactive Drag & Drop) ============
-let ACTIVE_CIRCUIT = null;
-let PATCH_DRAG = null;
-let SELECTED_PIN = null;
-let PATCH_CUSTOM_CIRCUITS = [];
-
-function svgCableD(x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const dist = Math.hypot(dx, dy);
-  // Realistic patch cable gravity: sag downward like real patch cord
-  const sag = Math.max(30, Math.min(160, dist * 0.22 + Math.abs(dy) * 0.12));
-  const c1x = x1 + dx * 0.28;
-  const c1y = y1 + sag;
-  const c2x = x2 - dx * 0.28;
-  const c2y = y2 + sag;
-  return `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`;
+// Har do safhe az hamin control-haye service estefade mikonand.
+function carrierLabel(carrier,ov){
+ ov=ov||{};
+ const features=((ov.status||{}).features)||{};
+ if(carrier==='frp'||carrier==='frp_gre'){
+  const tr=(features.frp||{}).transport||(ov.frp||{}).transport;
+  return (carrier==='frp_gre'?'FRP + GRE':'FRP')+' / '+(tr?tr.toUpperCase():'?');
+ }
+ if(carrier==='backhaul'){
+  const tr=(features.backhaul||{}).transport||(ov.backhaul||{}).transport;
+  return 'Backhaul / '+(tr?tr.toUpperCase():'?');
+ }
+ if(carrier==='kcp')return 'KCP / UDP'+((ov.kcp||{}).profile?' · '+ov.kcp.profile:'');
+ return ({noise:'Noise / TCP',ws:'WebSocket / TLS',plain:'WebSocket / TCP',gre:'GRE / WebSocket',game:'SNI / TLS'})[carrier]||carrier;
 }
 
-function getSvgPoint(e, svgEl) {
-  const pt = svgEl.createSVGPoint();
-  pt.x = e.clientX;
-  pt.y = e.clientY;
-  return pt.matrixTransform(svgEl.getScreenCTM().inverse());
+function serviceButtons(side,server,name){
+ const call=side==='iran'?'serviceControl':'nodeServiceAction';
+ const btn=(action,label,cls='gh')=>`<button class="${cls}" type="button" onclick="${call}('${h(server)}','${h(name)}','${action}')">${label}</button>`;
+ return btn('configure',t('service_config'),'s')+btn('health',t('service_health'))+btn('copy',t('service_copy'))+btn('manage',t('service_peer'))+btn('remove',t('service_remove_pair'),'r');
 }
 
-function triggerSocketPuff(svg, x, y, color) {
-  if (!svg) return;
-  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  g.setAttribute('class', 'socket-puff-group');
-
-  for (let r of [1, 2]) {
-    const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    ring.setAttribute('cx', x);
-    ring.setAttribute('cy', y);
-    ring.setAttribute('class', 'socket-puff-ring');
-    if (color) ring.style.stroke = color;
-    if (r === 2) ring.style.animationDelay = '0.12s';
-    g.appendChild(ring);
-  }
-
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2;
-    const dist = 24 + Math.random() * 18;
-    const dx = Math.cos(angle) * dist + 'px';
-    const dy = Math.sin(angle) * dist + 'px';
-    const spark = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    spark.setAttribute('cx', x);
-    spark.setAttribute('cy', y);
-    spark.setAttribute('r', '2.5');
-    spark.setAttribute('fill', color || '#fbbf24');
-    spark.setAttribute('class', 'socket-spark');
-    spark.style.setProperty('--dx', dx);
-    spark.style.setProperty('--dy', dy);
-    g.appendChild(spark);
-  }
-
-  svg.appendChild(g);
-  setTimeout(() => g.remove(), 850);
+function serviceControl(iran,name,action,next,peerName){
+ if(['configure','copy'].includes(action)&&iranNodeMode(OVS[iran],name)==='game'){toast(t('service_game_hint'));return;}
+ if(action==='configure')return quickCarrierModal(iran,name,next||iranNodeMode(OVS[iran],name),peerName);
+ if(action==='health')return serviceHealth(iran,name);
+ if(action==='copy')return copyServiceConfig(iran,name);
+ if(action==='remove')return removeServicePair(iran,name,peerName);
+ const peer=findNodeServer(name,peerName);
+ if(peer)nav('#/server/'+peer.name);else toast(t('no_node_dst'));
 }
 
-function startPatchDrag(e, pinEl) {
-  e.stopPropagation();
-  e.preventDefault();
-  const svg = pinEl.closest('svg');
-  const sx = parseFloat(pinEl.getAttribute('data-x'));
-  const sy = parseFloat(pinEl.getAttribute('data-y'));
-  const pinType = pinEl.getAttribute('data-pin-type');
-  PATCH_DRAG = {
-    sourcePin: pinEl,
-    svg: svg,
-    startX: sx,
-    startY: sy,
-    pinType: pinType,
-    server: pinEl.getAttribute('data-server'),
-    node: pinEl.getAttribute('data-node'),
-    port: pinEl.getAttribute('data-port'),
-    cid: pinEl.getAttribute('data-cid')
-  };
-  pinEl.classList.add('pin-selected');
-  window.addEventListener('mousemove', onPatchMouseMove);
-  window.addEventListener('mouseup', onPatchMouseUp);
+function nodeServiceAction(server,name,action,next){
+ const matches=SERVERS.filter(s=>s.role==='iran'&&((OVS[s.name]||{}).nodes||[]).some(x=>x.name===name));
+ const apply=iran=>action==='manage'?nav('#/server/'+iran):serviceControl(iran,name,action,next,server);
+ if(matches.length===1)return apply(matches[0].name);
+ if(!matches.length){toast(t('service_iran_missing'));return;}
+ formModal(t('l_iran_srv'),[{id:'iran',label:t('l_iran_srv'),type:'select',val:matches[0].name,opts:matches.map(s=>({v:s.name,t:s.name}))}],v=>{closeModal();apply(v.iran);});
 }
 
-function onPatchMouseMove(e) {
-  if (!PATCH_DRAG) return;
-  const pt = getSvgPoint(e, PATCH_DRAG.svg);
-  const d = svgCableD(PATCH_DRAG.startX, PATCH_DRAG.startY, pt.x, pt.y);
-  const w = $('dynamic_patch_wire');
-  if (w) {
-    w.setAttribute('d', d);
-    w.style.display = 'block';
-  }
-  const targetType = PATCH_DRAG.pinType === 'iran' ? 'node' : 'iran';
-  document.querySelectorAll(`.pin[data-pin-type="${targetType}"]`).forEach(p => {
-    const tx = parseFloat(p.getAttribute('data-x'));
-    const ty = parseFloat(p.getAttribute('data-y'));
-    const dist = Math.hypot(pt.x - tx, pt.y - ty);
-    if (dist < 36) p.classList.add('pin-target-hover');
-    else p.classList.remove('pin-target-hover');
+async function serviceHealth(iran,name){
+ toast(t('service_testing')+' '+name);
+ try{
+  const {status,j}=await api('POST','api/servers/'+iran+'/action',{action:'doctor',args:{}});
+  if(status<200||status>=300||!j)throw new Error((j&&j.error)||'HTTP '+status);
+  outModal(t('service_health')+' · '+name,((j.out||'')+'\n'+(j.err||'')).trim()||('rc='+j.rc));
+  await loadOv(iran);
+ }catch(e){outModal(t('service_health'),e.message);}
+}
+
+async function copyServiceConfig(iran,name){
+ try{
+  const main=await serviceRequest('GET','api/servers/'+iran+'/mainconnect');
+  const reported=main.domain||main.tls_hostname||'';
+  const host=reported&&!/^(127\.|localhost$|\[?::1\]?$)/i.test(reported)?reported:serverPublicIp(fnd(iran),OVS[iran])||'';
+  formModal(t('service_copy'),[
+   {id:'uuid',label:t('service_uuid'),req:1},
+   {id:'host',label:t('service_public_host'),val:host,req:1},
+   {id:'port',label:t('c_port'),val:'443',req:1},
+   {id:'sni',label:'TLS SNI',val:main.tls_hostname||main.domain||''},
+   {id:'path',label:'WebSocket path',val:'/'+name,req:1}
+  ],async v=>{
+   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.uuid)||!/^\d+$/.test(v.port)||+v.port<1||+v.port>65535||!v.path.startsWith('/')||/[\s\/?#@]/.test(v.host)||/^(127\.|localhost$|\[?::1\]?$)/i.test(v.host)){
+    toast(t('service_config_invalid'));return;
+   }
+   const query=new URLSearchParams({type:'ws',security:'tls',path:v.path});
+   if(v.sni)query.set('sni',v.sni);
+   const address=v.host.includes(':')&&!v.host.startsWith('[')?'['+v.host+']':v.host;
+   const link='vless://'+v.uuid+'@'+address+':'+v.port+'?'+query.toString()+'#'+encodeURIComponent(name);
+   closeModal();
+   try{await navigator.clipboard.writeText(link);toast(t('rc_copied'));}catch(e){outModal(t('service_copy'),link);}
   });
+ }catch(e){outModal(t('service_copy'),e.message);}
 }
 
-function onPatchMouseUp(e) {
-  if (!PATCH_DRAG) return;
-  window.removeEventListener('mousemove', onPatchMouseMove);
-  window.removeEventListener('mouseup', onPatchMouseUp);
-  const w = $('dynamic_patch_wire');
-  if (w) w.style.display = 'none';
-  if (PATCH_DRAG.sourcePin) PATCH_DRAG.sourcePin.classList.remove('pin-selected');
-
-  const target = document.querySelector('.pin.pin-target-hover');
-  if (target && target !== PATCH_DRAG.sourcePin) {
-    target.classList.remove('pin-target-hover');
-    handlePinPairSelected(PATCH_DRAG.sourcePin, target);
-  }
-  PATCH_DRAG = null;
+async function removeServicePair(iran,name,peerName){
+ const peer=findNodeServer(name,peerName);
+ if(!peer){toast(t('no_node_dst'));return;}
+ if(!confirm(t('service_remove_confirm').replace('%s',name)))return;
+ try{
+  const ov=await serviceRequest('GET','api/servers/'+peer.name+'/overview');
+  if(ov.reachable===false||!Array.isArray(ov.services)||!Array.isArray(ov.backhaul_services))throw new Error(t('service_peer_unavailable'));
+  await serviceAction(iran,'rm_node',{name});
+  if((ov.services||[]).some(x=>x.name===name))await serviceAction(peer.name,'rm_svc',{name});
+  if((ov.backhaul_services||[]).some(x=>x.name===name))await serviceAction(peer.name,'rm_bh_svc',{name});
+  toast(t('done'));
+ }catch(e){outModal(t('service_remove_pair'),e.message);}
+ await Promise.allSettled([loadOv(iran),loadOv(peer.name)]);
 }
 
-function dropPatchPin(e, pinEl) {
-  e.stopPropagation();
-  if (PATCH_DRAG && PATCH_DRAG.sourcePin && PATCH_DRAG.sourcePin !== pinEl) {
-    handlePinPairSelected(PATCH_DRAG.sourcePin, pinEl);
-    onPatchMouseUp(e);
-  }
-}
-
-function onPinClick(e, pinEl) {
-  e.stopPropagation();
-  if (!SELECTED_PIN) {
-    SELECTED_PIN = pinEl;
-    pinEl.classList.add('pin-selected');
-    const pType = pinEl.getAttribute('data-pin-type');
-    const name = pType === 'iran' ? pinEl.getAttribute('data-server') : pinEl.getAttribute('data-node');
-    toast(`⚡ پین [${name}] انتخاب شد. حالا روی پین نود/سرور مقابل برای اتصال کلیک کنید.`);
-  } else if (SELECTED_PIN === pinEl) {
-    SELECTED_PIN.classList.remove('pin-selected');
-    SELECTED_PIN = null;
-  } else {
-    const p1 = SELECTED_PIN;
-    const p2 = pinEl;
-    SELECTED_PIN.classList.remove('pin-selected');
-    SELECTED_PIN = null;
-
-    const t1 = p1.getAttribute('data-pin-type');
-    const t2 = p2.getAttribute('data-pin-type');
-    if (t1 !== t2) {
-      handlePinPairSelected(p1, p2);
-    } else {
-      toast('⚠️ لطفاً یک پین از سرور ایران و یک پین از نود خارجی را انتخاب کنید.');
-    }
-  }
-}
-
-function handlePinPairSelected(p1, p2) {
-  const t1 = p1.getAttribute('data-pin-type');
-  const iranPin = t1 === 'iran' ? p1 : p2;
-  const nodePin = t1 === 'node' ? p1 : p2;
-
-  const iranSrv = iranPin.getAttribute('data-server') || 'iran-panel';
-  const nodeName = nodePin.getAttribute('data-node') || 'trk01';
-  const port = iranPin.getAttribute('data-port') || 8443;
-
-  const p1Coord = { x: parseFloat(iranPin.getAttribute('data-x')), y: parseFloat(iranPin.getAttribute('data-y')) };
-  const p2Coord = { x: parseFloat(nodePin.getAttribute('data-x')), y: parseFloat(nodePin.getAttribute('data-y')) };
-
-  promptPatchProtocol(iranSrv, nodeName, port, p1Coord, p2Coord);
-}
-
-function promptPatchProtocol(iranSrv, nodeName, defaultPort, p1Coord, p2Coord) {
-  const opts = [
-    {v:'frp_gre', t:'🚀🛡️ ترکیبی FRP + GRE (لایه ۳ با استریم مالتی‌پلکس)'},
-    {v:'frp', t:'🚀 هسته تونل معکوس FRP (fatedier - مالتی‌پلکس TCP/KCP/QUIC)'},
-    {v:'ws', t:'🌐 وب‌سوکت با TLS روی ۴۴۳ (WS+TLS - مسیر مخفی پیش‌فرض)'},
-    {v:'backhaul', t:'⚡ مالتی‌پلکس ترافیک بالا Backhaul (SMUX)'},
-    {v:'gre', t:'🛡️ تونل شبکه لایه ۳ کرنل لینوکس (GRE L3)'},
-    {v:'kcp', t:'🛡️ پروتکل ضد اختلال KCP (UDP+FEC اینترنت ملی)'},
-    {v:'noise', t:'🔒 پروتکل امن رمزنگاری Noise (X25519 بدون گواهی)'},
-    {v:'plain', t:'📡 ساده بدون رمز Plain (HTTP/8880)'}
-  ];
-  const frpTrOpts = [
-    {v:'quic', t:'QUIC (بر پایه UDP، ضد فیلتر و پرسرعت)'},
-    {v:'kcp', t:'KCP (بر پایه UDP با تصحیح خطای FEC)'},
-    {v:'websocket', t:'WebSocket (شبیه ترافیک وب)'},
-    {v:'tcp', t:'TCP (حالت استاندارد)'}
-  ];
-  const profOpts = [
-    {v:'balanced', t:'Balanced (متعادل - پکت‌لاس عادی)'},
-    {v:'lossy', t:'Lossy (مخصوص شبکه‌های ناپایدار با FEC بالا)'},
-    {v:'aggressive', t:'Aggressive (مخصوص اینترنت بشدت فیلتر و اختلال‌دار)'}
-  ];
-
-  const bhTrOpts = [
-    {v:'wssmux', t:'wssmux (TLS + SMUX مالتی‌پلکس روی ۴۴۳)'},
-    {v:'wsmux', t:'wsmux (بدون TLS + SMUX مالتی‌پلکس)'},
-    {v:'wss', t:'wss (TLS بدون مالتی‌پلکس)'},
-    {v:'ws', t:'ws (وب‌سوکت ساده)'}
-  ];
-
-  formModal(`🔌 اتصال سیم‌کشی جدید: ${iranSrv} ⟵⟶ ${nodeName}`, [
-    {id:'node_server', label:'سرور نود خارجی:', type:'select', val:(patchNodeServer(nodeName) || {}).name || '', opts:SERVERS.filter(s=>s.role==='node').map(s=>({v:s.name,t:s.name}))},
-    {id:'carrier', label:'پروتکل و حامل ارتباطی تونل را انتخاب کنید:', type:'select', val:'ws', opts:opts},
-    {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:'quic', opts:frpTrOpts},
-    {id:'bh_tr', label:'مد ترانسپورت Backhaul (برای Backhaul):', type:'select', val:'wssmux', opts:bhTrOpts},
-    {id:'profile', label:'پروفایل شتاب KCP / Backhaul:', type:'select', val:'balanced', opts:profOpts},
-    {id:'iran_ip', label:'IP عمومی ایران (برای Noise / FRP / KCP / GRE؛ در صورت تشخیص اشتباه وارد کنید):', type:'text', val:serverPublicIp(SERVERS.find(s=>s.name===iranSrv), OVS[iranSrv]), ph:'مثلاً 45.234.54.9'},
-    {id:'node_ip', label:'IP عمومی نود خارجی (برای GRE):', type:'text', val:serverPublicIp(patchNodeServer(nodeName), OVS[(patchNodeServer(nodeName)||{}).name]), ph:'مثلاً 78.135.77.57'},
-    {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE یا FRP+GRE):', type:'text', val:'10.10.10.1', ph:'10.10.10.1'},
-    {id:'carrier_port', label:'پورت اختصاصی حامل در ایران (اختیاری):', type:'text', val:'', ph:'پیش‌فرض: FRP=7000, BH=3080, Plain=8880, Noise=2334, KCP=443'},
-    {id:'port', label:'پورت اینباند روی نود خارجی:', type:'text', val:((OVS[iranSrv] || {}).nodes || []).find(x=>x.name===nodeName)?.inbound_port || defaultPort || '8443', hint:'پورت بک‌اند ایران خودکار تخصیص داده و حفظ می‌شود'}
-  ], async v => {
-    closeModal();
-    const carrier = v.carrier;
-    const port = parseInt(v.port, 10) || defaultPort || 8443;
-    applyPatchConnection(iranSrv, nodeName, carrier, port, p1Coord, p2Coord, {
-      node_server:v.node_server,
-      frp_transport: v.frp_tr || 'quic',
-      bh_transport: v.bh_tr || 'wssmux',
-      profile: v.profile || 'balanced',
-      iran_ip: v.iran_ip || '',
-      node_ip: v.node_ip || '',
-      gre_ip: v.gre_ip || '10.10.10.1',
-      carrier_port: v.carrier_port || ''
-    });
-  });
-}
-
-async function applyPatchConnection(iranSrv, nodeName, carrier, port, p1, p2, extra = {}) {
-  const applied = await provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra);
-  if (!applied) return false;
-  const cid = 'c_' + iranSrv + '_' + nodeName;
-  let custom = PATCH_CUSTOM_CIRCUITS.find(x => x.id === cid);
-  if (!custom) {
-    custom = {
-      id: cid, iran: iranSrv, node: nodeName, carrier: carrier, port: port, status: 'ok', newlyPlugged: true,
-      frp_transport: extra.frp_transport || 'quic',
-      bh_transport: extra.bh_transport || 'wssmux',
-      profile: extra.profile || 'balanced',
-      gre_ip: extra.gre_ip || '10.10.10.1',
-      carrier_port: extra.carrier_port || ''
-    };
-    PATCH_CUSTOM_CIRCUITS.push(custom);
-  } else {
-    custom.carrier = carrier;
-    custom.port = port;
-    custom.newlyPlugged = true;
-    if (extra.frp_transport) custom.frp_transport = extra.frp_transport;
-    if (extra.bh_transport) custom.bh_transport = extra.bh_transport;
-    if (extra.profile) custom.profile = extra.profile;
-    if (extra.gre_ip) custom.gre_ip = extra.gre_ip;
-    if (extra.carrier_port) custom.carrier_port = extra.carrier_port;
-  }
-
-  drawPatchBoard();
-
-  const svg = document.querySelector('.patch-svg');
-  if (svg) {
-    const carrierColors = {
-      ws: '#38bdf8', kcp: '#818cf8', backhaul: '#fbbf24', noise: '#c084fc',
-      plain: '#fb923c', frp: '#f97316', gre: '#10b981', frp_gre: '#10b981'
-    };
-    const col = carrierColors[carrier] || '#fbbf24';
-    if (p1 && p1.x && p1.y) triggerSocketPuff(svg, p1.x, p1.y, col);
-    if (p2 && p2.x && p2.y) triggerSocketPuff(svg, p2.x, p2.y, col);
-  }
-
-  highlightCircuit(cid);
-  // provisionPatchCircuit natije ra check karde; inja faghat namaye UI refresh mishavad.
-
-  // Clear animation flag after playback
-  setTimeout(() => {
-    if (custom) custom.newlyPlugged = false;
-  }, 1000);
-  return true;
-}
-
-// natije-ye HTTP ya rc-e remote bayad GHABL az gham-e badi check shavad.
-async function patchRequest(method, url, body) {
+async function serviceRequest(method, url, body) {
   const {status, j} = await api(method, url, body);
   if (status < 200 || status >= 300 || !j || j.ok === false || j.error ||
       (body && j.rc !== 0)) {
@@ -1284,8 +1084,8 @@ async function patchRequest(method, url, body) {
   return j;
 }
 
-async function patchAction(server, action, args = {}) {
-  return patchRequest('POST', 'api/servers/' + server + '/action', {action, args});
+async function serviceAction(server, action, args = {}) {
+  return serviceRequest('POST', 'api/servers/' + server + '/action', {action, args});
 }
 
 function serverPublicIp(srv, ov) {
@@ -1304,7 +1104,7 @@ function serverPublicIp(srv, ov) {
   return (srv.host && !/^(127\.|localhost)/i.test(srv.host)) ? srv.host : '';
 }
 
-function patchNodeServer(nodeName, selected) {
+function findNodeServer(nodeName, selected) {
   const peers = SERVERS.filter(s => s.role === 'node');
   if (selected) return peers.find(s => s.name === selected);
   const exact = peers.find(s => s.name === nodeName);
@@ -1316,25 +1116,32 @@ function patchNodeServer(nodeName, selected) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {}) {
+async function configureServiceCarrier(iranSrv, nodeName, carrier, port, extra = {}) {
   let changed = false;
   let oldLane = '', frpSwitched = false, frpNodeStarted = false, noiseSwitched = false, nodeServer = '';
   try {
     const sIran = SERVERS.find(s => s.name === iranSrv && s.role === 'iran');
-    const sNode = patchNodeServer(nodeName, extra.node_server);
+    const sNode = findNodeServer(nodeName, extra.node_server);
     if (!sIran || !sNode) throw new Error('سرور مقصد مشخص نیست؛ نود خارجی را صریح انتخاب کنید.');
     nodeServer = sNode.name;
     if (!['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(carrier)) throw new Error('حامل نامعتبر است.');
     if (extra.carrier_port && (!/^\d+$/.test(String(extra.carrier_port)) || +extra.carrier_port < 1 || +extra.carrier_port > 65535)) throw new Error('پورت حامل نامعتبر است.');
-    const state = JSON.parse((await patchAction(iranSrv, 'status')).out);
+    const state = JSON.parse((await serviceAction(iranSrv, 'status')).out);
     const old = (state.nodes || []).find(x => x.name === nodeName);
-    const nov = OVS[sNode.name] || {};
+    const nov = await serviceRequest('GET','api/servers/'+sNode.name+'/overview');
+    if(nov.reachable===false||!Array.isArray(nov.services)||!Array.isArray(nov.backhaul_services))throw new Error(t('service_peer_unavailable'));
+    OVS[sNode.name]=nov;
     const nodeSvc = [...(nov.services || []), ...(nov.backhaul_services || [])].find(x => x.name === nodeName);
     const memIran = ((OVS[iranSrv] || {}).nodes || []).find(x => x.name === nodeName);
+    // Taghir-e hamel nabayad inbound-e service-e mojood ra avaz konad.
+    if (old) {
+      port = old.inbound_port || old.inbound;
+      if (!port) throw new Error("پورت اینباند در وضعیت ایران موجود نیست؛ ابتدا سرور ایران را به‌روزرسانی کنید.");
+    }
     if (!port || !/^\d+$/.test(String(port))) {
-      port = (old && (old.inbound_port || old.port)) ||
+      port = (old && (old.inbound_port || old.inbound)) ||
              (nodeSvc && nodeSvc.inbound) ||
-             (memIran && (memIran.inbound_port || memIran.port)) ||
+             (memIran && (memIran.inbound_port || memIran.inbound)) ||
              8443;
     }
     if (!/^\d+$/.test(String(port)) || +port < 1 || +port > 65535) throw new Error('پورت اینباند باید بین ۱ و ۶۵۵۳۵ باشد.');
@@ -1360,9 +1167,8 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
     }
     // ghofl-e server-side joda ast; in flow transaction-e chand-serveri nist.
     // dar shekast hich success-i neshan nemidahim va state-e vaghei refresh mishavad.
-    const A = async (server, action, args) => { changed = true; return patchAction(server, action, args); };
+    const A = async (server, action, args) => { changed = true; return serviceAction(server, action, args); };
     if (!old) await A(iranSrv, 'add_node', {name:nodeName,inbound:String(port)});
-    else if (+old.inbound_port !== +port) await A(iranSrv, 'edit_node', {name:nodeName,inbound:String(port)});
 
     const targetLane = carrier === 'backhaul' ? 'backhaul' : carrier === 'noise' ? 'noise' : ['frp','frp_gre'].includes(carrier) ? 'frp' : 'ws';
     oldLane = old && old.transport || 'ws';
@@ -1370,39 +1176,38 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
       await A(iranSrv, 'gre_on', {remote_ip:nodeIp,tunnel_ip:greIp,name:'gre1'});
       await A(sNode.name, 'gre_on', {remote_ip:iranIp,tunnel_ip:nodeGreIp,name:'gre1'});
       // UP boodan-e interface dalil-e residan-e packet-haye GRE nist.
-      await patchAction(sNode.name, 'gre_probe', {peer_ip:greIp,name:'gre1'}).then(j => {
+      await serviceAction(sNode.name, 'gre_probe', {peer_ip:greIp,name:'gre1'}).then(j => {
         if (j.rc !== 0) throw new Error(j.err || j.out || 'GRE peer dastres nist.');
       });
     }
-    if (targetLane !== 'noise' && oldLane !== targetLane && ['backhaul','noise','frp'].includes(oldLane)) await A(iranSrv, oldLane + '_node_off', {name:nodeName});
     let connection;
     if (targetLane === 'frp') {
       if (!(features.frp || {}).configured || !(features.frp || {}).active) await A(iranSrv, 'frp_on', {port:String(extra.carrier_port || (features.frp || {}).port || 7000),transport:extra.frp_transport || (features.frp || {}).transport || 'tcp'});
-      connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/frpconnect');
+      connection = await serviceRequest('GET', 'api/servers/' + iranSrv + '/frpconnect');
       if (!connection.token || !connection.port || !connection.transport) throw new Error('اطلاعات اتصال FRP ناقص است.');
       if ((extra.carrier_port && +extra.carrier_port !== +connection.port) || (extra.frp_transport && extra.frp_transport !== connection.transport)) {
         await A(iranSrv, 'frp_on', {port:String(extra.carrier_port || connection.port),token:connection.token,transport:extra.frp_transport || connection.transport});
-        connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/frpconnect');
+        connection = await serviceRequest('GET', 'api/servers/' + iranSrv + '/frpconnect');
       }
     } else if (targetLane === 'noise') {
       const f = features.noise || {};
       if (!f.configured || !f.active || (extra.carrier_port && +extra.carrier_port !== +f.port)) await A(iranSrv, 'noise_on', {port:String(extra.carrier_port || f.port || 2334)});
-      const noiseState = JSON.parse((await patchAction(iranSrv, 'status')).out);
+      const noiseState = JSON.parse((await serviceAction(iranSrv, 'status')).out);
       if (!(noiseState.features && noiseState.features.noise && noiseState.features.noise.active)) throw new Error('سرویس Noise روی ایران فعال نشد؛ لاگ rathole-noise را بررسی کنید.');
-      connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/noiseconnect');
+      connection = await serviceRequest('GET', 'api/servers/' + iranSrv + '/noiseconnect');
       if (!connection.remote || !connection.pubkey) throw new Error('آدرس یا کلید Noise از ایران دریافت نشد.');
       if (extra.iran_ip) connection.remote = extra.iran_ip + ':' + connection.remote.split(':').pop();
     } else if (targetLane === 'backhaul') {
       const f = features.backhaul || {};
       const tr = extra.bh_transport || 'wssmux';
       const mode = /^wss/.test(tr) ? 'nginx_tls' : 'direct_ip';
-      if (!f.configured) await A(iranSrv, 'backhaul_on', {port:String(extra.carrier_port || 3080),transport:tr.replace('wss','ws'),mode,profile:extra.profile || 'balanced'});
-      // be konfigurasion-e mojood ehtiram begzar; token/mode/profile-e server marja ast.
-      connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/backhaulconnect');
-      await A(iranSrv, 'backhaul_node_on', {name:nodeName});
+      if (!f.configured || (extra.bh_transport && extra.bh_transport.replace('wss','ws') !== f.transport) || (extra.carrier_port && +extra.carrier_port !== +f.port) || (extra.profile && extra.profile !== f.profile)) await A(iranSrv, 'backhaul_on', {port:String(extra.carrier_port || f.port || 3080),transport:tr.replace('wss','ws'),mode,profile:extra.profile || f.profile || 'balanced'});
+      // Token va parametrhaye nahayi ra az server bekhan.
+      connection = await serviceRequest('GET', 'api/servers/' + iranSrv + '/backhaulconnect');
+
     } else if (carrier === 'kcp') {
       await A(iranSrv, 'kcp_on', {port:String(extra.carrier_port || (state.ports || {}).kcp || 443),profile:extra.profile || 'balanced'});
-      connection = await patchRequest('GET', 'api/servers/' + iranSrv + '/kcpconnect');
+      connection = await serviceRequest('GET', 'api/servers/' + iranSrv + '/kcpconnect');
     } else if (carrier === 'plain' || carrier === 'gre') {
       const f = features.plain || {};
       const listener = String(extra.carrier_port || f.port || 8880);
@@ -1410,20 +1215,22 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
       if (!host && !isGre) throw new Error('آدرس سرور ایران مشخص نیست.');
       connection = {remote:(isGre ? greIp : host) + ':' + listener};
     }
-    const conn = await patchRequest('GET', 'api/servers/' + iranSrv + '/nodeconnect/' + nodeName);
+    const conn = await serviceRequest('GET', 'api/servers/' + iranSrv + '/nodeconnect/' + nodeName);
     if (!conn.name || !conn.token || !conn.inbound || !conn.remote_port) throw new Error('اطلاعات سرویس یا نگاشت پورت ایران ناقص است.');
     if (oldLane !== targetLane) {
-      if (oldLane === 'frp' || oldLane === 'frp_gre') await A(sNode.name, 'frp_off').catch(()=>{});
-      else if (oldLane === 'backhaul') await A(sNode.name, 'backhaul_off').catch(()=>{});
-      else if (oldLane === 'noise') await A(sNode.name, 'noise_off').catch(()=>{});
+      if (oldLane === 'frp' || oldLane === 'frp_gre') await A(sNode.name, 'frp_off');
+      else if (oldLane === 'backhaul' && !(nov.backhaul_services||[]).some(x=>x.name!==nodeName)) await A(sNode.name, 'backhaul_off');
+      else if (oldLane === 'noise') await A(sNode.name, 'noise_off');
     }
+    if (targetLane !== 'noise' && oldLane !== targetLane && ['backhaul','noise','frp'].includes(oldLane)) await A(iranSrv, oldLane + '_node_off', {name:nodeName});
     if (targetLane === 'backhaul') {
+      await A(iranSrv, 'backhaul_node_on', {name:nodeName});
       // lane-e backhaul joda ast; service ra dar registry-e dorost sabt kon.
       await A(sNode.name, 'backhaul_on', {mode:connection.mode,remote_addr:connection.remote_addr || connection.domain,token:connection.token,transport:connection.transport,profile:connection.profile});
       await A(sNode.name, 'add_bh_svc', {name:conn.name,token:connection.token,inbound:conn.inbound});
       if ((nov.services || []).some(x=>x.name===conn.name)) await A(sNode.name,'rm_svc',{name:conn.name});
     } else {
-      const main = await patchRequest('GET', 'api/servers/' + iranSrv + '/mainconnect');
+      const main = await serviceRequest('GET', 'api/servers/' + iranSrv + '/mainconnect');
       if (!main.server || (targetLane !== 'frp' && !main.control_path)) throw new Error('آدرس یا مسیر کنترل سرور ایران مشخص نیست.');
       // set-main node.env ra ghabl az avalin apply misazad.
       await A(sNode.name, 'set_main', {server:main.server,tls_hostname:main.tls_hostname || main.domain || ''});
@@ -1439,7 +1246,7 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
           transport: connection.transport,
           remote_port: String(conn.remote_port)
         });
-        await patchAction(iranSrv, 'frp_ready', {name:nodeName}).then(j => {
+        await serviceAction(iranSrv, 'frp_ready', {name:nodeName}).then(j => {
           if (j.rc !== 0) throw new Error(j.err || j.out || 'FRP proxy register nashod.');
         });
       } else {
@@ -1459,34 +1266,29 @@ async function provisionPatchCircuit(iranSrv, nodeName, carrier, port, extra = {
       }
     }
     await loadOv(iranSrv); await loadOv(sNode.name);
-    if (!extra.silent) toast('✓ تنظیمات مدار اعمال شد؛ وضعیت اتصال را بررسی کنید.');
+    if (!extra.silent) toast('✓ تنظیمات حامل سرویس اعمال شد؛ وضعیت اتصال را بررسی کنید.');
     return {...conn,node_server:sNode.name};
   } catch (err) {
     if (noiseSwitched && oldLane === 'ws') {
-      await patchAction(nodeServer, 'noise_off').catch(()=>{});
-      await patchAction(iranSrv, 'noise_node_off', {name:nodeName}).catch(()=>{});
+      await serviceAction(nodeServer, 'noise_off').catch(()=>{});
+      await serviceAction(iranSrv, 'noise_node_off', {name:nodeName}).catch(()=>{});
     }
     if (frpSwitched && oldLane === 'ws') {
       // dar shekast-e FRP, masir-e pishfarz-e ghabli ra dobare faal kon.
-      if (frpNodeStarted) await patchAction(nodeServer, 'frp_off').catch(()=>{});
-      await patchAction(iranSrv, 'frp_node_off', {name:nodeName}).catch(()=>{});
+      if (frpNodeStarted) await serviceAction(nodeServer, 'frp_off').catch(()=>{});
+      await serviceAction(iranSrv, 'frp_node_off', {name:nodeName}).catch(()=>{});
     }
     if (changed) {
       await Promise.allSettled([loadOv(iranSrv), ...SERVERS.filter(s=>s.role==='node').map(s=>loadOv(s.name))]);
     }
-    toast('⚠️ تنظیم مدار کامل نشد: ' + err.message + (changed ? '؛ بخشی از تنظیمات ممکن است اعمال شده باشد.' : ''));
+    toast('⚠️ تنظیم حامل سرویس کامل نشد: ' + err.message + (changed ? '؛ بخشی از تنظیمات ممکن است اعمال شده باشد.' : ''));
     return false;
   }
 }
 
 
-function copyV2rayRecipe(domain, port, path) {
-  const link = `vless://11111111-2222-3333-4444-555555555555@${domain}:${port}?type=ws&security=tls&path=${encodeURIComponent(path)}#${path.replace('/', '')}`;
-  if (navigator.clipboard) navigator.clipboard.writeText(link);
-  toast('📋 کانفیگ اتصال V2Ray در کلیپ‌بورد کپی شد ✓');
-}
-
-function quickCarrierModal(iran, node, curCarrier) {
+function quickCarrierModal(iran, node, curCarrier, peerName) {
+  if(curCarrier==='game'){toast(t('service_game_hint'));return;}
   const opts = [
     {v:'frp_gre', t:'🚀🛡️ ترکیبی FRP + GRE (لایه ۳ با استریم مالتی‌پلکس)'},
     {v:'frp', t:'🚀 هسته تونل معکوس FRP (fatedier - مالتی‌پلکس TCP/KCP/QUIC)'},
@@ -1497,10 +1299,12 @@ function quickCarrierModal(iran, node, curCarrier) {
     {v:'plain', t:'📡 ساده بدون رمز Plain (HTTP)'},
     {v:'gre', t:'🌐 تونل شبکه L3 لینوکس GRE'}
   ];
-  const c = buildWiringModel().circuits.find(x => x.iran === iran && x.node === node) || {};
+  const iov=OVS[iran]||{};
+  const nd=(iov.nodes||[]).find(x=>x.name===node)||{};
+  const c={backendPort:nd.inbound_port||nd.inbound};
   const sIran = SERVERS.find(s => s.name === iran);
   const peers = SERVERS.filter(s => s.role === 'node');
-  const sNode = patchNodeServer(node, c.nodeServer) || (peers.length === 1 ? peers[0] : null);
+  const sNode = findNodeServer(node, peerName) || (peers.length === 1 ? peers[0] : null);
   const defIranIp = serverPublicIp(sIran, OVS[iran]);
   const defNodeIp = sNode ? serverPublicIp(sNode, OVS[sNode.name]) : '';
   const frpTrOpts = [
@@ -1520,21 +1324,21 @@ function quickCarrierModal(iran, node, curCarrier) {
     {v:'lossy', t:'Lossy (پکت‌لاس بالا)'},
     {v:'aggressive', t:'Aggressive (اختلال شدید)'}
   ];
-  formModal(`تنظیم پروتکل و مدار ارتباطی نود ${node}`, [
+  formModal(`تنظیم حامل و پروتکل سرویس ${node}`, [
     {id:'node_server', label:'سرور نود خارجی:', type:'select', val:(sNode ? sNode.name : (c.nodeServer || '')), opts:SERVERS.filter(s=>s.role==='node').map(s=>({v:s.name,t:s.name}))},
     {id:'carrier', label:'پروتکل و حامل جدید:', type:'select', val:curCarrier, opts:opts},
     {id:'iran_ip', label:'IP عمومی سرور ایران (برای Noise / FRP / KCP / GRE):', type:'text', val:c.iran_ip || defIranIp, ph:'مثلاً 45.234.54.9'},
     {id:'node_ip', label:'IP عمومی سرور خارج (برای GRE):', type:'text', val:c.node_ip || defNodeIp, ph:'مثلاً 78.135.77.57'},
     {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE یا FRP+GRE):', type:'text', val:c.gre_ip || '10.10.10.1'},
-    {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:c.frp_transport || 'quic', opts:frpTrOpts},
-    {id:'bh_tr', label:'مد ترانسپورت Backhaul (برای Backhaul):', type:'select', val:c.bh_transport || 'wssmux', opts:bhTrOpts},
+    {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:((iov.status||{}).features||{}).frp?.transport || (iov.frp||{}).transport || 'tcp', opts:frpTrOpts},
+    {id:'bh_tr', label:'مد ترانسپورت Backhaul (برای Backhaul):', type:'select', val:((OVS[(sNode||{}).name]||{}).backhaul||{}).transport || 'wssmux', opts:bhTrOpts},
     {id:'profile', label:'پروفایل شتاب KCP / Backhaul:', type:'select', val:c.profile || 'balanced', opts:profOpts},
     {id:'carrier_port', label:'پورت اختصاصی حامل در ایران (اختیاری):', type:'text', val:c.carrier_port || '', ph:'پیش‌فرض: FRP=7000, BH=3080, Plain=8880, Noise=2334'}
   ], async v => {
     closeModal();
     const existingIran = ((OVS[iran]||{}).nodes||[]).find(x => x.name === node);
-    const resolvedPort = c.backendPort || (existingIran && (existingIran.inbound_port || existingIran.port)) || 8443;
-    await applyPatchConnection(iran, node, v.carrier, resolvedPort, null, null, {
+    const resolvedPort = c.backendPort || (existingIran && (existingIran.inbound_port || existingIran.inbound)) || 8443;
+    await configureServiceCarrier(iran, node, v.carrier, resolvedPort, {
       node_server: v.node_server || (sNode ? sNode.name : c.nodeServer),
       frp_transport: v.frp_tr, bh_transport: v.bh_tr,
       profile: v.profile, gre_ip: v.gre_ip,
@@ -1542,457 +1346,6 @@ function quickCarrierModal(iran, node, curCarrier) {
       carrier_port: v.carrier_port
     });
   });
-}
-
-async function disconnectCircuit(cid) {
-  const c = buildWiringModel().circuits.find(x => x.id === cid);
-  if (!c) return false;
-  try {
-    const node = patchNodeServer(c.node, c.nodeServer);
-    if (!node) throw new Error('نود مقصد مشخص نیست.');
-    const conn = await patchRequest('GET','api/servers/' + c.iran + '/nodeconnect/' + c.node);
-    await patchAction(c.iran,'rm_node',{name:c.node});
-    await patchAction(node.name,conn.transport === 'backhaul' ? 'rm_bh_svc' : 'rm_svc',{name:c.node});
-    PATCH_CUSTOM_CIRCUITS = PATCH_CUSTOM_CIRCUITS.filter(x => x.id !== cid);
-    await loadOv(c.iran); await loadOv(node.name);
-    resetCircuit(); drawPatchBoard();
-    toast('✂️ سرویس مدار از دو سرور حذف شد.');
-    return true;
-  } catch (err) {
-    await Promise.allSettled([loadOv(c.iran), ...SERVERS.filter(s=>s.role==='node').map(s=>loadOv(s.name))]);
-    toast('⚠️ حذف مدار کامل نشد: ' + err.message + '؛ وضعیت سرورها را بررسی کنید.');
-    return false;
-  }
-}
-
-function buildWiringModel() {
-  const irans = SERVERS.filter(s => s.role === 'iran');
-  const nodes = SERVERS.filter(s => s.role === 'node');
-  const circuits = [];
-
-  irans.forEach(ir => {
-    const iov = OVS[ir.name] || {};
-    const nlist = iov.nodes || [];
-    const health = (iov.health && iov.health.nodes) || {};
-
-    nlist.forEach(nd => {
-      const nodeSrv = patchNodeServer(nd.name) || (nodes.length === 1 ? nodes[0] : null);
-      const nov = nodeSrv ? (OVS[nodeSrv.name] || {}) : {};
-      const carrier = nd.transport || 'ws';
-      const nodeCarrier = (nov.main_tunnel || ((nov.status || {}).main || {}).transport || '');
-      const nodeSvc = [...(nov.services || []), ...(nov.backhaul_services || [])].some(x=>x.name===nd.name);
-      const mismatch = nodeSvc && nodeCarrier &&
-        (['noise','backhaul','frp'].includes(carrier) || ['noise','backhaul','frp'].includes(nodeCarrier)) && carrier !== nodeCarrier;
-      const isOk = !mismatch && !!nodeSrv && iov.reachable !== false && nov.reachable !== false && health[nd.name] === 'ok';
-
-      const domain = iov.domain || ir.host || 'iran';
-      const ingressPath = '/' + nd.name;
-      const ingressType = nd.sni ? 'SNI' : (nd.transport === 'plain' ? 'Plain HTTP' : 'HTTPS/443');
-      const ingressPort = nd.sni ? '443' : (nd.transport === 'plain' ? ((iov.ports && iov.ports.plain) || 8880) : '443');
-      const backendPort = nd.inbound_port || nd.port;
-
-      circuits.push({
-        id: 'c_' + ir.name + '_' + nd.name,
-        iran: ir.name,
-        iranHost: ir.host || '',
-        node: nd.name,
-        nodeHost: nodeSrv ? (nodeSrv.host || '') : '',
-        nodeServer: nodeSrv ? nodeSrv.name : '',
-        carrier: carrier,
-        iranCarrier: carrier,
-        nodeCarrier: nodeCarrier,
-        carrierMismatch: !!mismatch,
-        status: isOk ? 'ok' : 'warn',
-        ingressType: ingressType,
-        domain: domain,
-        ingressPort: ingressPort,
-        ingressPath: ingressPath,
-        iranPort: nd.port,
-        backendPort: backendPort,
-        serviceName: nd.name
-      });
-    });
-  });
-
-  // Merge any dynamic / custom circuits
-  PATCH_CUSTOM_CIRCUITS.forEach(cc => {
-    let exists = circuits.find(x => x.id === cc.id);
-    if (exists) {
-      const iranLane = cc.carrier === 'frp_gre' ? 'frp' : ['gre','kcp','plain'].includes(cc.carrier) ? 'ws' : cc.carrier;
-      const nodeLane = cc.carrier === 'frp_gre' ? 'frp' : cc.carrier === 'gre' ? 'plain' : cc.carrier;
-      if (exists.iranCarrier === iranLane && (!exists.nodeCarrier || exists.nodeCarrier === nodeLane)) exists.carrier = cc.carrier;
-      exists.backendPort = cc.port || exists.backendPort;
-      exists.newlyPlugged = cc.newlyPlugged;
-      exists.frp_transport = cc.frp_transport || exists.frp_transport;
-      exists.profile = cc.profile || exists.profile;
-      exists.gre_ip = cc.gre_ip || exists.gre_ip;
-    } else {
-      const ir = irans.find(i => i.name === cc.iran) || { name: cc.iran, host: '' };
-      const nd = nodes.find(n => n.name === cc.node) || { name: cc.node, host: '' };
-      circuits.push({
-        id: cc.id,
-        iran: cc.iran,
-        iranHost: ir.host || '',
-        node: cc.node,
-        nodeHost: nd.host || '',
-        carrier: cc.carrier,
-        status: 'warn',
-        ingressType: 'HTTPS/443',
-        domain: ir.host || cc.iran,
-        ingressPort: '443',
-        ingressPath: '/' + cc.node,
-        iranPort: cc.port || 8443,
-        backendPort: cc.port || 8443,
-        serviceName: cc.node,
-        newlyPlugged: cc.newlyPlugged,
-        frp_transport: cc.frp_transport || 'quic',
-        profile: cc.profile || 'balanced',
-        gre_ip: cc.gre_ip || '10.10.10.1'
-      });
-    }
-  });
-
-  return { irans, nodes, circuits };
-}
-
-function highlightCircuit(cid) {
-  if (ACTIVE_CIRCUIT === cid) {
-    resetCircuit();
-    return;
-  }
-  ACTIVE_CIRCUIT = cid;
-  const wrap = $('patchboard_wrap');
-  if (wrap) wrap.classList.add('patch-dim');
-
-  document.querySelectorAll('.cable-wire').forEach(el => {
-    if (el.dataset.cid === cid) el.classList.add('cable-active');
-    else el.classList.remove('cable-active');
-  });
-
-  document.querySelectorAll('.patch-socket').forEach(el => {
-    if (el.dataset.cid === cid) el.classList.add('socket-active');
-    else el.classList.remove('socket-active');
-  });
-
-  const M = buildWiringModel();
-  const c = M.circuits.find(x => x.id === cid);
-  if (c) showCircuitInspector(c);
-}
-
-function resetCircuit() {
-  ACTIVE_CIRCUIT = null;
-  const wrap = $('patchboard_wrap');
-  if (wrap) wrap.classList.remove('patch-dim');
-  document.querySelectorAll('.cable-wire').forEach(el => el.classList.remove('cable-active'));
-  document.querySelectorAll('.patch-socket').forEach(el => el.classList.remove('socket-active'));
-  const insp = $('circuit_inspector');
-  if (insp) insp.remove();
-}
-
-function showCircuitInspector(c) {
-  let insp = $('circuit_inspector');
-  if (!insp) {
-    insp = document.createElement('div');
-    insp.id = 'circuit_inspector';
-    insp.className = 'circuit-inspector';
-    document.body.appendChild(insp); // Floating fixed HUD over viewport
-  }
-  const isOk = c.status === 'ok';
-  const stColor = isOk ? 'var(--success)' : 'var(--danger)';
-  const stText = c.carrierMismatch ? `حامل ایران ${h(c.iranCarrier)} و نود ${h(c.nodeCarrier)} همگام نیست` : (isOk ? t('wb_signal_ok') : t('wb_signal_warn'));
-  const carrierClass = 'b-' + (['ws', 'kcp', 'backhaul', 'noise', 'plain', 'frp', 'gre', 'frp_gre'].indexOf(c.carrier) >= 0 ? c.carrier : 'ws');
-
-  let modeTag = '';
-  if (c.carrier === 'frp' || c.carrier === 'frp_gre') {
-    modeTag += ` <span class="badge" style="background:rgba(249,115,22,0.18);color:#f97316;border:1px solid rgba(249,115,22,0.35);font-size:10px;margin-inline-start:4px;">${(c.frp_transport || 'quic').toUpperCase()}</span>`;
-  }
-  if (c.carrier === 'gre' || c.carrier === 'frp_gre') {
-    modeTag += ` <span class="badge" style="background:rgba(16,185,129,0.18);color:#10b981;border:1px solid rgba(16,185,129,0.35);font-size:10px;margin-inline-start:4px;">IP: ${h(c.gre_ip || '10.10.10.1/30')}</span>`;
-  }
-  if (c.carrier === 'backhaul') {
-    modeTag += ` <span class="badge" style="background:rgba(251,191,36,0.18);color:#fbbf24;border:1px solid rgba(251,191,36,0.35);font-size:10px;margin-inline-start:4px;">${h((c.bh_transport || 'wssmux').toUpperCase())} (${h(c.profile || 'balanced')})</span>`;
-  } else if (c.carrier === 'kcp') {
-    modeTag += ` <span class="badge" style="background:rgba(129,140,248,0.18);color:#818cf8;border:1px solid rgba(129,140,248,0.35);font-size:10px;margin-inline-start:4px;">${h(c.profile || 'balanced')}</span>`;
-  } else if (c.carrier === 'noise') {
-    modeTag += ` <span class="badge" style="background:rgba(192,132,252,0.18);color:#c084fc;border:1px solid rgba(192,132,252,0.35);font-size:10px;margin-inline-start:4px;">Noise_NK :2334</span>`;
-  } else if (c.carrier === 'plain') {
-    modeTag += ` <span class="badge" style="background:rgba(251,146,60,0.18);color:#fb923c;border:1px solid rgba(251,146,60,0.35);font-size:10px;margin-inline-start:4px;">HTTP :8880</span>`;
-  } else if (c.carrier === 'ws') {
-    modeTag += ` <span class="badge" style="background:rgba(56,189,248,0.18);color:#38bdf8;border:1px solid rgba(56,189,248,0.35);font-size:10px;margin-inline-start:4px;">TLS :443</span>`;
-  }
-
-  const carrierLabel = c.carrier === 'frp_gre' ? 'FRP+GRE' : c.carrier.toUpperCase();
-
-  insp.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;min-width:260px;">
-      <span class="dot" style="background:${stColor};box-shadow:0 0 12px ${stColor};width:12px;height:12px;flex:0 0 12px;"></span>
-      <div>
-        <div class="ci-title">${t('wb_circuit')}: <b style="color:var(--text);font-size:14px;">${h(c.node)}</b> <span class="badge ${carrierClass}" style="font-size:10.5px;margin-inline-start:6px;">${carrierLabel}</span>${modeTag}</div>
-        <div class="ci-path" style="margin-top:2px;">${h(c.domain)}:${h(c.ingressPort)}${h(c.ingressPath)} ➔ [${h(c.iran)}] ➔ [${h(c.node)}] ➔ Inbound :${h(c.backendPort)}</div>
-      </div>
-    </div>
-    <div style="margin-inline-start:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <span class="sub" style="font-size:11.5px;color:${stColor};font-weight:700;margin-inline-end:4px;">${stText}</span>
-      <button class="s" type="button" style="padding:6px 12px;font-size:12px;" onclick="testCircuitProbe('${h(c.iran)}','${h(c.node)}','${h(c.ingressPath)}','${h(c.domain)}')">🔍 تست سلامت مدار</button>
-      <button class="g" type="button" style="padding:6px 12px;font-size:12px;" onclick="copyV2rayRecipe('${h(c.domain)}','${h(c.ingressPort)}','${h(c.ingressPath)}')">📋 ${t('wb_copy_v2ray')}</button>
-      <button class="s" type="button" style="padding:6px 12px;font-size:12px;" onclick="quickCarrierModal('${h(c.iran)}','${h(c.node)}','${h(c.carrier)}')">⚡ پروتکل و مد</button>
-      <button class="gh" type="button" style="padding:6px 12px;font-size:12px;" onclick="nav('#/server/${h(c.node)}')">${t('wb_open_node')}</button>
-      <button class="r" type="button" style="padding:6px 10px;font-size:12px;" onclick="disconnectCircuit('${c.id}')" title="قطع سیم‌کشی">✂️ قطع</button>
-      <button class="ci-close" type="button" onclick="resetCircuit()" title="${t('close')}">×</button>
-    </div>
-  `;
-}
-
-function newPatchCircuitModal() {
-  const irs = iranServers();
-  const nds = SERVERS.filter(s => s.role === 'node');
-  if (!irs.length) { toast(t('no_iran')); return; }
-  const iran = irs[0].name;
-  const node = nds.length ? nds[0].name : 'node1';
-  promptPatchProtocol(iran, node, 8443, null, null);
-}
-
-async function refreshPatchData() {
-  toast('در حال بازخوانی وضعیت مدارها...');
-  await Promise.allSettled(SERVERS.map(s => loadOv(s.name)));
-  drawPatchBoard();
-  toast('✓ وضعیت مدارها بروزرسانی شد.');
-}
-
-async function testCircuitProbe(iran, node, path, domain) {
-  toast(`در حال تست سلامت مدار ${node} روی سرور ${iran}...`);
-  try {
-    const {status, j} = await api('POST', 'api/servers/' + iran + '/action', {action: 'doctor', args: {}});
-    const out = (j && (j.out || j.err)) || '';
-    const lines = out.split('\n');
-    const matched = lines.filter(l => l.includes(node) || l.includes('FAIL') || l.includes('amade ast') || l.includes('gvsh'));
-    let msg = `🔍 گزارش زنده تست مدار [${node}]:\n\n`;
-    if (matched.length) {
-      msg += matched.join('\n') + '\n\n';
-    } else {
-      msg += `وضعیت پورت یا نود در خروجی:\n` + lines.slice(0, 15).join('\n') + '\n\n';
-    }
-    const sumLine = lines.find(l => l.includes('khlash:')) || '';
-    if (sumLine) msg += `نتیجه کلی: ${sumLine}`;
-    alert(msg);
-  } catch (e) {
-    alert('خطا در اجرای تست: ' + e.message);
-  }
-}
-
-function drawPatchBoard() {
-  const w = $('gwrap'); if (!w) return;
-  const M = buildWiringModel();
-  if (!M.circuits.length && !M.irans.length) {
-    w.innerHTML = `<div class="empty" style="padding:28px">${t('g_empty')}</div>`;
-    return;
-  }
-
-  const circuits = M.circuits;
-  const count = Math.max(circuits.length, 1);
-  const rowHeight = 78;
-  const rackH = Math.max(340, count * rowHeight + 100);
-  const WID = 1040;
-
-  const xIng = 30, wIng = 180;
-  const xIran = 250, wIran = 200;
-  const xNode = 610, wNode = 200;
-  const xSvc = 850, wSvc = 160;
-
-  const okCount = circuits.filter(x => x.status === 'ok').length;
-  const warnCount = circuits.length - okCount;
-
-  let svg = `<div id="patchboard_wrap" class="patch-board-wrap">
-    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin:4px 8px 14px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-        <div>
-          <div style="font-weight:700;font-size:13.5px;color:var(--text);display:flex;align-items:center;gap:8px;">
-            <span>🎛️ میز سیم‌کشی و مدارها (Patchboard / Reverse Tunnel Wiring)</span>
-            <span class="badge b-ok" style="font-size:11px;">${okCount} مدار فعال</span>
-            ${warnCount > 0 ? `<span class="badge b-bad" style="font-size:11px;">${warnCount} نیازمند توجه</span>` : ''}
-          </div>
-          <div class="sub" style="font-size:11.5px;margin-top:4px;color:var(--text-muted);line-height:1.6;">
-            این بخش جریان ترافیک کاربران را از ورودی دامنه تا هسته Xray نود خارجی به شکل زنده نشان می‌دهد:
-            <b>ورودی کاربران</b> ➔ <b>پورت لوکال ایران</b> ➔ <b>کابل ترانسپورت تانل معکوس</b> ➔ <b>اینباند Xray روی نود</b>.
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button class="g" type="button" style="padding:6px 14px;font-size:12px;" onclick="newPatchCircuitModal()">🔌 سیم‌کشی مدار جدید</button>
-          <button class="s" type="button" style="padding:6px 12px;font-size:12px;" onclick="refreshPatchData()">🔄 بازخوانی زنده</button>
-        </div>
-      </div>
-      <div style="display:flex;gap:14px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-muted);flex-wrap:wrap;">
-        <span><b>راهنمای کابل‌ها:</b></span>
-        <span>🟦 <b style="color:#38bdf8">WS</b>: وب‌سوکت با TLS روی ۴۴۳</span>
-        <span>🟧 <b style="color:#f97316">FRP</b>: تونل معکوس پرسرعت (QUIC/TCP/KCP)</span>
-        <span>🟨 <b style="color:#fbbf24">Backhaul</b>: مالتی‌پلکس پایدار SMUX</span>
-        <span>🟪 <b style="color:#818cf8">KCP</b>: پروتکل ضد پکت‌لاس اینترنت ملی</span>
-        <span>🔒 <b style="color:#c084fc">Noise</b>: تونل اختصاصی رمزنگاری‌شده</span>
-        <span>📡 <b style="color:#fb923c">Plain</b>: وب‌سوکت سبک بدون TLS</span>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 8px 10px;">
-      <span class="sub" style="font-size:11.5px;">💡 <b>نحوه کار:</b> روی هر کابل یا سوکت کلیک کنید تا منوی شناور باز شود. برای اتصال دستی، پین خروجی سرور ایران را با موس بگیرید و به سمت نود بکشید (Drag & Drop) یا روی هر دو پین کلیک کنید.</span>
-    </div>
-    <svg class="patch-svg" viewBox="0 0 ${WID} ${rackH}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-        <filter id="glow-amber" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-      </defs>
-
-      <!-- RACK 1: Ingress -->
-      <rect x="${xIng}" y="20" width="${wIng}" height="${rackH - 40}" rx="10" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
-      <rect x="${xIng}" y="20" width="${wIng}" height="38" rx="10" fill="var(--surface-3)"/>
-      <rect x="${xIng}" y="48" width="${wIng}" height="10" fill="var(--surface-3)"/>
-      <text x="${xIng + wIng / 2}" y="44" text-anchor="middle" fill="var(--text)" font-size="12.5" font-weight="700">🌐 ${t('wb_ingress')}</text>
-
-      <!-- RACK 2: Iran Core -->
-      <rect x="${xIran}" y="20" width="${wIran}" height="${rackH - 40}" rx="10" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
-      <rect x="${xIran}" y="20" width="${wIran}" height="38" rx="10" fill="var(--surface-3)"/>
-      <rect x="${xIran}" y="48" width="${wIran}" height="10" fill="var(--surface-3)"/>
-      <text x="${xIran + wIran / 2}" y="44" text-anchor="middle" fill="var(--text)" font-size="12.5" font-weight="700">🇮🇷 ${t('c_iran')}</text>
-
-      <!-- RACK 3: Foreign Nodes -->
-      <rect x="${xNode}" y="20" width="${wNode}" height="${rackH - 40}" rx="10" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
-      <rect x="${xNode}" y="20" width="${wNode}" height="38" rx="10" fill="var(--surface-3)"/>
-      <rect x="${xNode}" y="48" width="${wNode}" height="10" fill="var(--surface-3)"/>
-      <text x="${xNode + wNode / 2}" y="44" text-anchor="middle" fill="var(--text)" font-size="12.5" font-weight="700">🌐 ${t('wb_nodes')}</text>
-
-      <!-- RACK 4: Backend / Xray -->
-      <rect x="${xSvc}" y="20" width="${wSvc}" height="${rackH - 40}" rx="10" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
-      <rect x="${xSvc}" y="20" width="${wSvc}" height="38" rx="10" fill="var(--surface-3)"/>
-      <rect x="${xSvc}" y="48" width="${wSvc}" height="10" fill="var(--surface-3)"/>
-      <text x="${xSvc + wSvc / 2}" y="44" text-anchor="middle" fill="var(--text)" font-size="12.5" font-weight="700">⚙️ ${t('wb_backend')}</text>
-  `;
-
-  let cablesSvg = '';
-  let slotsSvg = '';
-
-  circuits.forEach((c, idx) => {
-    const cy = 76 + idx * rowHeight + 25;
-    const cid = c.id;
-    const isOk = c.status === 'ok';
-    const pinColor = isOk ? 'var(--success)' : 'var(--danger)';
-
-    // Slot 1: Ingress Slot (Rack 1)
-    slotsSvg += `
-      <g class="patch-socket" data-cid="${cid}" onclick="highlightCircuit('${cid}')">
-        <rect x="${xIng + 10}" y="${cy - 20}" width="${wIng - 20}" height="40" rx="6" fill="var(--surface-3)" stroke="var(--border)" />
-        <text x="${xIng + 18}" y="${cy - 4}" fill="var(--text)" font-size="11.5" font-weight="700">${h(c.ingressType)}</text>
-        <text x="${xIng + 18}" y="${cy + 12}" fill="var(--primary)" font-size="10.5" font-family="var(--mono)">${h(c.ingressPath)}</text>
-        <circle cx="${xIng + wIng - 16}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin"/>
-      </g>
-    `;
-
-    // Slot 2: Iran Socket (Rack 2)
-    const iranPinX = xIran + wIran - 16;
-    slotsSvg += `
-      <g class="patch-socket" data-cid="${cid}" onclick="highlightCircuit('${cid}')">
-        <rect x="${xIran + 10}" y="${cy - 20}" width="${wIran - 20}" height="40" rx="6" fill="var(--surface-3)" stroke="var(--border)" />
-        <circle cx="${xIran + 16}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin"/>
-        <text x="${xIran + 28}" y="${cy - 4}" fill="var(--text)" font-size="11.5" font-weight="700">${h(c.iran)}</text>
-        <text x="${xIran + 28}" y="${cy + 12}" fill="var(--text-muted)" font-size="10.5" font-family="var(--mono)">port: :${h(c.iranPort)}</text>
-        <circle cx="${iranPinX}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin patch-pin-draggable" data-pin-type="iran" data-server="${h(c.iran)}" data-port="${h(c.iranPort)}" data-cid="${cid}" data-x="${iranPinX}" data-y="${cy}" onmousedown="startPatchDrag(event, this)" onmouseup="dropPatchPin(event, this)" onclick="onPinClick(event, this)"/>
-      </g>
-    `;
-
-    // Slot 3: Foreign Node Socket (Rack 3)
-    const nodePinX = xNode + 16;
-    const laneText = c.carrier === 'frp_gre' ? `lane: frp+gre (${c.frp_transport || 'quic'})` : (c.carrier === 'frp' ? `lane: frp (${c.frp_transport || 'quic'})` : `lane: ${h(c.carrier)}`);
-    slotsSvg += `
-      <g class="patch-socket" data-cid="${cid}" onclick="highlightCircuit('${cid}')">
-        <rect x="${xNode + 10}" y="${cy - 20}" width="${wNode - 20}" height="40" rx="6" fill="var(--surface-3)" stroke="var(--border)" />
-        <circle cx="${nodePinX}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin patch-pin-draggable" data-pin-type="node" data-node="${h(c.node)}" data-cid="${cid}" data-x="${nodePinX}" data-y="${cy}" onmousedown="startPatchDrag(event, this)" onmouseup="dropPatchPin(event, this)" onclick="onPinClick(event, this)"/>
-        <text x="${xNode + 28}" y="${cy - 4}" fill="var(--text)" font-size="11.5" font-weight="700">${h(c.node)}</text>
-        <text x="${xNode + 28}" y="${cy + 12}" fill="var(--text-muted)" font-size="10.5" font-family="var(--mono)">${laneText}</text>
-        <circle cx="${xNode + wNode - 16}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin"/>
-      </g>
-    `;
-
-    // Slot 4: Backend / Xray Socket (Rack 4)
-    slotsSvg += `
-      <g class="patch-socket" data-cid="${cid}" onclick="highlightCircuit('${cid}')">
-        <rect x="${xSvc + 10}" y="${cy - 20}" width="${wSvc - 20}" height="40" rx="6" fill="var(--surface-3)" stroke="var(--border)" />
-        <circle cx="${xSvc + 16}" cy="${cy}" r="6" fill="#111" stroke="${pinColor}" stroke-width="2.5" class="pin"/>
-        <text x="${xSvc + 28}" y="${cy - 4}" fill="var(--text)" font-size="11" font-weight="700">Xray Inbound</text>
-        <text x="${xSvc + 28}" y="${cy + 12}" fill="var(--primary)" font-size="11" font-family="var(--mono)">:${h(c.backendPort)}</text>
-      </g>
-    `;
-
-    // Cable 1: Ingress ➔ Iran Jumper
-    const p1x = xIng + wIng - 16, p2x = xIran + 16;
-    const d1 = svgCableD(p1x, cy, p2x, cy);
-    cablesSvg += `
-      <path d="${d1}" fill="none" class="cable-wire ws" data-cid="${cid}" stroke-width="2.5" opacity="0.6"/>
-    `;
-
-    // Cable 2: Cross-border Tunnel Cable (Iran ➔ Node)
-    const p3x = iranPinX, p4x = nodePinX;
-    const d2 = svgCableD(p3x, cy, p4x, cy);
-    const flowClass = isOk ? 'cable-flow' : 'down';
-    const plugClass = c.newlyPlugged ? 'newly-plugged' : '';
-    const carrierClass = ['ws', 'kcp', 'backhaul', 'noise', 'plain', 'frp', 'gre', 'frp_gre'].indexOf(c.carrier) >= 0 ? c.carrier : 'ws';
-
-    cablesSvg += `
-      <path d="${d2}" fill="none" stroke="transparent" stroke-width="20" style="cursor:pointer;" data-cid="${cid}" onclick="highlightCircuit('${cid}')"/>
-      <path d="${d2}" fill="none" class="cable-wire ${carrierClass} ${flowClass} ${plugClass}" data-cid="${cid}" onclick="highlightCircuit('${cid}')"/>
-    `;
-
-    // Cable 3: Node ➔ Backend Inbound Jumper
-    const p5x = xNode + wNode - 16, p6x = xSvc + 16;
-    const d3 = svgCableD(p5x, cy, p6x, cy);
-    cablesSvg += `
-      <path d="${d3}" fill="none" class="cable-wire ws" data-cid="${cid}" stroke-width="2.5" opacity="0.6"/>
-    `;
-  });
-
-  // Dynamic dragging cable element
-  cablesSvg += `<path id="dynamic_patch_wire" fill="none" style="display:none;" class="cable-wire active-drag" d=""/>`;
-
-  svg += cablesSvg;
-  svg += slotsSvg;
-  svg += `</svg></div>`;
-  w.innerHTML = svg;
-}
-
-function renderMiniWiring(n, ov){
-  const s = fnd(n);
-  if(!ov || ov.reachable === false) return '';
-  if(s.role === 'iran'){
-    const nodes = ov.nodes || [];
-    if(!nodes.length) return '';
-    const pills = nodes.slice(0, 5).map(nd => {
-      const tr = nd.transport || (ov.kcp && ov.kcp.enabled ? 'kcp' : 'ws');
-      const trBadge = '<span class="badge b-' + tr + '" style="font-size:10px;padding:1px 5px;">' + tr + '</span>';
-      return `<span class="mini-circuit-pill" onclick="nav('#/server/${h(nd.name)}')" style="cursor:pointer;" title="${t('details')}">
-        <span class="dot d-ok" style="width:7px;height:7px;"></span>
-        <span dir="ltr" class="mono" style="display:inline-flex;align-items:center;gap:4px;">:443/${h(nd.name)} ${trBadge} ➔ :${h(nd.port)}</span>
-      </span>`;
-    }).join(' ');
-    return `<div class="mini-wiring-strip">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span style="font-size:12px;font-weight:700;color:var(--text);">⚡ ${t('wb_circuit')}:</span>
-        ${pills}
-      </div>
-      <button class="gh" type="button" style="font-size:11px;padding:3px 8px;margin-inline-start:auto;" onclick="nav('#/routing')">${t('nav_routing')} ➔</button>
-    </div>`;
-  } else {
-    const main = ov.main_server || 'iran';
-    const tr = ov.main_tunnel || 'ws';
-    const svcs = [...(ov.services || []), ...(ov.backhaul_services || [])];
-    const svcText = svcs.map(x => ':' + x.inbound).join(', ') || '-';
-    return `<div class="mini-wiring-strip">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span style="font-size:12px;font-weight:700;color:var(--text);">⚡ ${t('wb_circuit')}:</span>
-        <span class="mini-circuit-pill"><span class="dot d-ok" style="width:7px;height:7px;"></span> ${h(main)}</span>
-        <span style="color:var(--text-muted);font-size:11px;">──────</span>
-        <span class="badge b-${tr}">${tr.toUpperCase()}</span>
-        <span style="color:var(--text-muted);font-size:11px;">──────➔</span>
-        <span class="mini-circuit-pill">${t('c_inbound')}: ${h(svcText)}</span>
-      </div>
-      <button class="gh" type="button" style="font-size:11px;padding:3px 8px;margin-inline-start:auto;" onclick="nav('#/routing')">${t('nav_routing')} ➔</button>
-    </div>`;
-  }
 }
 
 // ---------- namaye jadval: har edge yek radif ----------
@@ -2339,8 +1692,8 @@ async function statusModal(n){toast(t('loading'));
   <table><tr><th>NAME</th><th>PORT</th><th>INBOUND</th><th>USER URL</th></tr>${nodes}</table>
   <div class="row" style="margin-top:12px"><button class="gh" onclick="closeModal()">${t('close')}</button></div>`);}
 function copyText(id){const el=$(id);if(!el)return;const x=el.textContent;
- if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(x).then(()=>toast(t('copied')),()=>toast('copy?'));}
- else{const r=document.createRange();r.selectNode(el);getSelection().removeAllRanges();getSelection().addRange(r);try{document.execCommand('copy');toast(t('copied'));}catch(e){toast('copy?');}}}
+ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(x).then(()=>toast(t('rc_copied')),()=>toast('copy?'));}
+ else{const r=document.createRange();r.selectNode(el);getSelection().removeAllRanges();getSelection().addRange(r);try{document.execCommand('copy');toast(t('rc_copied'));}catch(e){toast('copy?');}}}
 function requireInputs(ids){let first=null;ids.forEach(id=>{const el=$(id),bad=!el||!(el.value||'').trim();if(el)el.setAttribute('aria-invalid',bad?'true':'false');if(bad&&!first)first=el;});if(first){toast(t('fill'));first.focus();return false;}return true;}
 async function addSrv(){
  const tr=$('conn_tr')?.value||'ssh';
@@ -2629,7 +1982,7 @@ async function disableIranCarrier(n,carrier){
   }
   const using=OVS[n].nodes.filter(x=>x.transport===carrier).map(x=>x.name);
   if(using.length){
-    toast(`⚠️ ابتدا حامل نودهای ${using.join(', ')} را از میز سیم‌کشی تغییر دهید؛ ${carrier.toUpperCase()} هنوز استفاده می‌شود.`);
+    toast(`⚠️ ابتدا حامل نودهای ${using.join(', ')} را از ردیف همان سرویس تغییر دهید؛ ${carrier.toUpperCase()} هنوز استفاده می‌شود.`);
     return;
   }
   await run(n,carrier+'_off');
@@ -2726,7 +2079,7 @@ function pxRm(n){formModal(t('t_px_rm'),[{id:'name',label:t('px_name'),req:1}],
 const CARRIERS=['ws','kcp','plain','noise','backhaul','frp','gre'];
 
 function nodeCarrier(ov){
- const c=((ov||{}).main_tunnel||'ws');
+ const c=(((ov||{}).status||{}).main||{}).transport||(ov||{}).main_tunnel||'ws';
  return CARRIERS.indexOf(c)>=0?c:'ws';
 }
 
@@ -2740,28 +2093,14 @@ function carrierSelect(n,ov){
 // pishfarz ast va faghat halat-e feli ra khamoosh mikonad.
 function setCarrier(n,next,cur){
  if(next===cur)return;
- const sel=$('car_'+n);
- const revert=()=>{if(sel)sel.value=cur;};
- const peers=SERVERS.filter(s=>s.role==='node');
- const sNode=patchNodeServer(n)||(peers.length===1?peers[0]:null);
- const circuits=buildWiringModel().circuits;
- const c=circuits.find(x=>x.node===n||x.nodeServer===n||(sNode && x.nodeServer===sNode.name));
- if(c&&c.iran){
-   quickCarrierModal(c.iran,c.node,next);
-   revert();
-   return;
- }
- if(!confirm(t('carrier_confirm').replace('%s',t('carrier_'+next)||next))){revert();return;}
- switch(next){
-   case 'ws':       run(n,carrierOffAction(cur)); break;
-   case 'kcp':      kcpOnNode(n); break;
-   case 'plain':    plainOnNode(n); break;
-   case 'noise':    noiseOnNode(n); break;
-   case 'backhaul': bhOnNode(n); break;
-   case 'frp':      frpOnNode(n); break;
-   case 'gre':      greOnNode(n); break;
-   default: revert();
- }
+ const sel=$('car_'+n); if(sel)sel.value=cur;
+ const ov=OVS[n]||{};
+ const names=[...new Set([...(ov.services||[]),...(ov.backhaul_services||[])].map(x=>x.name))];
+ if(names.length===1){nodeServiceAction(n,names[0],'configure',next);return;}
+ if(!names.length){toast(t('no_svc'));return;}
+ formModal(t('carrier'),[{id:'service',label:t('c_svc'),type:'select',val:names[0],opts:names.map(x=>({v:x,t:x}))}],v=>{
+  closeModal();nodeServiceAction(n,v.service,'configure',next);
+ });
 }
 
 // bargasht be ws: har halat dastur-e off-e khodash ra darad.
@@ -2883,44 +2222,8 @@ function iranNodeCarrierSel(iran,ov,name){
 // avaz kardan-e transport-e YEK node samt-e Iran ba hamahang-sazi-ye khodkar-e do-tarafe.
 async function setIranNodeCarrier(iran,name,next,cur){
  if(next===cur)return;
- const sel=$('icar_'+iran+'__'+name);
- const revert=()=>{if(sel)sel.value=cur;};
-  if(next==='frp'||next==='gre'||next==='frp_gre'){
-   quickCarrierModal(iran,name,next);
-   revert();
-   return;
- }
- if(!confirm(t('icarrier_confirm').replace('%s',t('carrier_'+next)||next).replace('%n',name))){revert();return;}
- const peers=SERVERS.filter(s=>s.role==='node');
- const sNode=patchNodeServer(name)||(peers.length===1?peers[0]:null);
- if(!sNode){
-   revert();
-   if(peers.length) quickCarrierModal(iran,name,next);
-   else toast('⚠️ نود خارجی در هاب ثبت نشده؛ ابتدا نود را اضافه کنید.');
-   return;
- }
- if(sNode){
-   try {
-     const existingIran = ((OVS[iran]||{}).nodes||[]).find(x => x.name === name);
-     const ovNode = OVS[sNode.name] || {};
-     const nodeSvc = [...(ovNode.services || []), ...(ovNode.backhaul_services || [])].find(x => x.name === name);
-     const existingPort = (existingIran && (existingIran.inbound_port || existingIran.port)) || (nodeSvc && nodeSvc.inbound) || null;
-     toast(`در حال همگام‌سازی حامل ${next.toUpperCase()} روی هر دو سرور ایران و نود...`);
-     const ok=await applyPatchConnection(iran,name,next,existingPort,null,null,{node_server:sNode.name,silent:true});
-     if(ok){
-       toast(`✓ حامل نود ${name} در هر دو سمت با موفقیت به ${next.toUpperCase()} تغییر یافت.`);
-       await loadOv(iran); await loadOv(sNode.name);
-       return;
-     }
-     revert();
-     toast(`⚠️ همگام‌سازی حامل روی نود انجام نشد؛ تغییر لغو گردید تا تانل قطع نشود.`);
-     return;
-   } catch(e){
-     revert();
-     toast(`⚠️ خطا در همگام‌سازی خودکار: ${e.message}؛ تغییر لغو شد.`);
-     return;
-   }
- }
+ const sel=$('icar_'+iran+'__'+name); if(sel)sel.value=cur;
+ quickCarrierModal(iran,name,next);
 }
 
 function bhOnNode(n){formModal(t('t_bh_node'),bhNodeFields(),

@@ -882,7 +882,7 @@ def parse_direct_status(text):
 
 def parse_backhaul_status(text):
     text = text or ""
-    enabled = ("roshan" in text) or ("active" in text)
+    enabled = bool(re.search(r"\b(roshan|active)\b", text))
     port = None
     m = re.search(r":(\d+)", text)
     if m: port = m.group(1)
@@ -890,18 +890,25 @@ def parse_backhaul_status(text):
     m = re.search(r"node-haye backhaul[:：]\s*([A-Za-z0-9_,\s-]+)$", text, re.M)
     if m:
         nodes = [x.strip() for x in m.group(1).split(",") if x.strip()]
-    return {"enabled": enabled, "port": port, "nodes": nodes}
+    tr = re.search(r"(?:transport[=:]\s*|server=)([a-z]+)", text)
+    profile = re.search(r"profile[=:]\s*([a-z]+)", text)
+    return {"enabled": enabled, "port": port, "nodes": nodes,
+            "transport": tr.group(1) if tr else None,
+            "profile": profile.group(1) if profile else None}
 
 def parse_frp_status(text):
     text = text or ""
-    enabled = ("roshan" in text) or ("active" in text) or ("halat tunnel: frp" in text)
+    enabled = bool(re.search(r"\b(roshan|active)\b", text)) or ("halat tunnel: frp" in text)
     port = None
     m = re.search(r"port\s+(\d+)", text)
     if m: port = m.group(1)
     if not port:
         m = re.search(r":(\d+)", text)
         if m: port = m.group(1)
-    return {"enabled": enabled, "port": port}
+    tr = re.search(r"transport[=:]\s*(tcp|quic|kcp|websocket)\b", text)
+    if not tr:
+        tr = re.search(r"port\s+\d+\s+\((tcp|quic|kcp|websocket)\)", text)
+    return {"enabled": enabled, "port": port, "transport": tr.group(1) if tr else None}
 
 def parse_gre_status(text):
     text = text or ""
@@ -1463,7 +1470,7 @@ class Handler(BaseHTTPRequestHandler):
             ov["gre"] = parse_gre_status(R(["ratholenode", "gre", "status"]).get("out", ""))
             ups = parse_upstream_ls(R(["ratholenode", "upstream", "ls"]).get("out", ""))
             ov["upstreams"] = ups["upstreams"]
-            if not ov.get("main_tunnel") or ov.get("main_tunnel") == "ws":
+            if not ov.get("status", {}).get("main", {}).get("transport"):
                 if ov.get("frp", {}).get("enabled"):
                     ov["main_tunnel"] = "frp"
                 elif ov.get("backhaul", {}).get("enabled"):

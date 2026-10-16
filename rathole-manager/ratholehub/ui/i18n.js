@@ -1,6 +1,8 @@
 // ---------- i18n (fa/en) — faghat baraye hub ----------
 const DICT={
  fa:{
+ service_game_hint:"این سرویس SNI است؛ از بخش سرویس‌های گیمینگ مدیریت کنید.",service_peer_unavailable:"وضعیت سرویس‌های نود قابل دریافت نیست؛ تغییری اعمال نشد.",
+service_config:"حامل و پروتکل",service_health:"تست سلامت",service_copy:"ساخت کانفیگ VLESS",service_peer:"مدیریت سمت مقابل",service_remove_pair:"حذف از دو سمت",service_iran_missing:"سرویس متناظر در ایران پیدا نشد؛ وضعیت سرورها را تازه کنید.",service_testing:"در حال تست",service_uuid:"UUID واقعی کاربر Xray",service_public_host:"دامنه یا IP عمومی ایران",service_config_invalid:"UUID، آدرس عمومی، مسیر یا پورت معتبر نیست.",service_remove_confirm:"سرویس %s از ایران و نود حذف شود؟",
   auto:'بروزرسانی خودکار',refresh:'تازه سازی',theme:'پوسته',view:'نوع نمایش',nav_label:'منوی اصلی',settings:'تنظیمات',audit:'گزارش فعالیت‌ها',logout:'خروج',
   login_title:'ورود به پنل مدیریت',pw_ph:'رمز عبور مدیریت',login_btn:'ورود',pw_wrong:'رمز عبور اشتباه است',
   add_server:'افزودن سرور',f_name:'نام',f_host:'هاست / IP',f_user:'کاربر SSH',f_port:'پورت SSH',add_btn:'+ افزودن',
@@ -63,7 +65,7 @@ const DICT={
   game_svcs:'سرویس‌های گیمینگ (SNI/443)',add_game:'+ افزودن گیم',get_cert:'دریافت گواهی TLS',no_game:'هیچ سرویس گیمی وجود ندارد.',
   c_data:'پورت داده',c_node_inb:'اینباند نود',
   main_tunnel:'تونل اصلی ➔',restart_tunnel:'راه‌اندازی مجدد تونل',migrate:'نقشه مهاجرت',
-  carrier:'پروتکل ارتباطی تونل:',carrier_hint:'هر نود دقیقاً از یک حامل استفاده می‌کند — انتخاب جدید جایگزین قبلی می‌شود.',
+  carrier:'پروتکل ارتباطی تونل:',carrier_hint:'حامل اصلی بین سرویس‌های Rathole مشترک است؛ سرویس‌های Backhaul مسیر جدا دارند.',
   carrier_confirm:'پروتکل این نود به %s تغییر کند؟',
   icarrier_confirm:'ترانسپورت نود «%n» در سمت ایران به %s تغییر کند؟',
   carrier_ws:'وب‌سوکت استاندارد (WebSocket + TLS روی ۴۴۳)',carrier_kcp:'کی‌سی‌پی ضد اختلال (UDP + FEC)',
@@ -73,7 +75,7 @@ const DICT={
   mode_ws:'ws',mode_kcp:'kcp',mode_plain:'plain',mode_noise:'noise',mode_backhaul:'backhaul',mode_game:'game',mode_frp:'frp',mode_gre:'gre',mode_frp_gre:'frp+gre',
   set_main:'تنظیم تونل اصلی',l_iran_srv:'سرور ایران',no_iran:'هیچ سرور ایرانی در هاب ثبت نشده است — ابتدا یکی اضافه کنید.',
   main_domain_tls:'دامنه رسمی + گواهی معتبر TLS',main_ip_sni:'اتصال مستقیم IP + پوشش SNI',main_ip_self:'اتصال IP + گواهی Self-Signed',main_ip_self_confirm:'گواهی Self-Signed روی ایران ساخته و در نود اعتماد می‌شود. ادامه؟',
-  wire_to_node:'افزودن به نود',wire_title:'سیم‌کشی نود به مقصد',l_dst_node:'مقصد (نود / بالادست)',
+  wire_to_node:'افزودن به نود',wire_title:'افزودن سرویس به نود',l_dst_node:'مقصد (نود / بالادست)',
   upd_all:'بروزرسانی همگانی',cf_upd_all:'همه سرورها به نوبت بروزرسانی شوند؟',upd_wait:'در صف انتظار',upd_running:'در حال بروزرسانی…',
   upd_ok:'بروزرسانی موفق ✓',upd_fail:'خطا در بروزرسانی ✕',upd_done:'بروزرسانی به پایان رسید',ver_ok:'نسخه بروز است',ver_old:'نسخه قدیمی است — بروزرسانی کنید',
   no_node_dst:'هیچ نود خارجی در دسترس نیست.',wire_fail:'خطا در دریافت توکن نود.',
@@ -218,6 +220,8 @@ const DICT={
 
  },
  en:{
+ service_game_hint:"Manage this SNI service in the gaming services section.",service_peer_unavailable:"Node service state is unavailable; no changes applied.",
+service_config:"Carrier and protocol",service_health:"Health test",service_copy:"Create VLESS config",service_peer:"Manage peer",service_remove_pair:"Remove both ends",service_iran_missing:"Matching Iran service not found; refresh server status.",service_testing:"Testing",service_uuid:"Actual Xray user UUID",service_public_host:"Public Iran domain or IP",service_config_invalid:"Invalid UUID, public host, path or port.",service_remove_confirm:"Remove service %s from Iran and node?",
   auto:'Auto refresh',refresh:'Refresh',theme:'Theme',view:'View',nav_label:'Main navigation',settings:'Settings',audit:'Activity log',logout:'Logout',
   login_title:'Panel login',pw_ph:'Admin password',login_btn:'Login',pw_wrong:'Wrong password',
   add_server:'Add server',f_name:'Name',f_host:'Host/IP',f_user:'SSH user',f_port:'SSH port',add_btn:'+ Add',
@@ -280,7 +284,7 @@ const DICT={
   game_svcs:'Game services (SNI/443)',add_game:'+ game',get_cert:'Get certificate',no_game:'No game services.',
   c_data:'Data',c_node_inb:'Node inbound',
   main_tunnel:'Main tunnel →',restart_tunnel:'restart tunnel',migrate:'Migration map',
-  carrier:'Tunnel carrier:',carrier_hint:'Each node has exactly ONE carrier — picking a new one replaces the old.',
+  carrier:'Tunnel carrier:',carrier_hint:'Rathole services share the main carrier; Backhaul services use a separate lane.',
   carrier_confirm:'Switch this node\'s carrier to %s?',
   icarrier_confirm:'Switch node "%n" transport to %s on the Iran side? (remember: the node side must be set to the same carrier)',
   carrier_ws:'ws (default — websocket+TLS on 443)',carrier_kcp:'kcp (UDP+FEC)',
@@ -290,7 +294,7 @@ const DICT={
   mode_ws:'ws',mode_kcp:'kcp',mode_plain:'plain',mode_noise:'noise',mode_backhaul:'backhaul',mode_game:'game',mode_frp:'frp',mode_gre:'gre',mode_frp_gre:'frp+gre',
   set_main:'Set main tunnel',l_iran_srv:'Iran server',no_iran:'No Iran server registered in the hub — add one first.',
   main_domain_tls:'Domain + public TLS',main_ip_sni:'IP dial + domain SNI',main_ip_self:'IP + self-signed TLS',main_ip_self_confirm:'Create an IP self-signed certificate on Iran and trust its public certificate on this node. Continue?',
-  wire_to_node:'Add to node',wire_title:'Wire node to target',l_dst_node:'Target (node / upstream)',
+  wire_to_node:'Add to node',wire_title:'Add service to node',l_dst_node:'Target (node / upstream)',
   upd_all:'Update all',cf_upd_all:'Update all servers one by one?',upd_wait:'queued',upd_running:'updating…',
   upd_ok:'updated',upd_fail:'failed',upd_done:'update finished',ver_ok:'version up to date',ver_old:'outdated — please update',
   no_node_dst:'No foreign node reachable (add/start one first).',wire_fail:'Failed to fetch node token.',

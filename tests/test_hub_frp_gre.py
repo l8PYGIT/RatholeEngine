@@ -24,6 +24,14 @@ WRITE_ACTIONS  = hub.WRITE_ACTIONS
 mock_run       = hub.mock_run
 
 class TestFRPAndGREHubCmds(unittest.TestCase):
+    def test_status_retains_protocol_and_does_not_match_inactive(self):
+        for protocol in ('tcp', 'quic', 'kcp', 'websocket'):
+            self.assertEqual(hub.parse_frp_status('halat tunnel: frp\n remote: 1.2.3.4:7000 transport: ' + protocol)['transport'], protocol)
+            self.assertEqual(hub.parse_frp_status('FRP (reverse tunnel): roshan port 7000 (' + protocol + ')')['transport'], protocol)
+        self.assertEqual(hub.parse_backhaul_status('backhaul client: active (transport=wssmux, profile=balanced)')['transport'], 'wssmux')
+        self.assertFalse(hub.parse_backhaul_status('backhaul client: inactive')['enabled'])
+        self.assertFalse(hub.parse_frp_status('frpc: inactive')['enabled'])
+
     def test_frp_iran_commands(self):
         self.assertEqual(build_iran_cmd("frp_status", {}), ["ratholectl", "frp", "status"])
         self.assertEqual(build_iran_cmd("frp_show", {}), ["ratholectl", "frp", "show"])

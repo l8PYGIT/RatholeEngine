@@ -980,8 +980,18 @@ cmd_gre(){
     on)   cmd_gre_on "$@" ;;
     off)  cmd_gre_off "${1:-}" ;;
     status) cmd_gre_status ;;
-    *) die "estefade: ratholenode gre <on <iran_ip> [tunnel_ip] [gre_name]|off [gre_name]|status>" ;;
+    probe) cmd_gre_probe "${1:-}" "${2:-gre1}" ;;
+    *) die "estefade: ratholenode gre <on <iran_ip> [tunnel_ip] [gre_name]|off [gre_name]|status|probe <peer_ip> [gre_name]>" ;;
   esac
+}
+
+cmd_gre_probe(){
+  local peer_ip="${1:-}" gre_name="${2:-gre1}"
+  echo "$peer_ip" | grep -qE '^[0-9.]+$' || die "peer_ip namotabar ast."
+  echo "$gre_name" | grep -qE '^[a-zA-Z0-9_-]{2,15}$' || die "gre_name namotabar ast."
+  ip link show "$gre_name" >/dev/null 2>&1 || { err "GRE interface '$gre_name' peyda nashod."; return 1; }
+  ping -I "$gre_name" -c 2 -W 2 "$peer_ip" >/dev/null 2>&1 || { err "GRE peer $peer_ip az $gre_name dastres nist (proto 47/firewall/IP ra check kon)."; return 1; }
+  log "GRE peer $peer_ip az $gre_name dastres ast."
 }
 
 cmd_gre_on(){

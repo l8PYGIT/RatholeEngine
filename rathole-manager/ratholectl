@@ -2971,8 +2971,23 @@ cmd_frp(){
         echo "FRP (reverse tunnel): $(c_y 'khamoosh')"
       fi
       ;;
+    ready)
+      local name="${1:-}" port i
+      echo "$name" | grep -qE '^[A-Za-z0-9_-]{1,40}$' || die "name-e node namotabar ast."
+      port="$(jq -r --arg n "$name" '.nodes[] | select(.name==$n) | .port // empty' "$STATE" 2>/dev/null)"
+      [ -n "$port" ] || die "node '$name' peyda nashod."
+      for ((i=0; i<10; i++)); do
+        if ss -ltnpH "sport = :$port" 2>/dev/null | grep -qE "127\\.0\\.0\\.1:${port}[[:space:]].*\\\"frps\\\""; then
+          log "FRP proxy-e '$name' rooye 127.0.0.1:$port amade ast."
+          return 0
+        fi
+        sleep 1
+      done
+      err "FRP proxy-e '$name' rooye 127.0.0.1:$port register nashod; journalctl -u frpc/frps ra check kon."
+      return 1
+      ;;
     show) shift || true; print_frp_connect "$@" ;;
-    *) die "estefade: ratholectl frp <on [port] [token] [transport]|off|node <name> on|off|status|show>" ;;
+    *) die "estefade: ratholectl frp <on [port] [token] [transport]|off|node <name> on|off|status|ready <name>|show>" ;;
   esac
 }
 

@@ -6,7 +6,7 @@
 #
 # tanzimat:  /etc/ratholehub/config.json   , inventory: /etc/ratholehub/inventory.json
 # mtghirhai mhiti baraye tst lvkal: RATHOLEHUB_CONF, RATHOLEHUB_INV, RATHOLEHUB_MOCK=1
-import os, sys, json, hmac, hashlib, time, subprocess, re, secrets, threading, shlex, shutil, traceback
+import os, sys, json, hmac, hashlib, time, subprocess, re, secrets, threading, shlex, shutil, traceback, ipaddress
 
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -367,28 +367,39 @@ def iran_main_server(s):
     return ("%s:443" % host if host else ""), ""
 
 def iran_public_host(server, fallback=""):
-    host = server.get("host")
-    is_loopback = bool(host and (host in ("localhost", "::1") or str(host).startswith("127.") or str(host).startswith("0.0.0.0")))
-    if not host or is_loopback:
-        host = ""
-        try:
-            response = run_on_server(server, ["ratholectl", "status", "--json"])
+    def usable(value):
+        value = str(value or "").strip()
+        return value if (RE_HOST.fullmatch(value) and value not in ("localhost", "::1")
+                         and not value.startswith(("127.", "0.0.0.0"))) else ""
+    # public_ip-e khod-e Iran baraye data-plane ast; host-e inventory momken ast IP-e SSH/VPN bashad.
+    override = usable(server.get("public_ip"))
+    if override:
+        return override
+    inventory = usable(server.get("host"))
+    reported = ""
+    domain = ""
+    try:
+        response = run_on_server(server, ["ratholectl", "status", "--json"])
+        if response.get("rc") == 0:
             status = json.loads(response.get("out", "") or "{}")
-            pub_ip = str(status.get("public_ip", "") or "").strip()
-            if pub_ip and not (pub_ip in ("localhost", "::1") or pub_ip.startswith("127.") or pub_ip.startswith("0.0.0.0")):
-                host = pub_ip
-            else:
-                domain = str(status.get("domain", "") or "").strip()
-                if domain and not (domain in ("localhost", "::1") or domain.startswith("127.")):
-                    host = domain
-        except (ValueError, TypeError, AttributeError):
-            host = ""
-    if not host or (host in ("localhost", "::1") or str(host).startswith("127.") or str(host).startswith("0.0.0.0")):
-        if fallback and not (fallback in ("localhost", "::1") or str(fallback).startswith("127.") or str(fallback).startswith("0.0.0.0")):
-            host = fallback
-        else:
-            host = ""
-    return host if isinstance(host, str) and RE_HOST.fullmatch(host) else ""
+            reported = usable(status.get("public_ip"))
+            domain = usable(status.get("domain"))
+    except (ValueError, TypeError, AttributeError):
+        pass
+    lan_ranges = tuple(ipaddress.ip_network(net) for net in
+                       ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+                        "100.64.0.0/10", "169.254.0.0/16"))
+    def is_lan(value):
+        try:
+            ip = ipaddress.ip_address(value)
+            return any(ip in net for net in lan_ranges)
+        except ValueError:
+            return False
+    if reported and not is_lan(reported):
+        return reported
+    if inventory and not is_lan(inventory):
+        return inventory
+    return domain or reported or inventory or usable(fallback)
 
 
 def deploy_to_server(server):
@@ -1294,6 +1305,11 @@ class Handler(BaseHTTPRequestHandler):
         if "host" in d:
             if not RE_HOST.match(str(d["host"])): return self._send(400, {"error": "bad host"})
             changes["host"] = str(d["host"])
+        if "public_ip" in d:
+            public_ip = str(d["public_ip"] or "").strip()
+            if public_ip and not RE_HOST.fullmatch(public_ip):
+                return self._send(400, {"error": "bad public IP"})
+            changes["public_ip"] = public_ip
         if "ssh_user" in d:
             if not RE_NAME.match(str(d["ssh_user"])): return self._send(400, {"error": "bad user"})
             changes["ssh_user"] = str(d["ssh_user"])

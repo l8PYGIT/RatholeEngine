@@ -18,6 +18,19 @@ class ExecutionTests(unittest.TestCase):
             self.assertEqual(body['server']['api_token'], 'existing')
             self.assertEqual(save.call_args.args[0][0]['api_url'], 'http://192.0.2.5:8089')
 
+    def test_public_ip_override_is_saved_separately_from_ssh_host(self):
+        handler = object.__new__(hub.Handler)
+        handler._send = lambda code, body: (code, body)
+        handler._user = lambda: 'test'
+        inventory = [{'name': 'iran', 'role': 'iran', 'transport': 'ssh', 'host': '10.1.2.3'}]
+        with patch.object(hub, 'get_inventory', return_value=inventory), \
+             patch.object(hub, 'set_inventory') as save, \
+             patch.object(hub, 'audit_log'):
+            code, _ = handler._edit_server('iran', {'public_ip': '45.234.54.9'})
+            self.assertEqual(code, 200)
+            self.assertEqual(save.call_args.args[0][0]['host'], '10.1.2.3')
+            self.assertEqual(save.call_args.args[0][0]['public_ip'], '45.234.54.9')
+
     def test_ssh_preserves_remote_argv(self):
         args = ['bash', '-c', 'printf "%s" "a b"; exit 7']
         with patch.object(hub, 'MOCK', False), patch.object(hub, 'get_config', return_value={}), patch.object(hub.subprocess, 'run', return_value=Mock(returncode=7, stdout='', stderr='')) as run:

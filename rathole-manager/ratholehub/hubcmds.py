@@ -211,6 +211,10 @@ def build_iran_cmd(action, a):
     # ---- frp: core-e reverse-tunnel-e fatedier/frp (frps) ----
     if action == "frp_status": return ["ratholectl", "frp", "status"]
     if action == "frp_show":   return ["ratholectl", "frp", "show"]
+    if action == "frp_ready":
+        name = a.get("name", "")
+        if not RE_NAME.match(name): return None
+        return ["ratholectl", "frp", "ready", name]
     if action == "frp_off":    return ["ratholectl", "frp", "off"]
     if action == "frp_on":
         port      = str(a.get("port", "7000") or "7000")
@@ -416,6 +420,11 @@ def build_node_cmd(action, a):
         return ["ratholenode", "frp", "on", rem, tok, tr]
     # ---- gre: tunnel-e shabake-ye L3 Linux (ip tunnel) ----
     if action == "gre_status": return ["ratholenode", "gre", "status"]
+    if action == "gre_probe":
+        peer = str(a.get("peer_ip", "") or "")
+        name = str(a.get("name", "gre1") or "gre1")
+        if not RE_IP.match(peer) or not RE_NAME.match(name): return None
+        return ["ratholenode", "gre", "probe", peer, name]
     if action == "gre_off":
         name = str(a.get("name", "") or "")
         cmd = ["ratholenode", "gre", "off"]

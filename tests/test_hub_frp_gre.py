@@ -38,6 +38,8 @@ class TestFRPAndGREHubCmds(unittest.TestCase):
         for tr in ("tcp", "kcp", "quic", "websocket"):
             cmd = build_iran_cmd("frp_on", {"port": "7000", "token": "abcdef0123456789", "transport": tr})
             self.assertEqual(cmd, ["ratholectl", "frp", "on", "7000", "abcdef0123456789", tr])
+        self.assertEqual(build_iran_cmd("frp_ready", {"name": "node1"}),
+                         ["ratholectl", "frp", "ready", "node1"])
 
     def test_frp_node_commands(self):
         self.assertEqual(build_node_cmd("frp_status", {}), ["ratholenode", "frp", "status"])
@@ -70,6 +72,8 @@ class TestFRPAndGREHubCmds(unittest.TestCase):
                          ["ratholenode", "gre", "on", "5.202.4.40", "10.10.10.2", "gre1"])
         # Validation checks
         self.assertIsNone(build_node_cmd("gre_on", {"remote_ip": "bad_ip"}))
+        self.assertEqual(build_node_cmd("gre_probe", {"peer_ip": "10.10.10.1", "name": "gre1"}),
+                         ["ratholenode", "gre", "probe", "10.10.10.1", "gre1"])
 
     def test_write_actions_contains_frp_and_gre(self):
         for act in ("frp_on", "frp_off", "gre_on", "gre_off"):

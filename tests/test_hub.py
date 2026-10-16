@@ -386,6 +386,22 @@ class TestIranPublicHostAndLs(unittest.TestCase):
             res = hub.iran_public_host(server, fallback="127.0.0.1")
             self.assertEqual(res, "45.234.54.9")
 
+    def test_iran_public_host_uses_reported_address_before_private_ssh_host(self):
+        server = {"name": "iran", "host": "10.1.2.3"}
+        with mock.patch.object(hub, "run_on_server", return_value={"rc": 0, "out": '{"public_ip":"45.234.54.9"}'}):
+            self.assertEqual(hub.iran_public_host(server), "45.234.54.9")
+
+    def test_iran_public_host_uses_manual_override(self):
+        server = {"name": "iran", "host": "10.1.2.3", "public_ip": "45.234.54.10"}
+        with mock.patch.object(hub, "run_on_server") as remote:
+            self.assertEqual(hub.iran_public_host(server), "45.234.54.10")
+            remote.assert_not_called()
+
+    def test_iran_public_host_ignores_private_detected_ip_when_ssh_host_is_public(self):
+        server = {"name": "iran", "host": "45.234.54.9"}
+        with mock.patch.object(hub, "run_on_server", return_value={"rc": 0, "out": '{"public_ip":"10.1.2.3"}'}):
+            self.assertEqual(hub.iran_public_host(server), "45.234.54.9")
+
     def test_parse_iran_ls_includes_inbound_port(self):
         text = "trknetlen 1001 1001 - ws - /"
         nodes = hub.parse_iran_ls(text)

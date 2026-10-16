@@ -48,6 +48,8 @@ RAW_ARGC=$#
 ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
+    # Ba separator, baghi-e arg-ha (az jomle token-e node) be bootstrap miravand.
+    --) ARGS+=("$@"); break ;;
     --release|--version|-r)
       [ $# -ge 2 ] || die "$1 be yek meghdar niaz darad (masalan: --release v1.8.0 | latest | beta)."
       REL="$2"; shift 2 ;;

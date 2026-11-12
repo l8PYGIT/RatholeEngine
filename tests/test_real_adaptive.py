@@ -42,7 +42,9 @@ class RealAdaptive(unittest.TestCase):
                 pidfile=shlex.quote(str(d/'client.pid'));client=shlex.quote(str(d/'client.toml'));log=shlex.quote(str(d/'client.log'))
                 prefix+='reload_svc(){ if [ -f '+pidfile+' ] && kill -0 "$(cat '+pidfile+')" 2>/dev/null; then return 0; fi; nohup '+shlex.quote(CORE)+' '+client+' >'+log+' 2>&1 < /dev/null 9>&- & echo $! > '+pidfile+'; }; '
                 def shell(command):
-                    return subprocess.run(['bash','-c',prefix+command],capture_output=True,text=True,timeout=30)
+                    result = subprocess.run(['bash','-c',prefix+command],capture_output=True,text=True,timeout=30)
+                    self.assertNotIn('command not found', result.stderr)
+                    return result
                 def mode():
                     return next(line.split('=',1)[1] for line in (d/'node.env').read_text().splitlines() if line.startswith('TUNNEL='))
                 result=shell('gen_client && reload_svc');self.assertEqual(result.returncode,0,result.stderr)

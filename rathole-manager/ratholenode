@@ -2251,13 +2251,20 @@ adaptive_load_env(){
   done
 }
 
+adaptive_require_dependencies(){
+  local binary
+  for binary in python3 flock timeout; do
+    command -v "$binary" >/dev/null 2>&1 || { err "$binary baraye adaptive lazem ast."; return 1; }
+  done
+}
+
 # dastoor adaptive
 cmd_adaptive(){
   local sub="${1:-status}"; shift || true
   case "$sub" in
     on)
       need_root
-      need_bin python3; need_bin flock; need_bin timeout
+      adaptive_require_dependencies || return 1
       local interval="${ADAPTIVE_INTERVAL:-30}" failures="${ADAPTIVE_FAILURES:-3}" recoveries="${ADAPTIVE_RECOVERIES:-5}"
       while [ $# -gt 0 ]; do case "$1" in
         --interval)  interval="$2"; shift 2;;
@@ -2339,7 +2346,8 @@ print('consecutive_failures:', d.get('consecutive_failures','?'))
       ;;
     run)
       # ejra-ye controller: switch-e carrier agar lazem bashad
-      need_root; need_bin python3; need_bin flock; load_env; adaptive_load_env || return 1
+      need_root; adaptive_require_dependencies || return 1
+      load_env; adaptive_load_env || return 1
       [ "$ADAPTIVE_ENABLED" = "1" ] || { warn "adaptive khamoosh ast."; exit 0; }
       # flock: faghat yek instance hamzaman
       (

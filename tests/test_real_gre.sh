@@ -8,11 +8,19 @@ fi
 D="$(mktemp -d /tmp/rathole-gre-lab.XXXXXX)"
 P1= P2= S= C= HTTP=
 cleanup(){
+  local result=$?
+  trap - EXIT INT TERM
   for pid in "$C" "$S" "$HTTP" "$P1" "$P2"; do [ -z "$pid" ] || kill "$pid" 2>/dev/null || true; done
   for pid in "$C" "$S" "$HTTP" "$P1" "$P2"; do [ -z "$pid" ] || wait "$pid" 2>/dev/null || true; done
+  for pid in "$C" "$S" "$HTTP" "$P1" "$P2"; do
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "FAIL - lab child still running"; result=1; fi
+  done
   rm -rf "$D"
+  exit "$result"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 unshare -n -- sleep 180 & P1=$!
 unshare -n -- sleep 180 & P2=$!
 sleep .3
@@ -37,7 +45,7 @@ N1 ping -c 1 -W 2 10.203.1.2 >/dev/null
 echo 'ok - real GRE link failure and recovery'
 if [ -z "${FRPS_TEST_BIN:-}" ] || [ -z "${FRPC_TEST_BIN:-}" ]; then echo 'skip - FRP/GRE needs binary paths'; exit 0; fi
 printf 'gre-frp-payload' > "$D/index.html"
-N2 python3 -m http.server 19887 --bind 127.0.0.1 --directory "$D" >"$D/http.log" 2>&1 & HTTP=$!
+(exec nsenter -t "$P2" -n -- python3 -m http.server 19887 --bind 127.0.0.1 --directory "$D") >"$D/http.log" 2>&1 & HTTP=$!
 cat > "$D/server.toml" <<'CONF'
 bindAddr = "10.203.1.1"
 bindPort = 19888
@@ -56,8 +64,8 @@ localIP = "127.0.0.1"
 localPort = 19887
 remotePort = 19889
 CONF
-N1 "$FRPS_TEST_BIN" -c "$D/server.toml" >"$D/frps.log" 2>&1 & S=$!
-N2 "$FRPC_TEST_BIN" -c "$D/client.toml" >"$D/frpc.log" 2>&1 & C=$!
+(exec nsenter -t "$P1" -n -- "$FRPS_TEST_BIN" -c "$D/server.toml") >"$D/frps.log" 2>&1 & S=$!
+(exec nsenter -t "$P2" -n -- "$FRPC_TEST_BIN" -c "$D/client.toml") >"$D/frpc.log" 2>&1 & C=$!
 check_payload(){
   local i
   for i in $(seq 1 30); do

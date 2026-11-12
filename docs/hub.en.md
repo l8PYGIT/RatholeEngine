@@ -279,8 +279,8 @@ Files are served with a **filename whitelist** (no path joining, so path travers
 
 ## See also
 
-- [CLI Reference (Wiki)](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference) — `ratholectl hub` / `ratholectl agent` and related commands
-- [Hub Management (Wiki)](https://github.com/l8PYGIT/RatholeEngine/wiki/Hub-Management) — Persian wiki version of this page
+- [CLI Reference (Wiki)](https://l8pygit.github.io/RatholeEngine/wiki/CLI-Reference/) — `ratholectl hub` / `ratholectl agent` and related commands
+- [Hub Management (Wiki)](https://l8pygit.github.io/RatholeEngine/wiki/Hub-Management/) — Persian wiki version of this page
 - [`hub.md`](hub.md) — Persian version of this document
 - [`architecture.md`](architecture.md) — System architecture overview
 - [`README.fa.md`](README.fa.md) — full CLI reference

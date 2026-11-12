@@ -274,8 +274,8 @@ ratholehub/
 
 ## جستارهای مرتبط
 
-- [مرجع CLI (ویکی)](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference) — `ratholectl hub` / `ratholectl agent` و دستورهای مرتبط
-- [مدیریت هاب (ویکی)](https://github.com/l8PYGIT/RatholeEngine/wiki/Hub-Management) — نسخهٔ ویکی همین صفحه
+- [مرجع CLI (ویکی)](https://l8pygit.github.io/RatholeEngine/wiki/CLI-Reference/) — `ratholectl hub` / `ratholectl agent` و دستورهای مرتبط
+- [مدیریت هاب (ویکی)](https://l8pygit.github.io/RatholeEngine/wiki/Hub-Management/) — نسخهٔ ویکی همین صفحه
 - [`hub.en.md`](hub.en.md) — نسخهٔ انگلیسی این سند
 - [`architecture.md`](architecture.md) — نمای کلی معماری
 - [`README.fa.md`](README.fa.md) — مرجع کامل CLI

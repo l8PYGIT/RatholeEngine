@@ -20,7 +20,7 @@ _Built for censorship-resistant tunneling into Iran._
 ![python](https://img.shields.io/badge/python-stdlib%20only-3776AB?logo=python&logoColor=white)
 ![tunnel](https://img.shields.io/badge/tunnel-rathole%20%2B%20nginx-7c3aed)
 
-[**English**](#what-is-this) · [**فارسی**](docs/README.fa.md) · [**Docs site**](https://l8pygit.github.io/RatholeEngine/) · [**Full Wiki**](https://github.com/l8PYGIT/RatholeEngine/wiki) · [Quick start](#quick-start) · [Documentation](#documentation) · [Telegram](https://t.me/l8PY4NET)
+[**English**](#what-is-this) · [**فارسی**](docs/README.fa.md) · [**Docs site**](https://l8pygit.github.io/RatholeEngine/) · [**Full Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [Quick start](#quick-start) · [Documentation](#documentation) · [Telegram](https://t.me/l8PY4NET)
 
 </div>
 
@@ -186,7 +186,7 @@ TLS certs are never removed. The shared `common.sh` is removed only when no othe
 | Doc | Contents |
 |-----|----------|
 | [**Docs site (Pages)**](https://l8pygit.github.io/RatholeEngine/) | **Online documentation site** — Persian docs + wiki + English, built with MkDocs Material ([build guide](docs/website.md)). |
-| [**GitHub Wiki**](https://github.com/l8PYGIT/RatholeEngine/wiki) | **Complete GitHub Wiki** (Getting Started, CLI Reference, Adaptive Filtering, Hub, Troubleshooting). |
+| [**Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) | **Complete wiki** (Getting Started, CLI Reference, Adaptive Filtering, Hub, Troubleshooting) — Persian pages served by the docs site. |
 | [`docs/architecture.md`](docs/architecture.md) | Three roles, state→regenerate→reload principle, path==name==map==inbound invariant. |
 | [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [`fa`](docs/transport-modes.md) | All transport and ingress modes with commands (English · فارسی). |
 | [`docs/traffic-flow.md`](docs/traffic-flow.md) | Layer-by-layer packet path incl. direct-IP and proxy (Mermaid + SVG). |

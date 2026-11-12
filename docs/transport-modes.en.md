@@ -287,8 +287,8 @@ ratholenode adaptive test [--json]
 
 ## See also
 
-- [CLI Reference (Wiki)](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference) — full command signatures
-- [Workflow Guides (Wiki)](https://github.com/l8PYGIT/RatholeEngine/wiki/Workflow-Guides) — step-by-step: direct-IP setup, backhaul migration, multi-domain, multi-upstream
+- [CLI Reference (Wiki)](https://l8pygit.github.io/RatholeEngine/wiki/CLI-Reference/) — full command signatures
+- [Workflow Guides (Wiki)](https://l8pygit.github.io/RatholeEngine/wiki/Workflow-Guides/) — step-by-step: direct-IP setup, backhaul migration, multi-domain, multi-upstream
 - [`transport-modes.md`](transport-modes.md) — Persian version of this document
 - [`architecture.en.md`](architecture.en.md) — overall system architecture
 - [`hub.en.md`](hub.en.md) — Hub panel, service controls, REST Agent, and security model

@@ -18,7 +18,7 @@ _ساخته‌شده برای تونل مقاومِ سانسور به داخل �
 ![python](https://img.shields.io/badge/python-stdlib%20only-3776AB?logo=python&logoColor=white)
 ![tunnel](https://img.shields.io/badge/tunnel-rathole%20%2B%20nginx-7c3aed)
 
-[**English**](../README.md) · [**فارسی**](#این-چیست) · [**ویکی جامع (Wiki)**](https://github.com/l8PYGIT/RatholeEngine/wiki) · [شروع سریع](#شروع-سریع) · [Telegram](https://t.me/l8PY4NET)
+[**English**](../README.md) · [**فارسی**](#این-چیست) · [**ویکی جامع (Wiki)**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [شروع سریع](#شروع-سریع) · [Telegram](https://t.me/l8PY4NET)
 
 </div>
 

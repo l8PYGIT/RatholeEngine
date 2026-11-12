@@ -11,6 +11,7 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ### Changed
 - **انتقال کامل مخزن به `l8PYGIT/RatholeEngine`:** همه‌ی آدرس‌های `loopy-iri/tunnelplus` در کد و مستندات به slug جدید تغییر کرد — پیش‌فرض `install.sh` (`RATHOLE_GH`)، دانلود `ratholeagent.py` در `ratholectl`/`ratholenode`، پیش‌فرض `gh_repo` در `hub.py`، `tools/update-private.sh`، `tools/mkdocs_wiki_links.py` و همه‌ی نمونه‌های نصب در README/`docs/`/ویکی. حالا دستور یک‌خطی و صفحه‌ی مستندات به مخزن فعلی اشاره می‌کنند و از ریلیزهای همین مخزن نصب می‌شوند.
+- **لینک‌های ویکی:** چون تب Wiki مخزن جدید هنوز خالی است، همه‌ی ارجاع‌های `github.com/l8PYGIT/RatholeEngine/wiki/...` به صفحات ویکی روی همان سایت مستندات (`l8pygit.github.io/RatholeEngine/wiki/...`) تغییر کرد که همین محتوا را با جستجو و نسخه‌ی انگلیسی سرو می‌کند.
 
 ## [2.0.3] - 2026-11-12
 

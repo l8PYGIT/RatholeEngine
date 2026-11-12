@@ -209,4 +209,4 @@ ratholenode kcp on <IRAN_IP>:443 <KEY> <profile>
 
 - [`transport-modes.md`](transport-modes.md) — پروفایل‌های KCP و همه‌ی حالت‌های transport
 - [`architecture.md`](architecture.md) — معماری کلی سیستم
-- [مرجع CLI (ویکی)](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference) — `ratholectl tune`، `kcp`، `ratholenode tune`
+- [مرجع CLI (ویکی)](https://l8pygit.github.io/RatholeEngine/wiki/CLI-Reference/) — `ratholectl tune`، `kcp`، `ratholenode tune`

@@ -8,6 +8,7 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ### Changed
 - **Repository fully moved to `l8PYGIT/RatholeEngine`:** every `loopy-iri/tunnelplus` reference in code and docs now points at the new slug — the `install.sh` default (`RATHOLE_GH`), the `ratholeagent.py` download in `ratholectl`/`ratholenode`, the `gh_repo` default in `hub.py`, `tools/update-private.sh`, `tools/mkdocs_wiki_links.py`, and every install example in the README / `docs/` / wiki. The one-command install and the docs site now point at the current repository and install from its own releases.
+- **Wiki links:** since the new repository's Wiki tab is still empty, every `github.com/l8PYGIT/RatholeEngine/wiki/...` reference now points at the wiki pages on the docs site (`l8pygit.github.io/RatholeEngine/wiki/...`), which serves the same content with search and an English version.
 
 ## [2.0.3] - 2026-11-12
 

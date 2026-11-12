@@ -7,7 +7,8 @@
     رویسرور ایران فقط این را بزن و به سؤال‌ها جواب بده:
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
+      | sudo bash
     ```
 
 ---
@@ -34,7 +35,8 @@
 روی **سرور ایران**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
+  | sudo bash
 ```
 
 ### چه چیزهایی می‌پرسد؟
@@ -127,7 +129,8 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 همان دستور را بزن — یا اگر تعاملی می‌خواهی:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
+  | sudo bash
 # مرحلهٔ «حالت نصب» → 2 (node)
 ```
 

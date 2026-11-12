@@ -7,7 +7,8 @@ For a manual / fully custom install see the [full install manual](install-manual
     On the Iran server, run this and answer the prompts:
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
+      | sudo bash
     ```
 
 ---
@@ -34,7 +35,8 @@ For a manual / fully custom install see the [full install manual](install-manual
 On the **Iran server**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
+  | sudo bash
 ```
 
 ### What it asks
@@ -127,7 +129,8 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 Run that command — or, if you prefer interactive:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
+  | sudo bash
 # install mode → 2 (node)
 ```
 

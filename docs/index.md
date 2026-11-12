@@ -72,7 +72,8 @@
 **ساده‌ترین راه: یک دستور، بعد فقط به سؤال‌ها جواب بده.**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
+  | sudo bash
 ```
 
 نصب‌کننده نسخه را می‌پرسد (Enter = آخرین نسخه)، سپس منوی نقش

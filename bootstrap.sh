@@ -39,7 +39,7 @@ err(){ printf '%s %s\n' "$(c_r '[!]')" "$*" >&2; }
 die(){ err "$*"; exit 1; }
 # zir-e `curl ... | sudo bash` stdin pipe ast na terminal؛ agar /dev/tty baz shavad
 # stdin ra be /dev/tty vasl mikonim ta hameye porsesh-ha va subshell-ha ba terminal kar konand.
-if [ ! -t 0 ] && [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
+if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then
   exec < /dev/tty
 fi
 

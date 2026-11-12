@@ -27,7 +27,7 @@ die(){ err "$*"; exit 1; }
 # hamchenin `[ -r /dev/tty ]` DOROGH migoyad (device hamishe readable ast، hatta bedoon-e
 # controlling terminal) — pas /dev/tty ra VAGHEAN BAZ mikonim, mesl-e bootstrap.sh.
 TTY_DEV=""
-if [ ! -t 0 ] && [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
+if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then
   exec < /dev/tty
 fi
 if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then TTY_DEV="/dev/tty"; fi

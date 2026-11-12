@@ -69,9 +69,38 @@
 
 ## شروع سریع
 
-=== "پنل ایران"
+**ساده‌ترین راه: یک دستور، بعد فقط به سؤال‌ها جواب بده.**
 
-    نصب غیرتعاملی پنل روی سرور ایران (nginx + rathole server + `ratholectl`):
+```bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+```
+
+نصب‌کننده نسخه را می‌پرسد (Enter = آخرین نسخه)، سپس منوی نقش
+(`1` پنل ایران · `2` نود خارج · `3` آپدیت · `7` حذف) و بعد مشخصات همان نقش
+(دامنه و مسیر گواهی برای پنل؛ آدرس/نام/توکن/پورت برای نود).
+
+[**راهنمای مرحله‌به‌مرحلهٔ نصب تعاملی →**](quickstart.md){ .md-button .md-button--primary }
+[راهنمای نصب دستی (کامل)](install-manual.fa.md){ .md-button }
+
+??? example "همان سؤال‌ها، به‌صورت متنی (برای اینکه بدانی چه چیزی می‌آید)"
+
+    ```text
+    kodam noskhe nasb shavad?  →  Enter (latest)
+    halat nasb ra entekhab kon:
+      1) panel (server Iran)
+      2) node (server kharej)
+      3) update  4) fght amade-sazi  5) rollback  6) list-e backup-ha  7) hazf kamel
+    entekhab [1/2/3/4/5/6/7]:  →  1
+
+    damnh (masalan btli.ir):  panel.example.ir
+    masir fullchain.pem [/root/cert/panel.example.ir/fullchain.pem]:  ← Enter
+    masir privkey.pem   [/root/cert/panel.example.ir/privkey.pem]:    ← Enter
+    ... بقیه: Enter
+    ```
+
+=== "نصب غیرتعاملی (پنل)"
+
+    اگر نمی‌خواهی هیچ سؤالی پرسیده شود:
 
     ```bash
     curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
@@ -81,17 +110,7 @@
         --key       /root/cert/panel.example.ir/privkey.pem
     ```
 
-    سپس نود تعریف کنید و دستور نصبش را بگیرید:
-
-    ```bash
-    sudo ratholectl add trk01 2087 --api-port 62050
-    sudo ratholectl show trk01
-    ```
-
-=== "نود خارج"
-
-    روی نود خارج از ایران، همان نصب‌کننده را با `--node` اجرا کنید
-    (آرگومان‌های بعد از `--` به نصب‌کنندهٔ نود می‌رسند):
+=== "نصب غیرتعاملی (نود)"
 
     ```bash
     curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
@@ -99,11 +118,7 @@
         --server panel.example.ir:443 --name trk01 --token <TOKEN> --inbound-port 2087
     ```
 
-    `TOKEN` را از خروجی `ratholectl show trk01` بردارید.
-
 === "هاب (Hub)"
-
-    روی همان سرور ایران:
 
     ```bash
     sudo ratholectl hub on          # نصب + روشن‌کردن پنل پشت nginx (پیش‌فرض 8088)
@@ -174,6 +189,7 @@
 
     ---
 
+    - [شروع سریع (تعاملی)](quickstart.md)
     - [راهنمای نصب دستی](install-manual.fa.md)
     - [مرجع کامل CLI](README.fa.md)
     - [معماری سیستم](architecture.md)
@@ -199,6 +215,7 @@
 
     ---
 
+    - [Quick start (interactive)](quickstart.en.md)
     - [Install Manual](install-manual.md)
     - [Architecture](architecture.en.md)
     - [Transport Modes](transport-modes.en.md)

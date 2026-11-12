@@ -81,12 +81,25 @@ Details: [`docs/transport-modes.md`](docs/transport-modes.md).
 
 ## Quick start
 
-**One command from GitHub** (downloads the latest release bundle, then runs the installer). Defaults to `l8PYGIT/RatholeEngine` — override with `RATHOLE_GH` to use a fork:
+**One command, then just answer the prompts.** It asks for the version (Enter = latest), shows a
+role menu (`1` Iran panel · `2` foreign node · `3` update · `7` uninstall), and then asks only the
+few details that role needs:
 
 ```bash
-# Fully interactive (asks panel/node + details)
 curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+```
 
+For the panel that is **the domain and the certificate paths** (everything else: press Enter); for a
+node it is **server address, name, token and inbound port**.
+
+> **Step-by-step walkthrough** (what each prompt means, with expected answers and a
+> troubleshooting table): [`docs/quickstart.md`](docs/quickstart.md) ·
+> [English](docs/quickstart.en.md).
+
+Prefer no questions at all? Pass everything as flags (defaults to `l8PYGIT/RatholeEngine`,
+override with `RATHOLE_GH`):
+
+```bash
 # Iran server (panel), non-interactive:
 curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --panel \
   --domain panel.example.ir \
@@ -103,7 +116,7 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 Install a **specific released version** with `--release` (run with no arguments and it asks; Enter = latest):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.0.2 --panel --domain panel.example.ir --fullchain /path/fullchain.pem --key /path/privkey.pem
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.0.3 --panel --domain panel.example.ir --fullchain /path/fullchain.pem --key /path/privkey.pem
 ```
 
 `--beta` takes the newest pre-release, `--stable` the newest stable. From an installed server: `ratholectl update v2.0.2` / `ratholenode update v2.0.2`. Note `RATHOLE_RELEASE=... curl ... | sudo bash` does **not** work — the variable goes to `curl` and `sudo` strips it; use the flag.
@@ -195,6 +208,7 @@ TLS certs are never removed. The shared `common.sh` is removed only when no othe
 | [`docs/amneziawg-reverse.md`](docs/amneziawg-reverse.md) | A separate AmneziaWG reverse-tunnel design (not part of the rathole flow). |
 | [`docs/website.md`](docs/website.md) · [`en`](docs/website.en.md) | How to build/publish the static docs website + platform comparison (MkDocs Material, VitePress — what Marzban uses —, Docusaurus, Docsify). |
 | [`docs/README.fa.md`](docs/README.fa.md) | **Full Persian CLI reference + install/uninstall flows.** |
+| [`docs/quickstart.md`](docs/quickstart.md) · [`en`](docs/quickstart.en.md) | **Quick start (interactive):** one command, every prompt explained, verification, add-node, troubleshooting table. |
 | [`docs/install-manual.md`](docs/install-manual.md) | **Full manual install (English):** Iran panel + Pasargad config + foreign nodes + hub, step by step. |
 | [`docs/install-manual.fa.md`](docs/install-manual.fa.md) | Same manual install guide, **Persian**. |
 | [`CHANGELOG.en.md`](CHANGELOG.en.md) | English changelog (translated from the Finglish source). |

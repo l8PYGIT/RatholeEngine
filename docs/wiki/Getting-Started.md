@@ -2,6 +2,10 @@
 
 این راهنما روش‌های نصب و راه‌اندازی **RatholeEngine** (نسخه‌ی **v2.0.2**) را به همراه معماری لایه‌ای، نمای حامل‌ها و قدم‌های بعدی توضیح می‌دهد.
 
+!!! tip "می‌خواهی سریع تمام شود؟"
+    نسخهٔ **مرحله‌به‌مرحله و تعاملی** (یک دستور + توضیح همهٔ سؤال‌ها + جدول عیب‌یابی) اینجاست:
+    [شروع سریع — نصب تعاملی](../quickstart.md)
+
 ![داشبورد RatholeHub](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
 
 ---

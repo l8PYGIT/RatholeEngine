@@ -109,6 +109,7 @@ exclude_docs: |
 # localises raw.githubusercontent.com assets that point back into docs/.
 nav:
   - صفحهٔ اصلی: index.md
+  - شروع سریع: quickstart.md
   - فارسی:
       - راهنمای نصب: install-manual.fa.md
       - مرجع CLI: README.fa.md
@@ -127,6 +128,7 @@ nav:
       - راهنماهای عملی: wiki/Workflow-Guides.md
       - Adaptive Filtering: wiki/Adaptive-Filtering-Guide.md
   - English:
+      - Quick start: quickstart.en.md
       - Install Manual: install-manual.md
       - Architecture: architecture.en.md
       - Transport Modes: transport-modes.en.md

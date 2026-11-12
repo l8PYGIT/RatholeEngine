@@ -408,3 +408,5 @@ echo "  afzoodan node:   $(c_y 'sudo ratholectl add <name> <inbound_port> [--api
 echo "  list nodeha:   $(c_y 'sudo ratholectl ls')"
 echo "  mnvi kamel:    $(c_y 'sudo ratholectl menu')"
 echo "  barresi slamt:  $(c_y 'sudo ratholectl doctor')"
+echo
+echo "  kanal-e Telegram (etela' rasani va poshtibani):  $(c_y 'https://t.me/l8PY4NET')"

@@ -58,6 +58,16 @@ theme:
     - content.code.copy
     - content.tabs.link
 
+# Support / community links in the site footer (icons are bundled with Material).
+extra:
+  social:
+    - icon: fontawesome/brands/telegram
+      link: https://t.me/l8PY4NET
+      name: کانال تلگرام @l8PY4NET
+    - icon: fontawesome/brands/github
+      link: https://github.com/l8PYGIT/RatholeEngine
+      name: RatholeEngine on GitHub
+
 # Material's search plugin (richer than MkDocs' built-in one). The separator
 # also splits on ZWNJ (U+200C) so Persian compound words are searchable.
 plugins:

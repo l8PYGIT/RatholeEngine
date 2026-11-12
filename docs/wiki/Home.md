@@ -67,6 +67,13 @@
 
 ---
 
+## 📢 ارتباط و پشتیبانی
+
+کانال تلگرام: **[t.me/l8PY4NET](https://t.me/l8PY4NET)** — اعلان نسخه‌های جدید، نکته‌های راه‌اندازی و سریع‌ترین جای پرسیدن سؤال.
+گزارش باگ/درخواست ویژگی: **[GitHub Issues](https://github.com/l8PYGIT/RatholeEngine/issues)**
+
+---
+
 ## 📜 لایسنس (License)
 
 پروژه تحت لایسنس **[AGPL-3.0-or-later](https://github.com/l8PYGIT/RatholeEngine/blob/main/LICENSE)** به‌صورت متن‌باز منتشر شده است.

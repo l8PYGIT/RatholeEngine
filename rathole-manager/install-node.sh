@@ -186,3 +186,5 @@ echo "afzoodan service/IP bishtar rooye hamin tunnel:  ratholenode add-svc <name
 echo "afzoodan server Iran dovom:  ratholenode upstream add <id> <server:443> ; ratholenode upstream add-svc <id> <name> <token> <inbound>"
 echo "backup node:  ratholenode backup"
 echo "barresi log:  journalctl -u rathole-client -f"
+echo
+echo "kanal-e Telegram (etela' rasani va poshtibani):  https://t.me/l8PY4NET"

@@ -10,6 +10,7 @@
 [شروع سریع](#شروع-سریع){ .md-button .md-button--primary }
 [معماری](architecture.md){ .md-button }
 [ویکی](wiki/Home.md){ .md-button }
+[📢 کانال تلگرام](https://t.me/l8PY4NET){ .md-button }
 [مخزن GitHub](https://github.com/l8PYGIT/RatholeEngine){ .md-button }
 
 </div>
@@ -228,6 +229,12 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 </div>
 
 ---
+
+## پشتیبانی و کانال تلگرام
+
+!!! tip "📢 کانال تلگرام — [@l8PY4NET](https://t.me/l8PY4NET)"
+    اعلان نسخه‌های جدید، نکته‌های راه‌اندازی و سریع‌ترین جای پرسیدن سؤال.
+    برای گزارش باگ همراه لاگ، [Issues](https://github.com/l8PYGIT/RatholeEngine/issues) را بزن تا پیگیری شود.
 
 !!! note "سایت کاملاً آفلاین است"
     هیچ فونت، آیکون یا اسکریپتی از CDN گرفته نمی‌شود (`theme.font: false`).

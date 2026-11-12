@@ -84,6 +84,7 @@ systemctl restart rathole-agent
 IP="$(curl -fsSL --connect-timeout 3 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')"
 
 echo
+echo
 log "════════════════════════════════════════════════════════════════"
 log "  Rathole Agent ba movafaghiat nasb va faal shod!"
 log "════════════════════════════════════════════════════════════════"
@@ -96,4 +97,6 @@ echo "Dar panel RatholeHub -> Add Server:"
 echo "  - Connection: Agent REST API"
 echo "  - API URL:    http://${IP:-127.0.0.1}:${PORT}"
 echo "  - Token:      $TOKEN"
+echo
+echo "Kanal-e Telegram (etela' rasani va poshtibani):  https://t.me/l8PY4NET"
 log "════════════════════════════════════════════════════════════════"

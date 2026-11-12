@@ -2,6 +2,10 @@
 
 Thank you for contributing. This is a Bash + Python stdlib project — no build system, no package manager.
 
+📢 **Telegram channel: [@l8PY4NET](https://t.me/l8PY4NET)** — release news, setup tips, and the fastest
+place to ask a question before opening an issue. Bug reports with logs still belong in
+[Issues](https://github.com/l8PYGIT/RatholeEngine/issues).
+
 ## Quick start
 
 ```bash

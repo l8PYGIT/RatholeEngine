@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         Before filing: run `sudo ratholectl doctor` and check `sudo ratholectl logs`.
+        For quick questions you can also ask in the Telegram channel: **[@l8PY4NET](https://t.me/l8PY4NET)**.
   - type: dropdown
     id: role
     attributes:

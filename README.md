@@ -15,12 +15,13 @@ _Built for censorship-resistant tunneling into Iran._
 [![Release](https://img.shields.io/github/v/release/l8PYGIT/RatholeEngine?sort=semver&color=7c3aed)](https://github.com/l8PYGIT/RatholeEngine/releases/latest)
 [![License](https://img.shields.io/github/license/l8PYGIT/RatholeEngine?color=blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/l8PYGIT/RatholeEngine?style=flat&color=16a34a)](https://github.com/l8PYGIT/RatholeEngine/stargazers)
+[![Telegram](https://img.shields.io/badge/Telegram-%40l8PY4NET-26A5E4?logo=telegram&logoColor=white)](https://t.me/l8PY4NET)
 <br/>
 ![shell](https://img.shields.io/badge/shell-bash-4EAA25?logo=gnubash&logoColor=white)
 ![python](https://img.shields.io/badge/python-stdlib%20only-3776AB?logo=python&logoColor=white)
 ![tunnel](https://img.shields.io/badge/tunnel-rathole%20%2B%20nginx-7c3aed)
 
-[**English**](#what-is-this) · [**فارسی**](docs/README.fa.md) · [**Docs site**](https://l8pygit.github.io/RatholeEngine/) · [**Full Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [Quick start](#quick-start) · [Documentation](#documentation) · [Telegram](https://t.me/l8PY4NET)
+[**English**](#what-is-this) · [**فارسی**](docs/README.fa.md) · [**Docs site**](https://l8pygit.github.io/RatholeEngine/) · [**Full Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [Quick start](#quick-start) · [Documentation](#documentation) · [**Telegram channel**](https://t.me/l8PY4NET)
 
 </div>
 
@@ -38,6 +39,7 @@ _Built for censorship-resistant tunneling into Iran._
 - [Update & rollback](#update--rollback)
 - [Documentation](#documentation)
 - [Repository layout](#repository-layout)
+- [Community & support](#community--support)
 - [Donate](#donate)
 - [خلاصه‌ی فارسی](#خلاصهی-فارسی)
 
@@ -238,6 +240,17 @@ tools/update-private.sh   update an installed server from a private GitHub repo
 docs/                     documentation + assets/ (SVG/PNG diagrams)
 ```
 
+## Community & support
+
+| Where | What |
+|---|---|
+| 📢 **[Telegram channel — @l8PY4NET](https://t.me/l8PY4NET)** | Release announcements, setup tips, carrier/tunnel news and the fastest place to ask a question. |
+| 🐙 **[GitHub Issues](https://github.com/l8PYGIT/RatholeEngine/issues)** | Bug reports and feature requests (include `ratholectl doctor` output). |
+| 📚 **[Docs site](https://l8pygit.github.io/RatholeEngine/)** | Quick start, CLI reference, architecture, carriers, hub, troubleshooting. |
+
+> Support requests are usually answered fastest on Telegram; use Issues when you have logs to attach
+> or want the outcome tracked publicly.
+
 ## <a id="donate"></a>Donate
 
 If RatholeEngine helps you, consider supporting continued development:
@@ -267,6 +280,8 @@ If RatholeEngine helps you, consider supporting continued development:
 **نصب/آپدیت از مخزن خصوصی:** `install.sh --token <pat>` (یا `RATHOLE_GH_TOKEN`) و `tools/update-private.sh`؛ در حالت private آینه‌های عمومی ghproxy کنار گذاشته می‌شوند.
 
 **شروع سریع و مرجع کامل CLI (فارسی):** [`docs/README.fa.md`](docs/README.fa.md)
+
+**📢 کانال تلگرام:** [**@l8PY4NET**](https://t.me/l8PY4NET) — اعلان نسخه‌های جدید، نکته‌های راه‌اندازی و سریع‌ترین جای پرسیدن سؤال.
 
 **فهرست مستندات فارسی:**
 - [معماری](docs/architecture.md) · [حالت‌های transport](docs/transport-modes.md) · [مسیر ترافیک](docs/traffic-flow.md)

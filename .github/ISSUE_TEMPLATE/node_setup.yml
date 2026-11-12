@@ -7,6 +7,7 @@ body:
       value: |
         **First:** run `sudo ratholectl doctor` on the Iran server and `sudo ratholenode status` on the node.
         Check the [Troubleshooting wiki](https://l8pygit.github.io/RatholeEngine/wiki/Troubleshooting/) before filing.
+        Quick questions are welcome in the Telegram channel: **[@l8PY4NET](https://t.me/l8PY4NET)**.
   - type: dropdown
     id: transport
     attributes:

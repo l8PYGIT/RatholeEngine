@@ -1,12 +1,39 @@
 # Transport Modes — one tunnel, many carriers
 
-The rathole lane has **four carriers**: WebSocket/TLS, KCP, plain WebSocket, and Noise. Backhaul is a separate SMUX lane that can run beside rathole on the same foreign node. Game/SNI, direct-IP, and proxy are ingress modes rather than tunnel carriers.
+The rathole lane has **four carriers**: WebSocket/TLS, KCP, plain WebSocket, and Noise. Beside it run **independent lanes/cores**: Backhaul (SMUX), FRP, GRE (L3), and the FRP+GRE hybrid. Game/SNI, direct-IP, proxy, and fakeweb are ingress modes rather than tunnel carriers.
 
-> **Ownership rule:** `services.conf` belongs to the rathole lane and `bh-services.conf` belongs to the Backhaul lane. A service/path on an Iran server must be assigned to exactly one lane, while both client processes may stay active for different services.
+> **Ownership rule:** `services.conf` belongs to the rathole lane and `bh-services.conf` belongs to the Backhaul lane. A service/path on an Iran server must be assigned to exactly one lane (rathole, Backhaul, FRP, GRE), while several lanes may stay active for different services.
 
 ![Transport modes](assets/transport-modes.svg)
 
 > **Core invariant:** TLS is terminated only by nginx. The rathole-server transport is always `tls = false`; the default client uses `tls = true` over WebSocket to nginx/443.
+
+## Carrier Matrix (summary)
+
+| Carrier | Iran command | Node command | Notes |
+|---|---|---|---|
+| **ws** (default) | — (default) | — (default) | `wss://domain:443`; TLS on nginx |
+| **kcp** | `ratholectl kcp on <port> <profile>` | `ratholenode kcp on <iran_ip:udp_port> <key> <profile>` | UDP+FEC via kcptun; default port 443 |
+| **plain** | `ratholectl plain on <port>` | `ratholenode plain on <iran_ip:port>` | WebSocket without TLS; default 8880 |
+| **noise** | `ratholectl noise on <port>` + `ratholectl noise node <name> on` | `ratholenode noise on <iran_ip:port> <pubkey> [pattern]` | second rathole instance; default 2334 |
+| **backhaul** | `ratholectl backhaul on <port> [ws\|wsmux] <profile> nginx_tls` | `ratholenode backhaul on <domain> <token> [wss\|wssmux] <profile>` | SMUX behind nginx/443; default 3080 |
+| **frp** | `ratholectl frp on <port> [token] [tcp\|kcp\|quic\|websocket]` | `ratholenode frp on <iran_ip:port> <token> [transport] [remote_port]` | `fatedier/frp` core; default 7000 |
+| **gre** | `ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]` | `ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]` | L3 `ip tunnel`; default `gre1` on a /30 |
+| **frp_gre** | hub service controls (or `gre on` + `frp on` over the virtual IP) | same two steps on the node side | FRP multiplexed inside GRE |
+
+## Carrier Protocol Reporting and Switching via Service Controls
+
+The hub shows the actual carrier protocol on every service row (both the Iran server page and the node page), not just the lane name:
+
+- `FRP / TCP`, `FRP / KCP`, `FRP / QUIC`, `FRP / WEBSOCKET` (uppercased from the reported transport)
+- `Backhaul / WS`, `Backhaul / WSMUX`, `Backhaul / WSS`, `Backhaul / WSSMUX`
+- `KCP / UDP · balanced` (or `lossy`/`aggressive`)
+- `Noise / TCP`, `WebSocket / TLS` (ws), `WebSocket / TCP` (plain), `GRE / WebSocket`, `SNI / TLS` (game)
+- `FRP + GRE / <transport>` for the hybrid — note: in the current implementation the hybrid is recorded on the `FRP` lane, so the reported service label is `FRP / <transport>`; verify GRE separately with `gre probe`.
+
+If the server did not report a protocol, the label shows `?` — **the label alone does not prove connectivity**; run the Health test to confirm.
+
+**Switching happens through service controls, not a separate page:** the “Carrier and protocol” button on a service row opens the carrier/protocol modal (ws, kcp, plain, noise, backhaul, frp, gre, frp+gre); after applying, the path and Iran-side port stay unchanged. The other buttons on the same row are “Health test” (runs `doctor` on Iran), “Create VLESS config”, “Manage peer”, and “Remove both ends”. The routing map is a read-only topology/console view; since v2.0.2 the separate wiring page is gone and old links fall back to the dashboard.
 
 ---
 
@@ -175,17 +202,20 @@ ratholectl control-path rotate
 
 A standalone reverse tunnel core (`fatedier/frp`) operating alongside rathole and Backhaul. Designed for advanced connection multiplexing over TCP, KCP, QUIC, or WebSocket with shared token authentication.
 
-- **Architecture:** `frps` runs on Iran and `frpc` on the Foreign Node.
+- **Architecture:** `frps` runs on Iran and `frpc` on the Foreign Node (`/etc/frp/frps.toml` and `frpc.toml`).
 - **Supported Transports:** `tcp`, `kcp`, `quic`, `websocket`.
-- **Port Mapping:** Binds Iran local port directly to foreign inbound proxy port.
+- **Port Mapping:** Binds an Iran local port directly to the foreign inbound proxy port. **User path/443 stays untouched.**
+- **Argument order:** the token comes before the transport; if the token slot holds one of `tcp|kcp|quic|websocket`, it is treated as the transport and the stored/random token is used.
 
 ```bash
 # Iran server
-ratholectl frp on [bind_port] [transport] [token]   # default: 7000, tcp
+ratholectl frp on [port] [token] [tcp|kcp|quic|websocket]   # default: 7000, tcp (443 is reserved)
+ratholectl frp node <name> on|off                            # move a node to/from the FRP lane
 ratholectl frp off | status | show
+ratholectl frp ready <name>                                  # verify the proxy registered on 127.0.0.1:<iran_port>
 
-# Foreign node
-ratholenode frp on <remote_ip:port> <token> [transport]
+# Foreign node (if no port is given, 7000 is assumed)
+ratholenode frp on <iran_ip:port> <token> [transport] [remote_port]
 ratholenode frp off | status
 ```
 
@@ -195,17 +225,18 @@ ratholenode frp off | status
 
 A kernel-level Layer 3 Generic Routing Encapsulation (GRE) point-to-point tunnel interface (`ip tunnel`) providing direct IP communication without intermediate proxies.
 
-- **Interface:** Configures `gre1` interface with `/30` point-to-point addressing (`10.10.10.1/30` on Iran, `10.10.10.2/30` on Node).
-- **Network Optimization:** Automatically configures `MTU 1476` and iptables `TCPMSS clamping` to prevent fragmentation across domestic networks.
+- **Interface:** Configures the `gre1` interface with `/30` point-to-point addressing (`10.10.10.1/30` on Iran, `10.10.10.2/30` on Node). The `ip_gre` module is loaded; if the public IP is not on an interface, the local IP is taken from the route to the remote.
+- **Network Optimization:** Automatically configures `MTU 1476` and iptables `TCPMSS clamping` (`-t mangle POSTROUTING ... TCPMSS --clamp-mss-to-pmtu`) to prevent TCP fragmentation across domestic networks.
 
 ```bash
 # Iran server
-ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]   # default tunnel_ip: 10.10.10.1/30
-ratholectl gre off [gre_name] | status [gre_name]
+ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]   # defaults: tunnel_ip 10.10.10.1, name gre1
+ratholectl gre off [gre_name] | status
 
 # Foreign node
-ratholenode gre on <remote_ip> [tunnel_ip] [gre_name]   # default tunnel_ip: 10.10.10.2/30
-ratholenode gre off [gre_name] | status [gre_name]
+ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]    # defaults: tunnel_ip 10.10.10.2, name gre1
+ratholenode gre off [gre_name] | status
+ratholenode gre probe <peer_ip> [gre_name]             # ping through the tunnel; an UP interface does not prove reachability
 ```
 
 ---
@@ -216,7 +247,7 @@ ratholenode gre off [gre_name] | status [gre_name]
 
 - **Advantages:** Censors inspect only GRE-encapsulated packets with standard headers, while user connections are densely multiplexed and buffered inside the tunnel.
 - **Transport Selection:** QUIC (over UDP) or KCP with Reed-Solomon FEC over GRE.
-- **One-Click Patch Panel Wiring:** In the Hub Web Panel (`#/wiring`), select `FRP+GRE (Hybrid)` to automatically configure both GRE interfaces and the nested FRP reverse tunnel.
+- **Configuration:** there is no single-shot CLI action for this hybrid; select it from the **hub service controls**: service row → “Carrier and protocol” → `FRP + GRE` (the hub first brings up GRE on the /30 and checks it with `gre_probe`, then points FRP at the GRE virtual IP). The manual equivalent is two steps: `gre on` on both sides, then `frp on` on Iran and `ratholenode frp on <iran_gre_ip>:<port> ...` on the node so the FRP stream is carried inside GRE.
 
 ---
 
@@ -240,6 +271,16 @@ ratholenode adaptive test [--json]
 
 ---
 
+## 14) fakeweb — default fake site (fallback, not a tunnel carrier)
+
+> A lightweight web server (python3) on `fake_port` (default 8080) that only serves `/`, so servers without a real panel show a normal page instead of 502. It is unrelated to any carrier.
+
+- systemd unit: `rathole-panel-fakeweb`; document root: `/var/www/rathole-fake`.
+- Listens on `127.0.0.1` only; nginx uses it as the fake upstream for `/`.
+- Commands: `ratholectl fakeweb start|stop|rm|status [port]` (the default port is read from `fake_port`).
+
+---
+
 **Key rule:** In all tunnel modes, user paths, tokens, and inbound configs remain untouched; only the underlying tunnel carrier changes. For packet-level traffic flow details, see [`traffic-flow.md`](traffic-flow.md).
 
 ---
@@ -249,5 +290,5 @@ ratholenode adaptive test [--json]
 - [CLI Reference (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — full command signatures
 - [Workflow Guides (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/Workflow-Guides) — step-by-step: direct-IP setup, backhaul migration, multi-domain, multi-upstream
 - [`transport-modes.md`](transport-modes.md) — Persian version of this document
-- [`architecture.md`](architecture.md) — overall system architecture
-- [`hub.md`](hub.md) / [`hub.en.md`](hub.en.md) — Hub Web Panel and Visual Wiring Board
+- [`architecture.en.md`](architecture.en.md) — overall system architecture
+- [`hub.en.md`](hub.en.md) — Hub panel, service controls, REST Agent, and security model

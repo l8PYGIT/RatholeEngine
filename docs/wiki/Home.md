@@ -2,45 +2,68 @@
 
 خوش آمدید به مستندات جامع و ویکی پروژه **RatholeEngine**.
 
-این سیستم یک راهکار **معکوس‌تونل (Reverse Tunnel)** پیشرفته و چندموقعیتی بر پایه‌ی **rathole + Nginx** برای عبور از فیلترینگ شدید است.
+این سیستم یک راهکار **معکوس‌تونل (Reverse Tunnel)** پیشرفته و چندموقعیتی بر پایه‌ی **rathole + Nginx** برای عبور از فیلترینگ شدید است. در نسخه‌های اخیر، کنار lane رتهول چند **هسته‌ی مستقل** هم اضافه شده است: **Backhaul (SMUX)**، **FRP**، تونل لایه‌۳ **GRE** و حالت ترکیبی **FRP + GRE**؛ به‌علاوه‌ی **REST Agent** که اجازه می‌دهد هاب سرورها را بدون SSH و از طریق یک API توکن‌دار مدیریت کند.
+
+> نسخه‌ی فعلی: **v2.0.2** — در این نسخه «بورد سیم‌کشی» (Wiring Board) از پنل هاب حذف شد و جای آن **کنترل‌های سرویس** در ردیف هر سرویس آمد؛ برچسب حامل‌ها هم حالا **پروتکل گزارش‌شده از سرور** را نشان می‌دهند (مثل `FRP / QUIC` و `Backhaul / WSMUX`). علامت `?` یعنی پروتکل گزارش نشده است.
+
+![داشبورد RatholeHub — نسخهٔ نمایشی](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
+
+> 🌐 **نسخهٔ وب مستندات:** همین محتوا به‌صورت یک **وب‌سایت استاتیک** هم قابل ساخت است. راهنمای ساخت/انتشار و مقایسهٔ پلتفرم‌های ویکی وب (MkDocs Material، VitePress — که مرزبان استفاده می‌کند —، Docusaurus و Docsify) در [`docs/website.md`](https://github.com/loopy-iri/tunnelplus/blob/main/docs/website.md) آمده است.
 
 ---
 
 ## 📚 فهرست صفحات ویکی (Wiki Index)
 
 1. 🚀 **[راهنمای شروع سریع (Getting Started)](Getting-Started)**
-   - نصب خودکار یک‌خطی
-   - گزینه‌های نصب (Panel / Node / Hub)
-   - پیش‌نیازها و معماری عمومی
+   - نصب خودکار یک‌خطی و گزینه‌های نصب (Panel / Node / Hub)
+   - پرچم‌های جدید: pin کردن نسخه (`--release`) و مخزن خصوصی (`--token`)
+   - جداکننده‌ی `--` برای آرگومان‌های نصب نود
+   - راه‌اندازی سریع REST Agent و نمای کلی حامل‌ها
 
 2. ⚡ **[راهنمای Adaptive Filtering (سوئیچ خودکار)](Adaptive-Filtering-Guide)**
    - منطق سوئیچینگ هوشمند بین WebSocket و KCP
-   - آزمایش و عیب‌یابی لایه‌ای (Layered Probes)
-   - تنظیم فواصل، حد آستانه (Threshold) و Cooldown
-   - الزامات امنیتی و Sanitization
+   - پروب لایه‌ای برای هر حامل (ws / plain / kcp / backhaul / frp)
+   - تنظیم فواصل، آستانه (Threshold) و Cooldown
+   - چرا انتخاب دستی حامل بر Adaptive اولویت دارد
 
 3. 📖 **[مرجع کامل دستورات CLI (CLI Reference)](CLI-Reference)**
-   - دستورات سرور ایران (`ratholectl`)
-   - دستورات نود خارج (`ratholenode`)
-   - مدیریت مسیر مخفی کنترلی (`control-path`)
-   - حامل‌ها: KCP، Plain، Noise، **Backhaul (SMUX)**، Direct-IP و Game/SNI
-   - آپدیت و کانال بتا (`update beta`)
+   - دستورات سرور ایران (`ratholectl`) و نود خارج (`ratholenode`)
+   - مدیریت REST Agent (`agent on|off|status|token`)
+   - حامل‌ها: WS، KCP، Plain، Noise، **Backhaul (SMUX)**، **FRP**، **GRE** و **FRP + GRE**
+   - مسیر مخفی کنترلی (`control-path`)، upstream چندسروره، `migrate` و `set-main`
+   - آپدیت، بک‌آپ و رول‌بک
 
 4. 🖥️ **[مدیریت مرکزی با Hub (Hub Management)](Hub-Management)**
    - نصب و کانفیگ پنل وب Hub (`hub.py`)
-   - راهنمای REST API و امنیت اتصال SSH
-   - آپدیت گروهی و مانیتورینگ لایو سرورها
+   - کنترل‌های سرویس (نسخه‌ی ۲.۰.۲) و برچسب پروتکل حامل‌ها
+   - اتصال REST Agent (بدون SSH) در برابر اتصال SSH
+   - REST API، مدل امنیتی و آپدیت گروهی
 
 5. 🛠️ **[عیب‌یابی، بک‌آپ و رول‌بک (Troubleshooting)](Troubleshooting)**
    - عیب‌یابی اتصالات و لاگ‌ها
-   - سیستم بک‌آپ خودکار قبل از آپدیت
-   - دستورات رول‌بک دکمه‌ای و دستی
+   - خطاهای REST Agent (401/403، توکن، HTTPS self-signed)
+   - ناسازگاری حامل‌ها (پروتکل `?`، توکن/profile بک‌هال، MTU و probe در GRE، transport در FRP)
+   - آپدیت از مخزن خصوصی و رول‌بک
 
 6. 📋 **[راهنماهای عملی (Workflow Guides)](Workflow-Guides)**
-   - راه‌اندازی دسترسی direct-IP
-   - مهاجرت از WebSocket به Backhaul (SMUX)
-   - اضافه کردن دامنه دوم
-   - اتصال نود به چند سرور ایران (multi-upstream)
+   - راه‌اندازی REST Agent برای یک سرور
+   - تغییر حامل یک سرویس با کنترل‌های سرویس (همگام‌سازی دو سمت)
+   - مهاجرت Backhaul ↔ Noise و مهاجرت به Backhaul (SMUX)
+   - راه‌اندازی دسترسی direct-IP، دامنه دوم و multi-upstream
+   - آپدیت از مخزن خصوصی
+
+---
+
+## 🆕 تازه در نسخه‌های ۲.۰.۱ و ۲.۰.۲
+
+| موضوع | خلاصه |
+|-------|-------|
+| **کنترل‌های سرویس** | جای بورد سیم‌کشی را گرفت: «حامل و پروتکل»، «تست سلامت»، «ساخت کانفیگ VLESS»، «مدیریت سمت مقابل» و «حذف از دو سمت» در ردیف هر سرویس (صفحه‌ی ایران و نود). لینک قدیمی `#/wiring` به داشبورد برمی‌گردد. |
+| **گزارش پروتکل حامل** | برچسب‌ها پروتکل واقعی گزارش‌شده از سرور را نشان می‌دهند؛ `?` = گزارش نشده. |
+| **REST Agent** | `ratholeagent.py` + `install-agent.sh` (systemd: `rathole-agent.service`، پیش‌فرض پورت ۸۰۸۹) با احراز هویت Bearer و امکان HTTPS؛ هاب با `transport: "api"` از آن استفاده می‌کند. |
+| **هسته‌های FRP و GRE** | `ratholectl frp\|gre` و `ratholenode frp\|gre`؛ FRP با ترانسپورت‌های `tcp\|kcp\|quic\|websocket` و GRE به‌صورت تونل L3 کرنل؛ حالت ترکیبی FRP + GRE از کنترل سرویس هاب. |
+| **مخزن خصوصی** | `install.sh --token/-t` (یا `RATHOLE_GH_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`) و به‌روزرسانی با `tools/update-private.sh`. |
+| **رفع اشکال نصب/چرخه‌عمر** | حفظ توکن نود بعد از جداکننده‌ی `--`، جلوگیری از تصادم فایل agent هنگام آپدیت، حفظ توکن agent و ری‌استارت واحد آن در `update.sh`. |
 
 ---
 

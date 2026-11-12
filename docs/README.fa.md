@@ -54,6 +54,9 @@ _ساخته‌شده برای تونل مقاومِ سانسور به داخل �
 | `ratholectl` | سرور **ایران** | مدیریت نودها؛ تولید خودکار `server.toml` و کانفیگ nginx؛ reload |
 | `install-node.sh` | هر **نود خارج** | نصب rathole، نوشتن `node.env`، نصب `ratholenode`، استارت |
 | `ratholenode` | هر **نود خارج** | مدیریت کلاینت در طول زمان + بررسی تداخل پورت با nginx نود |
+| `ratholehub/install-hub.sh` | سرور **ایران** | نصب پنل هاب (`ratholectl hub on` بار اول خودکار اجرایش می‌کند) |
+| `install-agent.sh` | ایران یا نود | نصب آژنت REST (`rathole-agent.service`) برای مدیریت بدون SSH |
+| `update.sh` | هر سرور | آپدیت امن: snapshot + health-check + rollback خودکار |
 | `uninstall-panel.sh` | سرور **ایران** | حذف کامل + ری‌استور بکاپ کانفیگ nginx |
 | `uninstall-node.sh` | هر **نود خارج** | حذف کامل کلاینت (بدون دست‌زدن به nginx/Xray نود) |
 
@@ -62,7 +65,10 @@ _ساخته‌شده برای تونل مقاومِ سانسور به داخل �
 ### روی سرور ایران — `ratholectl`
 
 ```bash
-ratholectl hub on <port>               # فعال کردن هاب روی پورت مشخص شده
+ratholectl hub on [port]               # روشن‌کردن پنل هاب پشت nginx (پیش‌فرض 8088؛ بار اول خودکار نصب می‌شود)
+ratholectl hub off                     # برداشتن location پنل از nginx (سرویس 127.0.0.1 روشن می‌ماند)
+ratholectl hub status                  # آدرس https، پورت داخلی و وضعیت سرویس ratholehub
+ratholectl hub auto-add                # ثبت خودکار همین سرور ایران در inventory هاب
 ratholectl ls                          # لیست نودها
 ratholectl add <name> <inbound> [--api-port N]
 ratholectl edit <name> --inbound 2088  # تغییر پورت اینباند نود
@@ -72,16 +78,23 @@ ratholectl rename <old> <new>          # تغییر نام/مسیر نود
 ratholectl rotate <name>               # چرخش توکن(ها)
 ratholectl show <name>                 # جزئیات + دستور نصب نود (curl یک‌خطی + install-node.sh)
 ratholectl set domain <new>            # تغییر تنظیمات سراسری
-ratholectl set fake-port 8443          # ... fake-port/sub-port/control-port/nginx-conf/fullchain/key
+ratholectl set fake-port 8443          # ... fake-port/sub-port/control-port/sub-path/hub-path/nginx-conf/fullchain/key
                                        # از Hub UI هم قابل ویرایش است (بخش Ports در صفحه سرور)
 ratholectl rm <name>                   # حذف نود
 ratholectl status [--json]             # داشبورد کامل وضعیت (دامنه/پورت‌ها/گواهی/سرویس‌ها/نودها) — مثل ساب‌پنل VPN
 ratholectl paths                       # مسیر همه کانفیگ‌ها و فایل‌ها با علامت ✓/✗ وجود
+ratholectl info                        # دامنه/گواهی/انقضا + دامنه‌های SNI
+ratholectl certs                       # جدول همه گواهی‌ها: DOMAIN|EXPIRY|ACTIVE|SNI
+ratholectl recover                     # بازگشت به حالت سالم تک‌دامنه‌ای (حذف دامنه‌های اضافی + regenerate)
+ratholectl tune                        # BBR + لیمیت‌های سیستم/nginx (بدون ری‌استارت سرور)
+ratholectl fakeweb start|stop|rm|status [port]   # سایت فیک پنل روی fake_port (پیش‌فرض 8080؛ اگر fake_port ست نشده باشد fallback: 8000)
+ratholectl agent <on [port] [token]|off|status|token|show|restart>   # آژنت REST برای مدیریت بدون SSH (پیش‌فرض 8089)
+ratholectl control-path <show|rotate [--dry-run]|clear>      # مسیر مخفی کانال کنترل (/_rh/<hex32>)
 ratholectl doctor                      # بررسی سلامت
 ratholectl version                     # نسخهٔ manager + rathole (manager_version=/rathole_version=)
 ratholectl update                      # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholectl update beta                 # کانال بتا: آخرین pre-release (آزمایشی)
-ratholectl update v2.0.0               # آپدیت به نسخه‌ی خاص
+ratholectl update v2.0.2               # آپدیت به نسخه‌ی خاص
 ratholectl menu                        # منوی تعاملی کامل
 ```
 
@@ -115,6 +128,19 @@ ratholectl ip-cert-off                 # حذف vhost IP TLS
 > ```
 > اگر دامنه‌ای ست نشده باشد (حالت تانل با IP)، `--server` با IP عمومی سرور پر می‌شود.
 
+#### مسیر مخفی کانال کنترل (`control-path`)
+
+کانال کنترلی rathole به‌طور پیش‌فرض روی مسیر `/` باز می‌شود؛ با coreهای جدید می‌توان همین مسیر را به یک مسیر مخفی (`/_rh/<32 hex>`) برد تا از DPI پسیو پنهان بماند:
+
+```bash
+ratholectl control-path show                 # مسیر فعلی (control_path=...؛ اگر ست نشده: /)
+ratholectl control-path rotate --dry-run     # فقط نمایش مسیر جدید، بدون تغییر
+ratholectl control-path rotate               # ساخت مسیر جدید + health-check + rollback خودکار
+ratholectl control-path clear                # بازگشت به /
+```
+
+> بعد از `rotate` باید روی **هر نود** مسیر تازه را تنظیم کنی: `ratholenode control-path set '/_rh/...'` برای تونل اصلی و `ratholenode upstream control-path <id> set '/_rh/...'` برای هر سرور ایران اضافه. مسیر `/` همیشه کار می‌کند، پس نودهای به‌روزنشده قطع نمی‌شوند و می‌توانی نودها را یکی‌یکی منتقل کنی.
+
 ### سرویس game (SNI روی ۴۴۳ + TLS روی نود + گواهی واقعی)
 
 برای یک سرویس امن‌تر/سبک‌تر کنار سیستم فعلی (مثلاً برای گیم) که با **SNI روی همان ۴۴۳** کار می‌کند و TLS را روی **نود** ترمینیت می‌کند (VLESS+TLS+Vision با گواهی واقعی):
@@ -124,6 +150,7 @@ ratholectl ip-cert-off                 # حذف vhost IP TLS
 ratholectl game add gamenode 8444 game.l1t.ir   # نام، پورت اینباند TLS نود، ساب‌دامین(SNI)
 ratholectl game cert game.l1t.ir                # گرفتن گواهی + دستور/محتوای انتقال به نود
 ratholectl game ls
+ratholectl game show gamenode                   # چاپ دستور نصب/تنظیم همین سرویس
 ratholectl game rm gamenode
 ```
 با اولین `game add`، پورت ۴۴۳ به حالت **stream/SNI** می‌رود و L7 فعلی (path/WS) روی پورت داخلی (۸۴۴۳) منتقل می‌شود — کاربران path هیچ تغییری نمی‌بینند. ترافیک `game.l1t.ir` به‌صورت L4 passthrough به نود می‌رود.
@@ -150,16 +177,28 @@ ratholenode set SERVER newdomain:443   # تغییر سرور (تانل اصلی/
 ratholenode set-main <host:port> [tls_hostname] [trusted_root]
 # تنظیم اتمیک سرور + SNI + CA سفارشی — برای اتصال به IP با گواهی self-signed:
 # ratholenode set-main <ip>:443 <ip> /etc/rathole/trusted-<ip>.pem
+ratholenode agent <on [port] [token]|off|status|token|show|restart>   # آژنت REST روی نود (پیش‌فرض 8089)
+ratholenode control-path show               # مسیر مخفی کانال کنترل (پیش‌فرض /)
+ratholenode control-path set <path>         # فقط بعد از rotate سمت ایران؛ restart + rollback خودکار
+ratholenode control-path clear              # بازگشت به /
+ratholenode adaptive on [--interval S] [--failures N] | off | status | test [--json]   # سوییچ خودکار ws↔kcp
+ratholenode frp on <IRAN_IP:PORT> <TOKEN> [transport] [remote_port]   # transport: tcp|kcp|quic|websocket
+ratholenode frp off | status                # بازگشت به ws/443 / وضعیت
+ratholenode gre on <IRAN_IP> [tunnel_ip] [gre_name]   # پیش‌فرض tunnel_ip: 10.10.10.2
+ratholenode gre status | off | probe <PEER_IP> [gre_name]   # probe = سنجش دسترسی peer روی اینترفیس gre
+ratholenode fakeweb start|stop|rm|status [port]   # وب فیک سبک برای fallback (پیش‌فرض 8081)
+ratholenode tune                            # BBR + لیمیت‌های سیستم
+ratholenode doctor                          # سلامت node + پشتیبانی core از control-path
 ratholenode check                      # بررسی تداخل پورت با nginx نود
 ratholenode logs [n]                   # آخرین n خط لاگ تانل اصلی (پیش‌فرض ۵۰)
-ratholenode logs all                   # لاگ تانل اصلی + همه upstreamها
+ratholenode logs all [n] [--bundle]    # لاگ تانل اصلی + همه upstreamها
 ratholenode backup [file]              # snapshot از node.env + services + upstreamها
 ratholenode restore <file>             # بازگردانی + بازتولید config + restart
 ratholenode update                     # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholenode update beta                # کانال بتا: آخرین pre-release (آزمایشی)
-ratholenode update v2.0.0              # آپدیت به نسخه‌ی خاص
+ratholenode update v2.0.2              # آپدیت به نسخه‌ی خاص
 ratholenode version                    # نسخهٔ manager + rathole
-ratholenode status | logs | apply
+ratholenode status [--json] | logs | apply
 ```
 
 #### Watchdog — راه‌اندازی مجدد خودکار تانل‌های گیرکرده
@@ -171,6 +210,20 @@ ratholenode watchdog on [interval_sec]   # پیش‌فرض ۶۰ ثانیه
 ratholenode watchdog off
 ratholenode watchdog status
 ```
+
+#### حالت تطبیقی (`adaptive`) — سوییچ خودکار بین ws و kcp
+
+اگر مسیر ناپایدار است و نمی‌خواهی هر بار دستی حامل را عوض کنی، یک تایمر systemd می‌سازد که هر چند ثانیه یک probe می‌زند و پس از چند شکست پیوسته، بین `ws` و `kcp` سوییچ می‌کند:
+
+```bash
+ratholenode adaptive on                        # interval=۳۰s، failures=3
+ratholenode adaptive on --interval 20 --failures 2
+ratholenode adaptive status                    # روشن/خاموش + آخرین classification و latency
+ratholenode adaptive test [--json]             # یک probe فوری (healthy/tls_failed/tcp_timeout/ws_rejected/...)
+ratholenode adaptive off                       # تایمر خاموش می‌شود؛ حامل فعلی حفظ می‌شود
+```
+
+> تایمر `rathole-adaptive.timer` نتیجهٔ هر probe را در `/etc/rathole/adaptive-state.json` ثبت می‌کند. سوییچ خودکار **فقط بین `ws` و `kcp`** انجام می‌شود؛ اگر حامل دستی دیگری (`plain`/`noise`/`backhaul`/`frp`/`gre`) انتخاب کرده باشی، دست‌نخورده می‌ماند. قبل از تکیه بر سوییچ خودکار، مسیر kcp را یک‌بار روی هر دو سمت (`ratholectl kcp on` و `ratholenode kcp on`) تنظیم کن تا مسیر جایگزین واقعاً وجود داشته باشد.
 
 #### چند IP خروجی روی یک تونل (multi-egress)
 اگر نود چند IP خروجی دارد و می‌خواهی همه روی **یک تونل** باشند:
@@ -255,6 +308,7 @@ ratholenode upstream ls                   # لیست همه upstreamها با tr
 ratholenode upstream ws <id>              # برگشت به transport=ws برای این upstream
 ratholenode upstream plain <id> on <host:port> | off | status
 ratholenode upstream noise <id> on <host:port> <pubkey> [pattern] | off | status
+ratholenode upstream control-path <id> show | set <path> | clear   # مسیر مخفی کانال کنترل همین upstream
 ```
 هر تونل kcp-client جداگانه با پورت لوکال متفاوت (main=29900 ، upstreamها از 29901) و سرویس systemd مستقل (`rathole-kcp-up-<id>`) دارد؛ پس روی هم اثر نمی‌گذارند و هرکدام مستقل قابل خاموش/روشن‌اند.
 
@@ -300,8 +354,10 @@ ratholectl backhaul off                      # خاموشی کامل: همه ن�
 # روی نود: دقیقاً همان خطی که «show» بالا چاپ کرد
 ratholenode backhaul on <DOMAIN> <TOKEN> wssmux balanced
 ratholenode backhaul add-svc <name> <TOKEN> <inbound_port>
+ratholenode backhaul rm-svc <name>
 ratholenode backhaul ls
 ratholenode backhaul status
+ratholenode backhaul logs [n]
 ratholenode backhaul off                     # خاموش‌کردن lane بک‌هال؛ lane رتهول مستقل می‌ماند
 ```
 
@@ -357,13 +413,17 @@ ratholectl proxy rm mysvc
 
 ```bash
 # روی ایران: هسته frps را روشن کن
-ratholectl frp on [port] [transport] [token]     # پیش‌فرض: port=7000, transport=tcp
-ratholectl frp show                              # نمایش دستور آماده کلاینت نود
+ratholectl frp on [port] [token] [transport]     # پیش‌فرض: port=7000، token خودکار، transport=tcp
+# میان‌بر: اگر جای token نام یک transport بدهی، خودش همان را transport می‌گیرد → ratholectl frp on 7000 quic
+ratholectl frp show [name]                       # نمایش دستور آماده کلاینت نود
+ratholectl frp node <name> on|off                # این نود را به مسیر FRP ببر / برگردان
+ratholectl frp ready <name>                      # صبر تا proxy نود روی 127.0.0.1:<port> ثبت شود
 ratholectl frp status                            # وضعیت پروسه frps و پورت‌ها
 ratholectl frp off                               # خاموش‌کردن کامل سرویس frps
 
 # روی نود خارج: کلاینت frpc را روشن کن
-ratholenode frp on <IRAN_IP:PORT> <TOKEN> [transport]   # transport: tcp, kcp, quic, websocket
+ratholenode frp on <IRAN_IP:PORT> <TOKEN> [transport] [remote_port]   # transport: tcp, kcp, quic, websocket
+# remote_port = پورت سمت ایران برای سرویس این نود (از خروجی `frp show` روی پنل)
 ratholenode frp status
 ratholenode frp off
 ```
@@ -381,6 +441,7 @@ ratholectl gre off [gre_name]
 # روی نود خارج: انتهای تونل gre را متصل کن
 ratholenode gre on <IRAN_REMOTE_IP> [tunnel_ip] [gre_name]  # پیش‌فرض آی‌پی تونل: 10.10.10.2/30
 ratholenode gre status [gre_name]
+ratholenode gre probe <PEER_IP> [gre_name]   # سنجش دسترسی peer روی اینترفیس GRE (ping -I)
 ratholenode gre off [gre_name]
 ```
 
@@ -389,7 +450,7 @@ ratholenode gre off [gre_name]
 ### ۲.۱۱) `frp + gre` — پروتکل ترکیبی لایه ۳ با حامل استریم ضد اختلال
 
 ترکیب **FRP (حامل استریم)** با **GRE (لایه ۳)**:
-در شرایطی که پکت‌های خام GRE (پروتکل ۴۷) توسط فیلترینگ دچار اختلال، دراپ یا تراتلینگ می‌شوند، FRP با ترانسپورت‌های **QUIC** (بر پایه UDP مالتی‌پلکس)، **KCP** (تصحیح خطا)، **WebSocket** یا **TCP** استریم تونل را پنهان‌سازی کرده و همزمان اینترفیس مجازی GRE با رنج آی‌پی `10.10.10.1/30` و `10.10.10.2/30` امکان اتصال مستقیم لایه ۳ بین ایران و خارج را فراهم می‌آورد. این حالت مستقیماً از طریق پچ‌بورد سیم‌کشی هاب قابل انتخاب و تنظیم مد است.
+در شرایطی که پکت‌های خام GRE (پروتکل ۴۷) توسط فیلترینگ دچار اختلال، دراپ یا تراتلینگ می‌شوند، FRP با ترانسپورت‌های **QUIC** (بر پایه UDP مالتی‌پلکس)، **KCP** (تصحیح خطا)، **WebSocket** یا **TCP** استریم تونل را پنهان‌سازی کرده و همزمان اینترفیس مجازی GRE با رنج آی‌پی `10.10.10.1/30` و `10.10.10.2/30` امکان اتصال مستقیم لایه ۳ بین ایران و خارج را فراهم می‌آورد. این حالت ترکیبی از CLI ساخته می‌شود: GRE را روی هر دو سمت با `gre on` بساز و FRP را با ترانسپورت `quic`/`kcp`/`websocket` روی همان مسیر اجرا کن. در هاب هم از دکمهٔ «حامل و پروتکل» هر سرویس، گزینهٔ `frp+gre` («ترکیبی FRP + GRE») قابل انتخاب است (هاب اول GRE دو طرف را می‌سازد و با `gre_probe` چک می‌کند، بعد FRP را روی IP مجازی GRE می‌برد). توجه: پس از اعمال، رکورد ایران روی lane `FRP` ثبت می‌شود و برچسب گزارش‌شدهٔ سرویس `FRP / <transport>` است؛ سالم بودن خودِ GRE را با `gre probe`/«تست سلامت» جداگانه تأیید کن.
 
 ### ۳) توصیه‌های کلاینت/نود
 - روی کانفیگ کلاینت‌ها برای استریم/لتنسی **`mux=off`** بگذار (mux برای ریلز ضرر دارد).
@@ -397,10 +458,105 @@ ratholenode gre off [gre_name]
 
 ## نکات کلیدی فنی
 
-- کانال کنترلی rathole همیشه روی مسیر `/` با هدر WebSocket Upgrade وصل می‌شود (path در rathole قابل تنظیم نیست). به همین دلیل nginx ریشه را با `$http_upgrade` بین «سایت فیک» و «کانال کنترل» تفکیک می‌کند.
+- کانال کنترلی rathole به‌طور پیش‌فرض روی مسیر `/` با هدر WebSocket Upgrade وصل می‌شود و nginx ریشه را با `$http_upgrade` بین «سایت فیک» و «کانال کنترل» تفکیک می‌کند. با coreهای جدید می‌توان همین مسیر را به `/_rh/<hex32>` برد (`ratholectl control-path rotate`)؛ در این حالت nginx یک `location` دقیق برای همان مسیر می‌سازد و `/` هم به‌عنوان fallback برای نودهای قدیمی کار می‌کند.
 - TLS را فقط **nginx** ترمینیت می‌کند؛ ترنسپورت rathole روی سرور `websocket` با `tls=false` و روی کلاینت `websocket` با `tls=true` است. (استثنا: حالت `noise` یک اینستنس دوم rathole با ترنسپورت `noise` روی پورت عمومی است که خودش رمزنگاری می‌کند و از nginx رد نمی‌شود.)
 - هر نود یک سرویس **دیتا** دارد؛ و اگر `--api-port` بدهی یک سرویس **مدیریت** (`_api`) هم برای ارتباط پنل↔نود ساخته می‌شود که روی `127.0.0.1` ظاهر می‌گردد.
 - **path در سه جا باید یکی باشد:** کانفیگ کاربر = `map` در nginx = اینباند Xray روی نود. نام نود = همان path.
+
+## هاب (پنل مرکزی، وب)
+
+هاب یک پنل وب است که چند سرور ایران و نود را از یک نقطه مدیریت می‌کند. روی همان سرور ایران نصب می‌شود، پشت همان دامنه/گواهی/۴۴۳ زیر `/<hub-path>/` (پیش‌فرض `/hub/`) سرو می‌شود، و خودِ سرویس فقط روی `127.0.0.1:8088` (پیش‌فرض) گوش می‌دهد:
+
+```bash
+ratholectl hub on [port]        # بار اول هاب را نصب و سرویس/کانفیگ/رمز را می‌سازد؛ دفعات بعد فقط listen_port را همگام می‌کند
+ratholectl hub status           # آدرس https پشت nginx، پورت داخلی و وضعیت ratholehub
+ratholectl hub off              # location پنل را از nginx برمی‌دارد (سرویس روی 127.0.0.1 روشن می‌ماند)
+ratholectl hub auto-add         # همین سرور ایران را خودکار در inventory هاب ثبت می‌کند
+ratholectl set hub-path <seg>   # تغییر مسیر پنل (پیش‌فرض: hub)
+```
+
+> نصب دستی/مستقل هم ممکن است: `sudo bash ratholehub/install-hub.sh`. رمز اولیه و توکن API را از «تنظیمات» عوض کن؛ تا وقتی عوض نشده‌اند هشدار «رمز/توکن پیش‌فرض امن نیست» نشان داده می‌شود.
+
+### صفحه‌ها و مسیرها
+
+| مسیر | کار |
+|------|-----|
+| `#/dashboard` | پیش‌فرض؛ کارت/لیست سرورها، وضعیت و نسخهٔ هر سرور |
+| `#/server/<name>` | صفحهٔ یک سرور (ایران یا نود): سرویس‌ها، حامل‌ها، ingress، دیاگ، upstream |
+| `#/routing` | نقشهٔ توپولوژی **فقط-خواندنی** (کنسول/گراف/جدول) — تغییر مسیر از اینجا انجام نمی‌شود |
+| `#/audit` | ۱۰۰ فعالیت اخیر (زمان/کاربر/عملیات) |
+| `#/settings` | رمز عبور، توکن API، listen، پروکسی هاب |
+
+> آدرس‌های قدیمی/ناشناس بی‌صدا به `#/dashboard` می‌افتند.
+
+### مدیریت سرویس‌ها (دکمه‌های هر ردیف)
+
+روی **هر دو** صفحهٔ سرور ایران و نود، هر ردیف سرویس همین پنج دکمه را دارد:
+
+| دکمه | کار |
+|------|-----|
+| **«حامل و پروتکل»** | تغییر حامل همان سرویس (`ws`/`kcp`/`plain`/`noise`/`backhaul`/`frp`/`gre`/`frp_gre`) با حفظ پورت اینباند و تنظیم خودکار هر دو سمت |
+| **«تست سلامت»** | اجرای `doctor` روی سرور ایران و نمایش خروجی |
+| **«ساخت کانفیگ VLESS»** | ساخت و کپی لینک `vless://<uuid>@<host>:443?type=ws&security=tls&path=/<name>&sni=...` (UUID واقعی کاربر Xray + دامنه/IP عمومی) |
+| **«مدیریت سمت مقابل»** | پرش به صفحهٔ سرور طرف مقابل همان سرویس |
+| **«حذف از دو سمت»** | حذف سرویس از ایران و نود با هم؛ اگر وضعیت سمت مقابل در دسترس/تازه نباشد عمل نمی‌کند |
+
+> سرویس‌های SNI/گیم از «حامل و پروتکل» و «ساخت کانفیگ VLESS» مدیریت نمی‌شوند و پیام راهنما («از بخش سرویس‌های گیمینگ مدیریت کنید») نشان داده می‌شود.
+
+### برچسب حامل و پروتکل
+
+هر سرویس برچسبی از **پروتکل گزارش‌شده از سرور** نشان می‌دهد: `FRP / QUIC`، `Backhaul / WSMUX`، `KCP / UDP · balanced`، `Noise / TCP`، `WebSocket / TLS`، `WebSocket / TCP`، `GRE / WebSocket`، `SNI / TLS`. علامت `?` یعنی پروتکل از سرور گزارش نشده است — برچسب به‌تنهایی دلیل سالم بودن مسیر نیست؛ «تست سلامت» این را روشن می‌کند. حالت هیبرید `frp+gre` روی lane `FRP` ثبت می‌شود و برچسبش `FRP / <transport>` است.
+
+### نکات دیگر پنل
+
+- هر سرور `transport: ssh|api` دارد و با نشان **⚡ REST API** یا **🔑 SSH** مشخص می‌شود (بخش «آژنت REST» پایین‌تر).
+- دکمهٔ **«آپدیت همه»** سرورها را یکی‌یکی و ترتیبی آپدیت می‌کند؛ نسخهٔ هر سرور به‌صورت badge سبز (به‌روز) یا قرمز (`vX → vY`، قدیمی) روی کارت/صفحه‌اش دیده می‌شود.
+- صفحهٔ ایران: نودها/سرویس‌ها، سرویس‌های game/SNI، حامل‌ها (backhaul/kcp/plain/noise/frp/gre)، ingress (direct-IP، fakeweb)، دامنه‌ها/TLS، باکس هاب، ابزارهای دیاگ و upstream.
+- صفحهٔ نود: انتخاب حامل، ری‌استارت، watchdog، adaptive، جدول یکپارچهٔ سرویس‌ها (لِین rathole + لِین Backhaul با برچسب lane)، upstreamها (هرکدام حامل خودش) و دیاگ.
+
+## آژنت REST (مدیریت سرور بدون SSH)
+
+یک دِیمون کوچک پایتون (فقط stdlib) روی سرور ایران یا نود، HTTP(S) با توکن ارائه می‌دهد و هاب به‌جای SSH از همان استفاده می‌کند (رکورد سرور: `transport: "api"`).
+
+### نصب و فرمان‌ها
+
+روی سرورِ نصب‌شده (پنل/نود) فایل‌های آژنت از قبل هستند و `/usr/local/bin/install-agent.sh` لینک شده است؛ نیازی به دانلود نیست:
+
+```bash
+sudo install-agent.sh --role iran            # روی پنل (پورت پیش‌فرض 8089)
+sudo install-agent.sh --role node --port 8089 --token <T>
+```
+
+یا از خود CLIها (همان کار + چاپ تنظیمات اتصال؛ نقش را خودِ CLI تعیین می‌کند):
+
+```bash
+sudo ratholectl agent on [port] [token]     # ایران؛ پیش‌فرض 8089
+sudo ratholenode agent on [port] [token]    # نود
+sudo ratholectl agent off | status | token | show | restart
+```
+
+- توکن اگر داده نشود از `/etc/rathole-agent/token` خوانده یا خودکار ساخته می‌شود (`chmod 600`).
+- واحد systemd: `rathole-agent.service` با `Restart=always`.
+- `update.sh` فایل‌های آژنت را هم به‌روز می‌کند، یونیت را ری‌استارت می‌کند و توکن `/etc/rathole-agent/token` را حفظ می‌کند؛ uninstallerها یونیت و `/etc/rathole-agent` را پاک می‌کنند.
+
+### API
+
+```bash
+# سلامت (بدون احراز):
+curl http://<IP>:8089/api/ping
+# → {"ok": true, "role": "node", "version": "1.0.0", "hostname": "..."}
+
+# اجرای دستور (argv؛ Bearer token):
+curl -H "Authorization: Bearer <TOKEN>" -H 'Content-Type: application/json' \
+  -d '{"cmd": ["ratholectl","status","--json"], "timeout": 120}' \
+  http://<IP>:8089/api/exec
+# → {"ok": true, "rc": 0, "out": "...", "err": ""}
+```
+
+- احراز: `Authorization: Bearer <token>` با مقایسهٔ constant-time؛ 401 برای هدر نبود/اسکیم اشتباه و 403 برای توکن غلط.
+- `/api/exec` فقط argv از باینری‌های مجاز را اجرا می‌کند: `ratholectl`، `ratholenode`، `bash`، `python3`، `systemctl`، `journalctl`، `curl`، `jq`، `cat`، `tail`، `ls`. بدنه ۱ بایت تا ۱ مگابایت و `timeout` بین ۱ تا ۳۶۰۰ ثانیه است.
+- **HTTPS:** با `--tls-cert`/`--tls-key` (یا env `RATHOLE_AGENT_TLS_CERT`/`RATHOLE_AGENT_TLS_KEY`)، یا کافی است `/etc/rathole-agent/cert.pem` و `key.pem` را بگذاری تا خودکار HTTPS شود. برای گواهی self-signed، هاب باید verify را رد کند: در رکورد همان سرور در `/etc/ratholehub/inventory.json` مقدار `insecure_ssl: true` را بگذار، یا هاب را با `RATHOLE_AGENT_INSECURE_SSL=1` اجرا کن.
+- **اتصال از هاب:** Add Server → Connection: «⚡ اتصال Agent REST API (مستقیم)» → API URL (`http://IP:8089`) + Token. در لیست سرورها با نشان ⚡ REST API دیده می‌شود. پورت باید از هاب قابل دسترس باشد (فایروال)؛ روی اینترنت، HTTPS با گواهی معتبر + توکن قوی توصیه می‌شود.
 
 ## شروع سریع
 
@@ -433,21 +589,21 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.s
 > **نصب یک نسخه‌ی خاص:** با فلگ `--release` (اگر بدون آرگومان اجرا کنی، خودش می‌پرسد؛ Enter = آخرین نسخه):
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v2.0.0 --panel --domain ... --fullchain ... --key ...
+> curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v2.0.2 --panel --domain ... --fullchain ... --key ...
 > ```
 >
-> `--beta` آخرین pre-release و `--stable` آخرین نسخه‌ی پایدار را می‌گیرد. از روی سرورِ نصب‌شده: `ratholectl update v2.0.0` یا `ratholenode update v2.0.0`.
+> `--beta` آخرین pre-release و `--stable` آخرین نسخه‌ی پایدار را می‌گیرد. از روی سرورِ نصب‌شده: `ratholectl update v2.0.2` یا `ratholenode update v2.0.2`.
 > دقت کن `RATHOLE_RELEASE=... curl ... | sudo bash` کار **نمی‌کند** (آن متغیر به `curl` می‌چسبد و `sudo` هم پاکش می‌کند) — از فلگ استفاده کن.
 >
 > **در ایران (فیلترینگ گیت‌هاب):** اگر دانلود مستقیم گیت‌هاب کار نکرد، بسته را روی سرور خارج بگیر و از روش «بسته‌ی محلی» زیر (`bootstrap.sh --local`) استفاده کن.
 
 ### آپدیت و رولبک
 
-`update.sh` قبل از هر تغییر یک **snapshot کامل** (CLI + کانفیگ‌ها + یونیت‌های systemd) در `/var/backups/rathole-manager/` می‌گیرد، بعد از آپدیت **health-check** می‌زند (سرویس بالا آمد؟ `nginx -t` سالم؟) و اگر خراب بود **خودکار به snapshot برمی‌گردد**.
+`update.sh` قبل از هر تغییر یک **snapshot کامل** (CLI + کانفیگ‌ها + یونیت‌های systemd) در `/var/backups/rathole-manager/pre-update-<ts>/` (شامل `manifest.txt` و `backup.tar.gz`) می‌گیرد، بعد از آپدیت **health-check** می‌زند (سرویس بالا آمد؟ `nginx -t` سالم؟) و اگر خراب بود **خودکار به snapshot برمی‌گردد**.
 
 > **ساده‌ترین راه از خودِ سرور:** `sudo ratholectl update` (روی ایران) یا `sudo ratholenode update` (روی نود) — `install.sh` آخرین Release را از GitHub (با mirrorهای ghproxy برای دور زدن فیلترینگ) می‌گیرد و همین `update.sh` را با snapshot + rollback اجرا می‌کند. در **هاب** هم دکمه‌ی «آپدیت» هر سرور دقیقاً همین کار را از راه دور انجام می‌دهد (دیگر به bundle محلی هاب وابسته نیست).
 
-> **آپدیت همه از هاب:** در داشبورد هاب دکمهٔ **«آپدیت همه»** همهٔ سرورها (ایران + نود) را **یکی‌یکی و ترتیبی** آپدیت می‌کند و یک **progress bar** + وضعیت زندهٔ هر سرور (در صف / در حال آپدیت / ✓ / ✗ + نسخهٔ جدید) نشان می‌دهد. نسخهٔ نصب‌شده روی هر سرور به‌صورت **badge** روی کارت/صفحهٔ سرور دیده می‌شود: **سبز** = به‌روز، **زرد** = قدیمی (`vX → vY`، نیاز به آپدیت). این نسخه از دستور `ratholectl/ratholenode version` خوانده و با آخرین نسخه (`MANAGER_VERSION` در `common.sh`) مقایسه می‌شود. (نکته: خودِ سروری که هاب رویش است هم در «آپدیت همه» هست؛ هنگام ری‌استارت هاب ممکن است progress همان یکی نیمه بماند، بقیه کامل می‌شوند.)
+> **آپدیت همه از هاب:** در داشبورد هاب دکمهٔ **«آپدیت همه»** همهٔ سرورها (ایران + نود) را **یکی‌یکی و ترتیبی** آپدیت می‌کند و یک **progress bar** + وضعیت زندهٔ هر سرور (در صف / در حال آپدیت / ✓ / ✗ + نسخهٔ جدید) نشان می‌دهد. نسخهٔ نصب‌شده روی هر سرور به‌صورت **badge** روی کارت/صفحهٔ سرور دیده می‌شود: **سبز** = به‌روز، **قرمز** = قدیمی (`vX → vY`، نیاز به آپدیت). این نسخه از دستور `ratholectl/ratholenode version` خوانده و با آخرین نسخه (`MANAGER_VERSION` در `common.sh`) مقایسه می‌شود. (نکته: خودِ سروری که هاب رویش است هم در «آپدیت همه» هست؛ هنگام ری‌استارت هاب ممکن است progress همان یکی نیمه بماند، بقیه کامل می‌شوند.)
 
 ```bash
 sudo ratholectl update                  # روی ایران: آپدیت کامل از GitHub (آخرین Release)
@@ -460,6 +616,27 @@ sudo bash update.sh --no-rollback       # آپدیت بدون بازگشت خو�
 ```
 
 آخرین ۷ snapshot نگه داشته می‌شوند (با `RATHOLE_BACKUP_RETENTION` قابل تغییر). رولبک از هر مسیر دیگری هم قابل‌فراخوانی است: `sudo bash bootstrap.sh --rollback` یا `--list-backups`.
+
+#### مخزن خصوصی (GitHub Private)
+
+اگر کد/ریلیزها در مخزن خصوصی است، دانلود بدون توکن کار نمی‌کند و mirrorهای عمومی ghproxy هم کنار گذاشته می‌شوند:
+
+```bash
+# ۰) توکن با دسترسی Contents:read را در همین شل بگذار (فقط برای همین نشست):
+export RATHOLE_GH_TOKEN=github_pat_xxx
+
+# ۱) خودِ install.sh را از مخزن خصوصی با هدر احراز بگیر:
+curl -fsSL -H "Authorization: Bearer $RATHOLE_GH_TOKEN" \
+  "https://raw.githubusercontent.com/OWNER/REPO/main/install.sh" -o /tmp/install.sh
+
+# ۲) slug مخزن را با env و توکن را با --token بده تا bootstrap/بسته هم از همان مخزن خصوصی دانلود شوند:
+sudo env RATHOLE_GH="OWNER/REPO" bash /tmp/install.sh \
+  --token "$RATHOLE_GH_TOKEN" --panel --domain ...
+```
+
+- `install.sh` فلگ `--token`/`-t` را می‌شناسد؛ توکن از env هم خوانده می‌شود: `RATHOLE_GH_TOKEN` (یا `GH_TOKEN`/`GITHUB_TOKEN`). فایل‌های raw با هدر `Authorization: Bearer` دانلود می‌شوند و در صورت نیاز از آرشیو API گیت‌هاب استفاده می‌شود؛ **برای مخزن خصوصی mirrorهای عمومی حذف می‌شوند**. slug مخزن از `RATHOLE_GH` خوانده می‌شود (پیش‌فرض `loopy-iri/tunnelplus`) و توکن به‌صورت `RATHOLE_GH_TOKEN` به `bootstrap.sh` تحویل داده می‌شود.
+- **روی سرور نصب‌شده:** `sudo env RATHOLE_GH="OWNER/REPO" bash tools/update-private.sh` — آخرین release asset (یا سورس `main` با `RATHOLE_RELEASE=main`) را می‌گیرد و `bootstrap.sh --local --update` را اجرا می‌کند (همان snapshot + health-check + rollback). توکن را مخفی می‌پرسد یا از `RATHOLE_GH_TOKEN` می‌خواند و در پایان از محیط unset می‌کند. نسخه با `RATHOLE_RELEASE` تعیین می‌شود. (این فایل داخل بستهٔ نصبی نیست؛ از checkout/مخزن برش دار و روی سرور اجرا کن.)
+- `ratholectl update` / `ratholenode update` از مسیر mirrorهای **عمومی** گیت‌هاب استفاده می‌کنند؛ برای مخزن خصوصی به‌جای آن‌ها `tools/update-private.sh` را روی همان سرور اجرا کن.
 
 ### نصب تک‌خطی با bootstrap (دانلود + باز کردن + نصب)
 
@@ -594,6 +771,8 @@ sudo bash uninstall-node.sh --purge --yes
 ```
 
 > `uninstall-panel.sh` اگر فایل `*.rathole-orig.bak` وجود داشته باشد، کانفیگ nginx اصلی‌ات را **برمی‌گرداند**. بکاپ‌های پوشه‌ای تداخل (`/etc/nginx/rathole-backup-*`) دست‌نخورده می‌مانند تا در صورت نیاز دستی برگردانی. `common.sh` مشترک فقط وقتی حذف می‌شود که نقش دیگری (نود/هاب) روی همان سرور نباشد. گواهی Let's Encrypt هم عمداً حذف نمی‌شود.
+
+> اگر آژنت REST (`rathole-agent`) نصب باشد، `uninstall-panel.sh` / `uninstall-node.sh` یونیت آن و پوشهٔ `/etc/rathole-agent` را هم پاک می‌کنند.
 
 
 ## حمایت مالی

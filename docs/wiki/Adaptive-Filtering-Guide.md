@@ -1,25 +1,29 @@
 # راهنمای جامع Adaptive Filtering (سوئیچ خودکار)
 
-ویژگی **Adaptive Filtering** (از v1.5.0) به نودهای خارج اجازه می‌دهد بدون دخالت اپراتور، در صورت فیلتر یا اختلال در حامل فعلی تونل، به‌طور هوشمند به حامل‌های جایگزین سوئیچ کنند.
+ویژگی **Adaptive Filtering** (از v1.5.0) به نودهای خارج اجازه می‌دهد بدون دخالت اپراتور، در صورت فیلتر یا اختلال در حامل فعلی تونل، به حامل جایگزین سوئیچ کنند. این صفحه با کد `ratholenode` در **v2.0.2** تطبیق داده شده است.
 
 ---
 
 ## منطق پروب‌های لایه‌ای
 
-سرویس مانیتورینگ در بازه‌های زمانی مشخص یک WebSocket RFC 6455 به `CONTROL_PATH` می‌فرستد و نتیجه را طبقه‌بندی می‌کند:
+هر دور، بر اساس `TUNNEL` فعلی نود یک probe اجرا و نتیجه در `adaptive-state.json` طبقه‌بندی می‌شود:
 
-| طبقه‌بندی | علت | اکشن |
-|-----------|-----|------|
-| `healthy` | اتصال کامل و بدون مشکل | ماندن در حامل فعلی |
-| `dns_failed` | خطای nameserver دامنه | پروب مجدد |
-| `tcp_timeout` | مسدود شدن TCP/443 | آماده‌سازی سوئیچ به KCP |
-| `tls_failed` | دستکاری TLS توسط DPI | سوئیچ به KCP |
-| `ws_rejected` | رد شدن هدرهای WebSocket | سوئیچ به KCP |
-| `ws_timeout` | اتصال برقرار شد ولی پاسخ WS نیامد | سوئیچ به KCP |
+| حامل فعلی (`TUNNEL`) | probe | طبقه‌بندی‌های ممکن |
+|----------------------|-------|---------------------|
+| `ws` | handshake وب‌سوکت RFC 6455 روی TLS به `CONTROL_PATH` (پیش‌فرض `/`) | `healthy`، `tls_failed`، `ws_rejected` |
+| `plain` | handshake وب‌سوکت بدون TLS به `PLAIN_REMOTE` روی مسیر `/` | `healthy`، `ws_timeout`، `ws_rejected` |
+| `kcp` | بررسی TCP روی listener لوکال kcptun (`KCP_LOCAL`، پیش‌فرض `127.0.0.1:29900`) | `healthy`، `tcp_timeout`، `tcp_refused` |
+| `backhaul` | handshake وب‌سوکت به `/channel` همراه هدر `Authorization: Bearer <BH_TOKEN>` (TLS/plain بسته به `BH_TRANSPORT`) | `healthy`، `tls_failed`، `ws_rejected` |
+| `frp` | فقط `systemctl is-active frpc` | `healthy`، `dead` |
+| `noise` (و بقیه) | probe واقعی ندارد | همیشه `healthy` |
+
+نتیجه‌ی هر probe با فیلدهای `latency_ms` و `consecutive_failures` ذخیره می‌شود.
+
+> ⚠️ برای `noise` هیچ probe واقعی‌ای وجود ندارد؛ بنابراین adaptive نمی‌تواند اختلال این حامل را تشخیص دهد. برای حامل‌های `plain`/`backhaul`/`frp`/`noise` هم کنترلر سوئیچ خودکار انجام نمی‌دهد (پایین را ببینید).
 
 ---
 
-## پارامترها و hysteresis
+## پارامترها و آستانه
 
 ```bash
 ratholenode adaptive on [--interval N] [--failures N] [--recoveries N]
@@ -27,34 +31,50 @@ ratholenode adaptive on [--interval N] [--failures N] [--recoveries N]
 
 | پارامتر | پیش‌فرض | توضیح |
 |---------|---------|-------|
-| `--interval` | ۳۰ ثانیه | بازه‌ی بین هر پروب |
-| `--failures` | ۳ | تعداد شکست متوالی برای سوئیچ |
-| `--recoveries` | ۵ | تعداد موفقیت متوالی برای بازگشت به `ws` |
+| `--interval` | ۳۰ ثانیه | بازه‌ی بین هر probe (به `rathole-adaptive.timer` می‌رود) |
+| `--failures` | ۳ | تعداد شکست متوالی برای تصمیم به سوئیچ |
+| `--recoveries` | ۵ | در env ذخیره می‌شود؛ کنترلر فعلی برای برگشت هم از همان آستانه‌ی شکست استفاده می‌کند |
 
-**Cooldown:** بعد از هر سوئیچ، حداقل ۳۰۰ ثانیه صبر می‌شود (`ADAPTIVE_COOLDOWN`) تا سوئیچ‌های پی‌درپی جلوگیری شود.
+**Cooldown:** مقدار `ADAPTIVE_COOLDOWN` در `/etc/rathole/adaptive.env` با پیش‌فرض ۳۰۰ ذخیره می‌شود؛ تصمیم فعلی کنترلر بر اساس `consecutive_failures` در برابر `ADAPTIVE_FAILURES` است.
 
-**اولویت حامل‌ها:** `ws` → `kcp`. حامل `plain` فقط با متغیر `ALLOW_INSECURE=1` در `node.env` در چرخش قرار می‌گیرد — هرگز بدون اجازه صریح انتخاب نمی‌شود.
+**قفل اجرا:** کنترلر با `flock` روی `/run/rathole-adaptive.lock` اجرا می‌شود تا دو دور هم‌زمان با هم تداخل نکنند.
 
-**Rollback خودکار:** اگر probe بعد از سوئیچ هم fail باشد، config قبلی بازیابی می‌شود.
+---
+
+## رفتار کنترلر (مهم)
+
+```bash
+ratholenode adaptive run     # همان چیزی که timer صدا می‌زند
+```
+
+- اگر `ADAPTIVE_ENABLED=1` باشد و `TUNNEL` فعلی `ws` باشد، با رسیدن `consecutive_failures` به آستانه به `kcp` سوئیچ می‌کند؛ اگر حامل فعلی `kcp` باشد و probe آن شکست بخورد، به `ws` برمی‌گردد.
+- **کنترلر فقط بین `ws` و `kcp` سوئیچ می‌کند.** اگر حامل فعلی `plain`، `noise`، `backhaul`، `frp` یا `gre` باشد، هشدار می‌دهد که «حامل دست‌ساز/کانونی است» و **هیچ تغییر خودکاری انجام نمی‌دهد**.
+- به همین دلیل **انتخاب دستی حامل همیشه بر adaptive اولویت دارد**: اگر با کنترل‌های سرویس هاب یا CLI حامل را عوض کنید، adaptive آن را برنمی‌گرداند.
+- `plain` هرگز به‌صورت خودکار انتخاب نمی‌شود (حتی با `ALLOW_INSECURE=1`)؛ در نسخه‌ی فعلی کنترلر آن را در چرخش قرار نمی‌دهد.
 
 ---
 
 ## دستورات مدیریت
 
 ```bash
-# روشن کردن
+# روشن کردن (env + systemd timer)
 sudo ratholenode adaptive on --interval 30 --failures 3 --recoveries 5
 
 # وضعیت جاری (حامل فعال + نتیجه آخرین probe)
 sudo ratholenode adaptive status
 
-# اجرای یک پروب آنی
+# اجرای یک probe آنی
 sudo ratholenode adaptive test
 sudo ratholenode adaptive test --json
 
-# خاموش کردن
+# اجرای یک دور کنترلر (debug)
+sudo ratholenode adaptive run
+
+# خاموش کردن (حالت فعلی حفظ می‌شود)
 sudo ratholenode adaptive off
 ```
+
+`adaptive status` خلاصه‌ی `classification`، `latency_ms` و `consecutive_failures` آخرین probe را چاپ می‌کند. `adaptive test --json` فایل state را خام می‌ریزد.
 
 ---
 
@@ -66,13 +86,13 @@ sudo ratholenode adaptive off
 time, current, classification, latency_ms, consecutive_failures
 ```
 
-هیچ‌کدام از `token`، `CONTROL_PATH` یا کلیدهای رمزنگاری در این فایل ثبت یا از طریق API هاب فاش نمی‌شوند.
+هیچ‌کدام از `token`، `CONTROL_PATH` یا کلیدهای رمزنگاری در این فایل ثبت یا از طریق API هاب فاش نمی‌شوند. تنظیمات در `/etc/rathole/adaptive.env` (mode 0600) نگه‌داری می‌شوند.
 
 ---
 
 ## پیش‌نیاز
 
-برای کارکرد adaptive، حداقل دو حامل باید آماده باشند:
+برای کارکرد سوئیچ خودکار، دو حامل `ws` و `kcp` باید آماده باشند:
 
 ```bash
 # سمت ایران — KCP را فعال کن:
@@ -85,4 +105,16 @@ sudo ratholenode kcp on <ip:port> <key> [profile]
 sudo ratholenode adaptive on
 ```
 
-پروفایل KCP دو طرف باید یکی باشد (`balanced` / `lossy` / `aggressive`).
+پروفایل KCP دو طرف باید یکی باشد (`balanced` / `lossy` / `aggressive`) و پورت UDP در فایروال هر دو سمت باز باشد.
+
+---
+
+## ارتباط با Watchdog
+
+Watchdog (اگر روشن باشد) برای **lane اصلی** از همان probe استفاده می‌کند:
+
+- `WD_PROBE=1` (پیش‌فرض) probe را روی lane اصلی اجرا می‌کند و **state مربوط به adaptive را بازنویسی نمی‌کند**.
+- فقط وقتی `WD_PROBE_FAILS` (پیش‌فرض ۳) probe متوالی ناموفق باشد تانل را restart می‌کند — برای جلوگیری از restart تانل سالم در اثر jitter کوتاه.
+- `ratholenode watchdog on [interval]` / `off` / `status`.
+
+جزئیات عیب‌یابی: **[Troubleshooting](Troubleshooting)**.

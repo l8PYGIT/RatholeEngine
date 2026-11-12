@@ -6,13 +6,13 @@
 
 **Iran panel + Pasargad config + foreign nodes + central hub**
 
-_Step by step, no automated script — exactly what the installers do._
+_Step by step, no automated script — exactly what the installers do (this manual tracks **RatholeEngine v2.0.2**)._
 
 [**Persian version**](install-manual.fa.md) · [**README**](../README.md) · [One-command install](../README.md#quick-start)
 
 </div>
 
-> **Who is this for?** When you want to install **manually**, fully aware of every layer (instead of the one-command `install.sh`), or when an automated install got stuck at some step and you want to carry that step forward by hand. Every command here is taken verbatim from the real scripts (`install-panel.sh`, `install-node.sh`, `install-hub.sh`, `ratholectl init`).
+> **Who is this for?** When you want to install **manually**, fully aware of every layer (instead of the one-command `install.sh`), or when an automated install got stuck at some step and you want to carry that step forward by hand. Every command here is taken verbatim from the real scripts (`install-panel.sh`, `install-node.sh`, `install-hub.sh`, `install-agent.sh`, `ratholectl init`).
 >
 > If the automated install is enough for you, go to the [one-command install](../README.md#quick-start). For the conceptual design and deeper pessimism, read the [Pasargad design doc](../rathole-multilocation-pasargad.md) (Persian).
 
@@ -26,6 +26,7 @@ _Step by step, no automated script — exactly what the installers do._
 - [5. Full central hub install](#5-full-central-hub-install)
 - [6. Verification & troubleshooting](#6-verification--troubleshooting)
 - [7. Final checklist](#7-final-checklist)
+- [8. Private-repo install & updates](#8-private-repo-install--updates)
 
 ---
 
@@ -53,7 +54,7 @@ sudo timedatectl set-ntp true       # if needed
 > **Pessimism:**
 > - Cloud firewall / security group: ports **443 and 80** must be open (80 for certbot).
 > - If the domain is behind Cloudflare, start with **DNS-only** (grey cloud); Cloudflare's extra TLS layer is a source of weird trouble.
-> - The rathole version **must be identical on the Iran server and all nodes** (`v0.5.0`).
+> - The rathole version **must be identical on the Iran server and all nodes** (`v0.5.0`). This is the rathole binary version and is separate from the manager version (**2.0.2**, shown by `ratholectl version`).
 
 ---
 
@@ -105,6 +106,10 @@ From the `rathole-manager/` directory of the bundle:
 sudo mkdir -p /etc/rathole /etc/rathole-manager /usr/local/share/rathole
 sudo install -m 755 ratholectl        /usr/local/bin/ratholectl
 sudo install -m 644 common.sh         /usr/local/share/rathole/common.sh
+# the REST Agent files are installed too (used only if you enable the Agent, section 5.5):
+sudo install -m 755 ratholeagent.py   /usr/local/share/rathole/ratholeagent.py
+sudo install -m 755 install-agent.sh  /usr/local/share/rathole/install-agent.sh
+sudo ln -sf /usr/local/share/rathole/install-agent.sh /usr/local/bin/install-agent.sh
 ```
 
 ### 2.3 systemd unit for the server
@@ -198,7 +203,7 @@ sudo ratholectl version       # manager_version + rathole_version
 > `sudo ratholenode update` on a node. Both fall back through ghproxy mirrors, so
 > they work from inside Iran. The hub's **Update** button does the same over SSH,
 > and its **Update all** button rolls it across every server one-by-one (progress
-> bar + a green/yellow version badge per server).
+> bar + a green/red version badge per server).
 
 ### 2.8 Add a node
 
@@ -288,7 +293,7 @@ sudo bash install-node.sh --server panel.example.ir:443 --name trk01 \
      [--api-token <API_TOKEN> --api-inbound-port 62050]
 ```
 
-The installer: installs rathole, copies `ratholenode` and `common.sh`, creates the `rathole-client` unit, writes `node.env` and `services.conf`, and starts the client.
+The installer: installs rathole, copies `ratholenode` and `common.sh` (plus `ratholeagent.py` / `install-agent.sh` for the optional REST Agent), creates the `rathole-client` unit, writes `node.env` and `services.conf`, and starts the client.
 
 ### The fully manual way (no installer)
 
@@ -299,6 +304,10 @@ If you want to build each file yourself:
 sudo mkdir -p /etc/rathole /usr/local/share/rathole
 sudo install -m 755 ratholenode /usr/local/bin/ratholenode
 sudo install -m 644 common.sh   /usr/local/share/rathole/common.sh
+# optional REST Agent files (section 5.5):
+sudo install -m 755 ratholeagent.py  /usr/local/share/rathole/ratholeagent.py
+sudo install -m 755 install-agent.sh /usr/local/share/rathole/install-agent.sh
+sudo ln -sf /usr/local/share/rathole/install-agent.sh /usr/local/bin/install-agent.sh
 
 # 2) client systemd unit
 sudo tee /etc/systemd/system/rathole-client.service >/dev/null <<'UNIT'
@@ -436,29 +445,24 @@ sudo ratholectl domain primary cdn.example.ir --certbot
 
 ### Optional: Standalone FRP Reverse Tunnel Core
 
-If you prefer using the mature `fatedier/frp` core for advanced QUIC or KCP multiplexing:
+If you prefer using the mature `fatedier/frp` core for advanced QUIC or KCP multiplexing, you do **not** need to download binaries by hand: `ratholectl frp on` installs `frps` and `ratholenode frp on` installs `frpc` automatically (`install_frp` in `common.sh`, FRP `0.61.1` by default — override with the `FRP_VER` env before running the command).
 
 ```bash
-# 1) Download frp binaries (on both servers):
-cd /tmp
-FRP_VER="v0.51.3"
-curl -fsSL "https://github.com/fatedier/frp/releases/download/${FRP_VER}/frp_${FRP_VER#v}_linux_amd64.tar.gz" -o frp.tar.gz
-tar -xzf frp.tar.gz
-sudo install -m 755 frp_*_linux_amd64/frps /usr/local/bin/frps
-sudo install -m 755 frp_*_linux_amd64/frpc /usr/local/bin/frpc
+# 1) On the Iran server: activate the FRP server (token comes BEFORE the transport):
+sudo ratholectl frp on 7000 <SECRET_TOKEN> quic
+# generated config: /etc/frp/frps.toml (bindPort 7000, proxyBindAddr 127.0.0.1, auth token)
+# other transports: tcp (default), kcp, quic, websocket
+# a node's Iran-side port is exposed on 127.0.0.1 only, exactly where the nginx map points.
 
-# 2) On the Iran server: activate via ratholectl or manual configuration
-sudo ratholectl frp on 7000 quic <SECRET_TOKEN>
-# Or manually in /etc/frp/frps.ini:
-# [common]
-# bind_port = 7000
-# bind_udp_port = 7000
-# token = <SECRET_TOKEN>
-# sudo systemctl restart frps
-
-# 3) On the foreign node: connect client frpc to Iran
-sudo ratholenode frp on <IRAN_IP>:7000 <SECRET_TOKEN> quic
+# 2) On the foreign node: point frpc at Iran (port defaults to 7000 if omitted).
+#    The last argument is the node's Iran-side data port (from `ratholectl show` /
+#    `ratholectl frp show`, e.g. 1001) — it keeps the nginx map target stable;
+#    if omitted, FRP falls back to the node inbound port:
+sudo ratholenode frp on <IRAN_IP>:7000 <SECRET_TOKEN> quic <IRAN_PORT>
 sudo ratholenode frp status
+
+# 3) Verify the node's proxy registered on 127.0.0.1:<IRAN_PORT>:
+sudo ratholectl frp ready <node_name>
 ```
 
 ### Optional: Linux Kernel Layer 3 GRE Tunnel
@@ -473,8 +477,8 @@ sudo ip link set gre1 mtu 1476 up
 # Apply TCPMSS Clamping to prevent packet fragmentation:
 sudo iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o gre1 -j TCPMSS --clamp-mss-to-pmtu
 
-# Automated with ratholectl:
-sudo ratholectl gre on <NODE_IP> 10.10.10.1/30 gre1
+# Automated with ratholectl (tunnel IP without the /30 mask; defaults 10.10.10.1 gre1):
+sudo ratholectl gre on <NODE_IP> 10.10.10.1 gre1
 
 # 2) On the foreign node:
 sudo ip tunnel add gre1 mode gre remote <IRAN_IP> local <NODE_IP> ttl 255
@@ -482,8 +486,8 @@ sudo ip addr add 10.10.10.2/30 dev gre1
 sudo ip link set gre1 mtu 1476 up
 sudo iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o gre1 -j TCPMSS --clamp-mss-to-pmtu
 
-# Automated with ratholenode:
-sudo ratholenode gre on <IRAN_IP> 10.10.10.2/30 gre1
+# Automated with ratholenode (tunnel IP without the /30 mask; defaults 10.10.10.2 gre1):
+sudo ratholenode gre on <IRAN_IP> 10.10.10.2 gre1
 
 # 3) Test Layer 3 connectivity:
 ping -c 3 10.10.10.2   # from Iran server
@@ -491,21 +495,24 @@ ping -c 3 10.10.10.2   # from Iran server
 
 ### Optional: FRP + GRE Hybrid Mode (Maximum Resilience)
 
-In this setup, the L3 GRE virtual interface is established first, and the FRP daemon binds and operates strictly inside the private network (`10.10.10.0/30`), delivering encrypted QUIC/KCP multiplexed streams inside GRE packets:
+In this setup, the L3 GRE virtual interface is established first, and the FRP daemon operates strictly inside the private network (`10.10.10.0/30`), delivering QUIC/KCP multiplexed streams inside GRE packets. From the hub this is a service control: service row → "Carrier and protocol" → `FRP + GRE` (it runs `gre_probe` first, then points FRP at the GRE virtual IP).
 
 ```bash
-# 1. Bring up GRE interface on both sides (following the GRE instructions above)
-# 2. Run frps on Iran bound to the GRE internal interface:
-sudo ratholectl frp on 7000 quic <SECRET_TOKEN>
-# 3. On the foreign node: connect frpc to Iran's internal GRE IP:
-sudo ratholenode frp on 10.10.10.1:7000 <SECRET_TOKEN> quic
+# 1. Bring up the GRE interface on both sides (following the GRE instructions above).
+# 2. On the Iran server: start frps on 7000 (it listens on all interfaces; the FRP
+#    token/proxy contract is unchanged, so the nginx map and 443 stay untouched):
+sudo ratholectl frp on 7000 <SECRET_TOKEN> quic
+# 3. On the foreign node: connect frpc to Iran's GRE virtual IP so the FRP stream
+#    is carried inside GRE (10.10.10.1 is the Iran end of the /30). The last
+#    argument is the node's Iran-side data port, exactly like the plain FRP lane:
+sudo ratholenode frp on 10.10.10.1:7000 <SECRET_TOKEN> quic <IRAN_PORT>
 ```
 
 ---
 
 ## 5. Full central hub install
 
-The hub (`ratholehub`) is a Python stdlib web panel installed on **one management server** (usually the Iran panel itself). The backend is split between `hub.py` and the security-critical `hubcmds.py`; static UI assets live under `ui/`. It runs `ratholectl`/`ratholenode` on other servers over **SSH with a key**, using validated argv — never a raw shell string. It listens on `127.0.0.1`.
+The hub (`ratholehub`) is a Python stdlib web panel installed on **one management server** (usually the Iran panel itself). The backend is split between `hub.py` and the security-critical `hubcmds.py`; static UI assets live under `ui/`. It runs `ratholectl`/`ratholenode` on other servers over **SSH with a key** by default — and, optionally, through the token-authenticated **REST Agent** (section 5.5) — always as validated argv, never a raw shell string. It listens on `127.0.0.1`.
 
 ### 5.1 Install
 
@@ -516,17 +523,18 @@ sudo bash install-hub.sh          # asks for an admin password, generates an API
 
 The installer does:
 
-- `hub.py` → `/opt/ratholehub/hub.py`
-- copies `ratholectl`/`ratholenode`/`update.sh`/… into `/opt/ratholehub/bundle/` (for remote deploy)
-- generates `/etc/ratholehub/config.json` (containing `api_token`, admin password hash, SSH key path) and an empty `inventory.json`
-- a `ratholehub.service` unit on `127.0.0.1:8088` (`HUB_PORT` env overrides)
+- `hub.py` + `hubcmds.py` → `/opt/ratholehub/`
+- copies `ui/` (index.html, app.css, app.js, i18n.js) to `/opt/ratholehub/ui/`
+- copies `ratholectl`/`ratholenode`/`common.sh`/`update.sh`/… into `/opt/ratholehub/bundle/` (for remote deploy)
+- generates `/etc/ratholehub/config.json` (containing `api_token`, admin password hash, `listen_host`/`listen_port`, SSH key path, ssh options, bundle dir) and an empty `inventory.json`
+- a `ratholehub.service` unit that reads those two files and listens on `127.0.0.1:8088` (`HUB_PORT` at install time sets `listen_port`; afterwards it lives in `config.json`)
 - creates the hub SSH key: `/root/.ssh/id_ed25519`
 
 > `config.json` contains the token and password hash; it is `chmod 600` and **must never** be committed or leaked.
 
 ### 5.2 Authorize the SSH key on each server
 
-The hub connects only with the SSH key (no password). Put the hub's public key on every server you want to manage:
+The hub connects with the SSH key only (no password). Put the hub's public key on every server you want to manage over SSH (servers added with the REST Agent transport skip this):
 
 ```bash
 # on the hub server:
@@ -572,6 +580,64 @@ Full allow-listed actions and security model: [`docs/hub.md`](hub.md) (Persian).
 
 > **Handy hub buttons:** each Iran server has a **Status** button (renders `ratholectl status --json` as a dashboard) and the dashboard has an **Update all** button (updates every server one-by-one with a progress bar + per-server version badge). In a server's node table, **add to node** wires an Iran node (name/token/inbound) onto a foreign node/upstream as a service, and on a node's page **set main tunnel** links it to its Iran server.
 
+### 5.5 Optional: REST Agent — manage a server without SSH
+
+If SSH from the hub to a server is blocked or you do not want to distribute the SSH key, install the **REST Agent** on that server instead. `ratholeagent.py` is a pure-stdlib daemon (`rathole-agent.service`, default `0.0.0.0:8089`) that exposes exactly two endpoints:
+
+- `GET /api/ping` → `{ok, role, version, hostname}` (no auth; useful for reachability checks)
+- `POST /api/exec` with `Authorization: Bearer <token>` and `{"cmd": ["ratholectl","status","--json"], "timeout": 120}` → `{ok, rc, out, err}`
+
+It is a **management** plane only; it never carries user traffic. The hub maps its allow-listed actions to argv and posts them here instead of running them over SSH. Security limits: body 1 B–1 MiB, `cmd` must be a non-empty string list, timeout 1–3600 s, binary allow-list (`ratholectl`, `ratholenode`, `systemctl`, `journalctl`, `curl`, `jq`, …), and the token is compared in constant time.
+
+**Install on the server to manage** (after sections [2](#2-iran-server-panel--manual-install)/[4](#4-foreign-node--manual-install); `ratholeagent.py` and `install-agent.sh` are already installed by `install-panel.sh`/`install-node.sh`):
+
+```bash
+# role is auto-detected (`/etc/rathole/server.toml` or `/etc/rathole-manager/state.json` → iran, else node)
+sudo install-agent.sh                       # port 8089, auto role, token generated
+sudo install-agent.sh --role iran --port 8089 --token <TOKEN>
+sudo install-agent.sh --role node --port 8089 --token <TOKEN>
+```
+
+What the installer does:
+
+- `ratholeagent.py` → `/usr/local/share/rathole/ratholeagent.py` (systemd runs it with `--port <port> --role <role>`)
+- token → `/etc/rathole-agent/token` (`chmod 600`; if `--token` is omitted an existing token is reused, otherwise a new hex token is generated)
+- `rathole-agent.service` → `Restart=always`, enabled and started
+
+The same thing from the CLIs:
+
+```bash
+sudo ratholectl agent on [port] [token]   # Iran panel
+sudo ratholenode agent on [port] [token]  # foreign node
+sudo ratholectl agent status|token|show|restart|off   # same for ratholenode
+```
+
+`agent show` prints the exact `API URL` + `Token` to paste into the hub.
+
+**Optional HTTPS** (recommended — the token otherwise crosses the network in clear text). The agent enables TLS automatically when both files exist; put a certificate there and restart:
+
+```bash
+sudo install -m 600 <fullchain.pem> /etc/rathole-agent/cert.pem
+sudo install -m 600 <privkey.pem>   /etc/rathole-agent/key.pem
+sudo systemctl restart rathole-agent
+# equivalent when running the agent manually:
+#   ratholeagent.py --port 8089 --role iran --tls-cert /path/cert.pem --tls-key /path/key.pem
+#   env RATHOLE_AGENT_TLS_CERT / RATHOLE_AGENT_TLS_KEY also work
+```
+
+For a **self-signed** certificate the hub must be told to skip verification: set `"insecure_ssl": true` on that server's record in `/etc/ratholehub/inventory.json` (the hub form does not expose this field), or run the hub with `RATHOLE_AGENT_INSECURE_SSL=1`. Then use an `https://…:8089` API URL.
+
+**Register it in the hub:** Dashboard → **Add server** section → **Connection:** `Agent REST API (direct)` → fill **Agent API URL** (e.g. `https://203.0.113.10:8089`; only scheme/host/port are allowed, no path/query/userinfo) and **Agent Token**. The server badge then shows `⚡ REST API` instead of `🔑 SSH`; status, service controls, health test, updates and audit logging work the same, and the hub still only sends allow-listed argv.
+
+**Firewall/security:** the agent listens on all interfaces by default and the token is the only authentication. Restrict port `8089/tcp` to the hub's IP, or bind the agent behind a tunnel/firewall, and rotate the token by re-running `install-agent.sh --token <new>` (or `ratholectl agent on 8089 <new>`).
+
+**Lifecycle:** `update.sh` and `ratholectl update`/`ratholenode update` refresh `ratholeagent.py` + `install-agent.sh` and restart `rathole-agent` **keeping the same token**; `uninstall-panel.sh`/`uninstall-node.sh` stop and remove the unit and `/etc/rathole-agent` when the role is removed. Quick checks:
+
+```bash
+curl -s http://<server-ip>:8089/api/ping        # {"ok":true,"role":"iran",...}
+systemctl status rathole-agent --no-pager
+```
+
 ---
 
 ## 6. Verification & troubleshooting
@@ -603,6 +669,7 @@ journalctl -u rathole-client -f   # node
 | Tunnel drops every 60s | low nginx timeout | don't touch the generated config; `ratholectl regen` |
 | `duplicate default server` | old server block on 443 | section [2.5](#25-resolve-443-conflicts) |
 | `ratholehub` won't come up | config/python error | `journalctl -u ratholehub -n 30` |
+| Hub shows "Agent unavailable" (`401`/`403`/timeout) | wrong token/URL, port 8089 blocked, self-signed HTTPS not trusted | `curl -s http://<server>:8089/api/ping`; re-check the token; `insecure_ssl: true` for self-signed; firewall |
 
 > **Golden method:** start from the lowest layer — 1) does the Xray inbound respond locally on the node? → 2) are the rathole services (`_data`/`_api`) established? → 3) is nginx proxying the path correctly? → 4) is TLS/DNS healthy from the outside?
 
@@ -623,7 +690,72 @@ journalctl -u rathole-client -f   # node
 - [ ] In the panel, node address is `127.0.0.1` and the API port is `70xx`.
 - [ ] All servers' clocks in sync; both ends log "control channel established".
 - [ ] (Hub) the hub SSH key is authorized on every server in the inventory.
+- [ ] (Hub, optional) servers managed over the REST Agent show `⚡ REST API`, `rathole-agent` is active, and port `8089` is firewalled to the hub only.
+- [ ] (Private repo) `install.sh --token`/`RATHOLE_GH_TOKEN` worked and updates go through `tools/update-private.sh`.
+- [ ] Manager is at **2.0.2** (`ratholectl version`); the rathole binary is `v0.5.0` on both ends.
 - [ ] End-to-end connection tested from a real user client.
+
+---
+
+## 8. Private-repo install & updates
+
+Everything above assumes the public repo (`loopy-iri/tunnelplus`; `RATHOLE_GH="owner/repo"` overrides the slug). If your fork/mirror is **private**, the files are served through the GitHub API and the public ghproxy mirrors are skipped (they cannot read a private repo).
+
+### 8.1 One-command install from a private repo
+
+`install.sh` accepts the token as a flag (`--token <PAT>` / `-t <PAT>`) or from the environment (`RATHOLE_GH_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`; the flag wins). Note that for a **private** repo the `install.sh` file itself also needs the token to be fetched:
+
+```bash
+# fetch install.sh with the token, then hand the same token to the script:
+curl -fsSL -H "Authorization: Bearer <github_pat>" \
+  https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh \
+  | sudo bash -s -- --token <github_pat> --release v2.0.2 \
+      --panel --domain panel.example.ir \
+      --fullchain /root/cert/panel.example.ir/fullchain.pem \
+      --key /root/cert/panel.example.ir/privkey.pem
+
+# node: keep the "--" separator so the node arguments (including its token) are preserved
+curl -fsSL -H "Authorization: Bearer <github_pat>" \
+  https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh \
+  | sudo bash -s -- -t <github_pat> --release v2.0.2 --node -- \
+      --server panel.example.ir:443 --name trk01 --token <NODE_TOKEN> --inbound-port 2087
+```
+
+Alternatively `git clone` the private repo (or copy the bundle) and run the bundled script locally: `sudo bash install.sh --token <PAT> --panel …`.
+
+- With a token, `install.sh` sends `Authorization: Bearer <token>` to `github.com`/`raw.githubusercontent.com` for every download it performs. It fetches the Release assets first; if they are unavailable it falls back to the raw `bootstrap.sh` of the pinned ref (or `main` for `latest`), then the bundle from the Release, and finally the archive via `api.github.com/repos/<slug>/tarball/<ref>`.
+- The resolved token is exported as `RATHOLE_GH_TOKEN` before handing off to `bootstrap.sh`; the node token after `--` is preserved (the post-2.0.2 argument-separator fix).
+- The PAT needs **Contents: read** on that repo. Do not paste it into shared terminals or commit it anywhere.
+
+### 8.2 Updating an installed server from a private repo
+
+```bash
+# on the server (panel, node or hub — the role is auto-detected):
+sudo bash tools/update-private.sh
+# optional overrides:
+sudo RATHOLE_GH="owner/repo" RATHOLE_RELEASE=v2.0.2 bash tools/update-private.sh
+```
+
+It asks for the token with a hidden prompt (or reads `RATHOLE_GH_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`), downloads the Release assets (`bootstrap.sh` + `rathole-manager.zip`/`.tar.gz`) through the API, then runs `bootstrap.sh --local <bundle> --update`. Set `RATHOLE_RELEASE=main` to build the bundle from the `main` source tarball instead of a Release. The script unsets the token variables on exit.
+
+### 8.3 The safe update path (`update.sh`)
+
+Both `ratholectl update [beta|stable|vX.Y.Z]` / `ratholenode update …` and the hub's Update button download the Release `install.sh` and run it with `--update`, which ends up in `update.sh`:
+
+- full pre-update snapshot (CLI + configs + systemd units per role) in `/var/backups/rathole-manager/pre-update-<ts>/` (`manifest.txt` + `backup.tar.gz`)
+- per-role health check (`rathole-server`/`rathole-client`/`ratholehub` active + `nginx -t`)
+- automatic rollback to the snapshot on failure; retention = last 7 (`RATHOLE_BACKUP_RETENTION`)
+- manual controls:
+
+```bash
+sudo bash update.sh --list-backups          # list snapshots
+sudo bash update.sh --rollback              # back to the latest snapshot
+sudo bash update.sh --rollback <timestamp>  # back to a specific snapshot
+sudo bash update.sh --no-rollback           # update, but never auto-rollback
+sudo bash update.sh --allow-downgrade       # allow installing an older version (guarded by default)
+```
+
+Version pinning: `install.sh --release v2.0.2`, env `RATHOLE_RELEASE=v2.0.2`, or `sudo ratholectl update v2.0.2` (same for `ratholenode update`). The current manager version is **2.0.2** (`ratholectl version` prints `manager_version` and the rathole binary version separately).
 
 ---
 

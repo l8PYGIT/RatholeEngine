@@ -1,12 +1,39 @@
 # حالت‌های Transport — یک تونل، چند حامل
 
-lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و Noise. Backhaul یک lane مستقل SMUX است که می‌تواند کنار rathole روی همان نود اجرا شود. game/SNI، direct-IP و proxy ورودی کاربر هستند، نه حامل تونل.
+lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و Noise. کنار آن **لاین‌ها/هسته‌های مستقل** هم اجرا می‌شوند: Backhaul (SMUX)، FRP، GRE (لایه ۳) و ترکیب FRP+GRE. game/SNI، direct-IP، proxy و fakeweb ورودی کاربر هستند، نه حامل تونل.
 
-> **قانون مالکیت:** `services.conf` برای lane رتهول و `bh-services.conf` برای lane بک‌هال است. هر سرویس/مسیر روی یک سرور ایران باید فقط در یکی از این دو lane باشد، ولی هر دو client می‌توانند برای سرویس‌های متفاوت هم‌زمان روشن بمانند.
+> **قانون مالکیت:** `services.conf` برای lane رتهول و `bh-services.conf` برای lane بک‌هال است. هر سرویس/مسیر روی یک سرور ایران باید فقط در یکی از laneها باشد (رتهول، بک‌هال، FRP، GRE)، ولی چند lane می‌توانند برای سرویس‌های متفاوت هم‌زمان روشن بمانند.
 
 ![حالت‌های transport](assets/transport-modes.svg)
 
 > **اصل ثابت (invariant):** TLS فقط توسط nginx خاتمه می‌یابد؛ transport سمت rathole-server همیشه `tls = false` است. کلاینت پیش‌فرض با `tls = true` روی websocket به nginx/۴۴۳ وصل می‌شود.
+
+## ماتریس حامل‌ها (خلاصه)
+
+| حامل | دستور ایران | دستور نود | نکته |
+|---|---|---|---|
+| **ws** (پیش‌فرض) | — (پیش‌فرض) | — (پیش‌فرض) | `wss://domain:443`؛ TLS روی nginx |
+| **kcp** | `ratholectl kcp on <port> <profile>` | `ratholenode kcp on <iran_ip:udp_port> <key> <profile>` | UDP+FEC با kcptun؛ پیش‌فرض پورت ۴۴۳ |
+| **plain** | `ratholectl plain on <port>` | `ratholenode plain on <iran_ip:port>` | websocket بدون TLS؛ پیش‌فرض ۸۸۸۰ |
+| **noise** | `ratholectl noise on <port>` + `ratholectl noise node <name> on` | `ratholenode noise on <iran_ip:port> <pubkey> [pattern]` | اینستنس دوم rathole؛ پیش‌فرض ۲۳۳۴ |
+| **backhaul** | `ratholectl backhaul on <port> [ws\|wsmux] <profile> nginx_tls` | `ratholenode backhaul on <domain> <token> [wss\|wssmux] <profile>` | SMUX پشت nginx/۴۴۳؛ پیش‌فرض ۳۰۸۰ |
+| **frp** | `ratholectl frp on <port> [token] [tcp\|kcp\|quic\|websocket]` | `ratholenode frp on <iran_ip:port> <token> [transport] [remote_port]` | هسته‌ی `fatedier/frp`؛ پیش‌فرض ۷۰۰۰ |
+| **gre** | `ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]` | `ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]` | `ip tunnel` لایه ۳؛ پیش‌فرض `gre1` و /30 |
+| **frp_gre** | از سرویس‌کنترل‌های هاب (یا `gre on` + `frp on` روی IP مجازی) | همان دو مرحله در سمت نود | FRP مالتی‌پلکس‌شده داخل GRE |
+
+## گزارش پروتکل حامل و جابه‌جایی از سرویس‌کنترل‌ها
+
+هاب در هر ردیف سرویس (هم صفحه‌ی سرور ایران و هم صفحه‌ی نود) پروتکل واقعی حامل را نشان می‌دهد، نه فقط نام lane را:
+
+- `FRP / TCP`، `FRP / KCP`، `FRP / QUIC`، `FRP / WEBSOCKET` (حروف بزرگ از ترنسپورت گزارش‌شده)
+- `Backhaul / WS`، `Backhaul / WSMUX`، `Backhaul / WSS`، `Backhaul / WSSMUX`
+- `KCP / UDP · balanced` (یا `lossy`/`aggressive`)
+- `Noise / TCP`، `WebSocket / TLS` (ws)، `WebSocket / TCP` (plain)، `GRE / WebSocket`، `SNI / TLS` (game)
+- `FRP + GRE / <transport>` برای حالت هیبرید — توجه: در پیاده‌سازی فعلی خودِ حالت هیبرید روی lane `FRP` ثبت می‌شود، پس برچسب گزارش‌شدهٔ سرویس `FRP / <transport>` است و GRE را باید جداگانه با `gre probe` تأیید کرد.
+
+اگر سرور پروتکل را گزارش نکند، برچسب `?` نشان داده می‌شود — **برچسب به‌تنهایی اثبات اتصال نیست**؛ برای اطمینان «تست سلامت» را بزنید.
+
+**جابه‌جایی حامل از سرویس‌کنترل‌ها انجام می‌شود، نه از یک صفحه‌ی جدا:** دکمه‌ی «حامل و پروتکل» روی ردیف سرویس، مودال انتخاب حامل/پروتکل را باز می‌کند (ws, kcp, plain, noise, backhaul, frp, gre, frp+gre) و بعد از اعمال، path و پورت ایران دست‌نخورده می‌مانند. بقیه‌ی دکمه‌های همان ردیف: «تست سلامت» (doctor روی ایران)، «ساخت کانفیگ VLESS»، «مدیریت سمت مقابل» و «حذف از دو سمت». صفحه‌ی مسیریابی فقط نمای توپولوژی/کنسول است؛ از نسخه‌ی ۲.۰.۲ صفحه‌ی جداگانه‌ی سیم‌کشی حذف شده و لینک‌های قدیمی‌اش به داشبورد می‌افتند.
 
 ## ۱) websocket + TLS (پیش‌فرض)
 - کلاینت به `wss://domain:443` وصل می‌شود.
@@ -55,7 +82,7 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 
 ## ۷) direct-IP (masiryabi ba header — ورودیِ کاربری، نه حاملِ تونل)
 
-> این یک **حالتِ ورودی (ingress)** است، نه یک حاملِ transport مثل پنج‌تای بالا. مسیر تونل عوض نمی‌شود؛ فقط یک **درگاهِ ورودیِ دیگر** برای کاربر باز می‌شود که به‌جای path، از یک **هدرِ استتارشده** برای انتخاب نود استفاده می‌کند.
+> این یک **حالتِ ورودی (ingress)** است، نه یک حاملِ transport مثل حامل‌های تونل (بندهای ۱ تا ۵ و ۱۰ تا ۱۲). مسیر تونل عوض نمی‌شود؛ فقط یک **درگاهِ ورودیِ دیگر** برای کاربر باز می‌شود که به‌جای path، از یک **هدرِ استتارشده** برای انتخاب نود استفاده می‌کند.
 
 - یک **پورت HTTP سادهٔ جداگانه** (پیش‌فرض ۸۰۸۱) که کاربر **مستقیم به IP سرور ایران** وصل می‌شود — نه دامنه، نه TLSِ nginx.
 - تصمیمِ مسیریابی از یک **هدرِ استتارشده** (پیش‌فرض `X-Cdn-Id`) می‌آید که مقدارش = **نام نود** است. `Host` فقط یک **decoy** (مثلاً `myket.ir`) است و در مسیریابی نقشی ندارد.
@@ -94,18 +121,18 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 
 > یک **هسته‌ی مجزا و بالغ (`fatedier/frp`)** کنار rathole و backhaul. مناسب برای شرایطی که نیاز به مالتی‌پلکسینگ پیشرفته TCP/QUIC/KCP/WebSocket با قابلیت‌های احراز هویت توکن مشترک و نگاشت مستقیم پورت‌های لوکال است.
 
-- **ساختار:** روی ایران سرویس `frps` و روی نود سرویس `frpc` فعال می‌شود.
+- **ساختار:** روی ایران سرویس `frps` و روی نود سرویس `frpc` فعال می‌شود (`/etc/frp/frps.toml` و `frpc.toml`).
 - **پروتکل‌های ارتباطی:** پشتیبانی از ۴ حامل `tcp`, `kcp`, `quic`, `websocket`.
-- **نگاشت پورت:** نگاشت مستقیم پورت لوکال ایران (مانند پورت‌های رتهول) به سرویس اینباند نود خارجی.
+- **نگاشت پورت:** نگاشت مستقیم پورت لوکال ایران (مانند پورت‌های رتهول) به سرویس اینباند نود خارجی. **مسیر کاربران (path/443) دست‌نخورده می‌ماند.**
+- **ترتیب آرگومان‌ها:** توکن قبل از ترنسپورت است؛ اگر به‌جای توکن یکی از `tcp|kcp|quic|websocket` داده شود، به‌عنوان ترنسپورت تفسیر می‌شود و توکن ذخیره‌شده/تصادفی استفاده می‌شود.
 - **دستورات ایران:**
-  - `ratholectl frp on [bind_port] [transport] [token]` (پیش‌فرض پورت ۷۰۰۰، tcp)
-  - `ratholectl frp off`
-  - `ratholectl frp status`
-  - `ratholectl frp show`
+  - `ratholectl frp on [port] [token] [tcp|kcp|quic|websocket]` (پیش‌فرض پورت ۷۰۰۰ و ترنسپورت tcp؛ پورت ۴۴۳ رزرو است)
+  - `ratholectl frp node <name> on|off` (جابه‌جایی یک نود به/از lane FRP)
+  - `ratholectl frp off` / `ratholectl frp status` / `ratholectl frp show`
+  - `ratholectl frp ready <name>` (بررسی ثبت پروکسی روی `127.0.0.1:<iran_port>`)
 - **دستورات نود:**
-  - `ratholenode frp on <remote_ip:port> <token> [transport]`
-  - `ratholenode frp off`
-  - `ratholenode frp status`
+  - `ratholenode frp on <iran_ip:port> <token> [transport] [remote_port]` (اگر پورت ندهید، ۷۰۰۰ فرض می‌شود)
+  - `ratholenode frp off` / `ratholenode frp status`
 
 ---
 
@@ -113,16 +140,17 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 
 > تونل **شبکه لایه ۳ نقطه به نقطه (Generic Routing Encapsulation)** مبتنی بر کرنل لینوکس، مناسب برای شبکه‌سازی مستقیم IP بین سرور ایران و سرور خارج بدون نیاز به هیچ باینری واسط.
 
-- **ویژگی‌ها:** راه‌اندازی اینترفیس مجازی `gre1` با ساب‌نت `/30` (مثلاً `10.10.10.1/30` ایران و `10.10.10.2/30` خارج).
-- **بهینه‌سازی شبکه:** تنظیم خودکار `MTU 1476` و اعمال قانون `TCPMSS clamping` در iptables جهت جلوگیری از تکه‌تکه شدن (fragmentation) بسته‌های TCP بر بستر اینترنت ایران.
+- **ویژگی‌ها:** راه‌اندازی اینترفیس مجازی `gre1` با ساب‌نت `/30` (مثلاً `10.10.10.1/30` ایران و `10.10.10.2/30` خارج). ماژول `ip_gre` در کرنل بارگذاری می‌شود و اگر IP عمومی روی اینترفیس نباشد، local IP از route به remote تشخیص داده می‌شود.
+- **بهینه‌سازی شبکه:** تنظیم خودکار `MTU 1476` و اعمال قانون `TCPMSS clamping` در iptables (`-t mangle POSTROUTING ... TCPMSS --clamp-mss-to-pmtu`) جهت جلوگیری از تکه‌تکه شدن (fragmentation) بسته‌های TCP بر بستر اینترنت ایران.
 - **دستورات ایران:**
-  - `ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]` (پیش‌فرض ۱۰.۱۰.۱۰.۱/۳۰)
+  - `ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]` (پیش‌فرض tunnel_ip: `10.10.10.1`، نام: `gre1`)
   - `ratholectl gre off [gre_name]`
-  - `ratholectl gre status [gre_name]`
+  - `ratholectl gre status`
 - **دستورات نود:**
-  - `ratholenode gre on <remote_ip> [tunnel_ip] [gre_name]` (پیش‌فرض ۱۰.۱۰.۱۰.۲/۳۰)
+  - `ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]` (پیش‌فرض tunnel_ip: `10.10.10.2`، نام: `gre1`)
   - `ratholenode gre off [gre_name]`
-  - `ratholenode gre status [gre_name]`
+  - `ratholenode gre status`
+  - `ratholenode gre probe <peer_ip> [gre_name]` (بررسی رسیدن بسته از تونل با ping؛ UP بودن اینترفیس دلیل رسیدن بسته نیست)
 
 ---
 
@@ -132,7 +160,7 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 
 - **مزایا:** فایروال اینترنت ایران فقط بسته‌های کپسوله‌شده GRE را مشاهده می‌کند، در حالی که در داخل تونل، جریان‌های کاربری به صورت مالتی‌پلکس فشرده و بازتولید می‌شوند.
 - **انتخاب ترنسپورت:** مد QUIC با UDP یا KCP همراه با تصحیح خطای FEC روی GRE.
-- **پیکربندی ساده در بورد سیم‌کشی:** در پنل وب با انتخاب گزینه `FRP+GRE (ترکیبی)` در بورد پچ‌پنل، کل این فرآیند با یک کلیک ست‌آپ و لینک می‌شود.
+- **پیکربندی:** این حالت یک اکشن یکجا در CLI ندارد؛ از **سرویس‌کنترل‌های هاب** انتخاب کنید: ردیف سرویس ← «حامل و پروتکل» ← `FRP + GRE` (هاب اول GRE را روی /30 برقرار و با `gre_probe` چک می‌کند، سپس FRP را طوری تنظیم می‌کند که به IP مجازی GRE وصل شود). معادل دستی آن دو مرحله است: `gre on` روی هر دو سمت، سپس `frp on` روی ایران و `ratholenode frp on <iran_gre_ip>:<port> ...` روی نود تا استریم FRP داخل GRE حمل شود.
 
 ---
 
@@ -150,6 +178,16 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 
 ---
 
+## ۱۴) fakeweb (سایت فیک پیش‌فرض — fallback، نه حاملِ تونل)
+
+> یک وب‌سرور سبک (python3) روی `fake_port` (پیش‌فرض ۸۰۸۰) که فقط برای ``/`` سرو می‌شود، تا سرورهایی که پنل واقعی ندارند به‌جای ۵۰۲ یک صفحه‌ی معمولی نشان دهند. ربطی به carrier ندارد.
+
+- سرویس systemd: `rathole-panel-fakeweb`؛ ریشه‌ی فایل‌ها: `/var/www/rathole-fake`.
+- فقط روی `127.0.0.1` گوش می‌دهد؛ nginx آن را به‌عنوان upstream فیک روی `/` استفاده می‌کند.
+- دستورها: `ratholectl fakeweb start|stop|rm|status [port]` (پورت پیش‌فرض از `fake_port` خوانده می‌شود).
+
+---
+
 **نکته‌ی کلیدی:** در تمامی حالت‌های تونلی، سرویس‌ها/توکن‌ها/مسیر کاربران دست‌نخورده می‌مانند؛ فقط حاملِ تونل عوض می‌شود. برای جزئیات مسیر بسته لایه‌به‌لایه: [`traffic-flow.md`](traffic-flow.md).
 
 ---
@@ -160,5 +198,5 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 - [راهنماهای عملی (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/Workflow-Guides) — راه‌اندازی direct-IP، مهاجرت به backhaul، چند دامنه، multi-upstream
 - [`transport-modes.en.md`](transport-modes.en.md) — نسخه انگلیسی همین سند
 - [`architecture.md`](architecture.md) — معماری کلی سیستم
-- [`hub.md`](hub.md) — پنل وب و بورد سیم‌کشی تعاملی
+- [`hub.md`](hub.md) — پنل وب، سرویس‌کنترل‌ها، REST Agent و مدل امنیتی
 

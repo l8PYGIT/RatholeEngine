@@ -1,103 +1,87 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" font-family="Segoe UI, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 780" font-family="Segoe UI, Arial, sans-serif">
   <defs>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
     </marker>
-    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/>
+    <marker id="arrU" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9333ea"/>
+    </marker>
+    <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/>
     </marker>
   </defs>
-
-  <rect x="0" y="0" width="1200" height="760" fill="#ffffff"/>
-
-  <!-- title banner -->
-  <rect x="20" y="16" width="1160" height="46" rx="8" fill="#0f172a"/>
-  <text x="600" y="39" text-anchor="middle" fill="#ffffff" font-size="19" font-weight="bold">Hub (ratholehub / hub.py) — one panel drives many servers over SSH</text>
-  <text x="600" y="55" text-anchor="middle" fill="#cbd5e1" font-size="12.5">stdlib-only Python · binds 127.0.0.1, fronted by nginx /hub/ · never runs raw strings on servers</text>
-
-  <!-- ADMIN -->
-  <rect x="40" y="300" width="150" height="110" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
-  <text x="115" y="332" text-anchor="middle" font-size="14" font-weight="bold" fill="#1e3a8a">Admin</text>
-  <text x="115" y="354" text-anchor="middle" font-size="11" fill="#1e40af">browser UI</text>
-  <text x="115" y="372" text-anchor="middle" font-size="11" fill="#1e40af">Bearer token +</text>
-  <text x="115" y="388" text-anchor="middle" font-size="11" fill="#1e40af">rhsession cookie</text>
-
-  <!-- HUB SERVER zone -->
-  <rect x="250" y="90" width="470" height="590" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="2"/>
-  <text x="485" y="116" text-anchor="middle" font-size="15" font-weight="bold" fill="#3730a3">Hub server</text>
-
-  <!-- nginx /hub/ -->
-  <rect x="280" y="132" width="410" height="60" rx="8" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
-  <text x="485" y="158" text-anchor="middle" font-size="13" font-weight="bold" fill="#075985">nginx  →  location /hub/  →  127.0.0.1:8088</text>
-  <text x="485" y="178" text-anchor="middle" font-size="11" fill="#0c4a6e">TLS + public entry; hub itself is loopback-only</text>
-
-  <!-- Handler / router -->
-  <rect x="280" y="210" width="410" height="70" rx="8" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
-  <text x="485" y="236" text-anchor="middle" font-size="13" font-weight="bold" fill="#5b21b6">Handler (router) · ThreadingHTTPServer</text>
-  <text x="485" y="256" text-anchor="middle" font-size="11" fill="#4c1d95">auth: hmac session · login rate-limit (X-Real-IP)</text>
-  <text x="485" y="272" text-anchor="middle" font-size="11" fill="#4c1d95">inventory.json / config.json (atomic, locked)</text>
-
-  <!-- validation / build_cmd -->
-  <rect x="280" y="300" width="410" height="118" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
-  <text x="485" y="326" text-anchor="middle" font-size="13" font-weight="bold" fill="#92400e">build_iran_cmd / build_node_cmd</text>
-  <text x="485" y="348" text-anchor="middle" font-size="11" fill="#78350f">action + args  →  validated argv list</text>
-  <text x="485" y="366" text-anchor="middle" font-size="11" fill="#78350f">every arg checked by RE_* (RE_NAME, RE_PORT,…)</text>
-  <text x="485" y="384" text-anchor="middle" font-size="11" fill="#78350f">action must be in the allow-list</text>
-  <text x="485" y="402" text-anchor="middle" font-size="10.5" fill="#b91c1c">NO string interpolation into a shell</text>
-
-  <!-- ssh transport -->
-  <rect x="280" y="436" width="410" height="86" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
-  <text x="485" y="462" text-anchor="middle" font-size="13" font-weight="bold" fill="#334155">run_on_server → _ssh_base</text>
-  <text x="485" y="482" text-anchor="middle" font-size="11" fill="#475569">ssh -i key … host -- &lt;argv&gt;  (each arg separate)</text>
-  <text x="485" y="500" text-anchor="middle" font-size="11" fill="#475569">provision_server (sshpass→key) · deploy_to_server (scp+update.sh)</text>
-
-  <!-- ssh key -->
-  <rect x="280" y="540" width="410" height="120" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="485" y="566" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#14532d">SSH identity (ssh_key_path)</text>
-  <text x="485" y="586" text-anchor="middle" font-size="11" fill="#166534">ed25519 keypair generated by the hub</text>
-  <text x="485" y="604" text-anchor="middle" font-size="11" fill="#166534">public key installed into each server's authorized_keys</text>
-  <text x="485" y="624" text-anchor="middle" font-size="11" fill="#166534">key-based auth after first provision</text>
-
-  <!-- MANAGED SERVERS zone -->
-  <rect x="770" y="90" width="410" height="590" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
-  <text x="975" y="116" text-anchor="middle" font-size="15" font-weight="bold" fill="#475569">Managed fleet (inventory.json)</text>
-
-  <rect x="800" y="140" width="350" height="96" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
-  <text x="975" y="166" text-anchor="middle" font-size="13" font-weight="bold" fill="#92400e">Iran server #1 (role: iran)</text>
-  <text x="975" y="186" text-anchor="middle" font-size="11" fill="#78350f">runs ratholectl (server + nginx)</text>
-  <text x="975" y="204" text-anchor="middle" font-size="11" fill="#78350f">add/rm node · kcp · noise · game · domains</text>
-  <text x="975" y="222" text-anchor="middle" font-size="10.5" fill="#78350f">hub sends: ["ratholectl","add",name,…]</text>
-
-  <rect x="800" y="252" width="350" height="70" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <text x="975" y="278" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#92400e">Iran server #2 … N</text>
-  <text x="975" y="298" text-anchor="middle" font-size="11" fill="#78350f">each fronts its own domain / 443</text>
-
-  <rect x="800" y="342" width="350" height="96" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
-  <text x="975" y="368" text-anchor="middle" font-size="13" font-weight="bold" fill="#065f46">Foreign node #1 (role: node)</text>
-  <text x="975" y="388" text-anchor="middle" font-size="11" fill="#166534">runs ratholenode (rathole client)</text>
-  <text x="975" y="406" text-anchor="middle" font-size="11" fill="#166534">add-svc · upstream · kcp · watchdog</text>
-  <text x="975" y="424" text-anchor="middle" font-size="10.5" fill="#166534">hub sends: ["ratholenode","add-svc",…]</text>
-
-  <rect x="800" y="454" width="350" height="70" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <text x="975" y="480" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#065f46">Foreign node #2 … M</text>
-  <text x="975" y="500" text-anchor="middle" font-size="11" fill="#166534">no agent installed — plain SSH only</text>
-
-  <text x="975" y="560" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#475569">Panel ↔ node mgmt also flows</text>
-  <text x="975" y="578" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#475569">over the tunnel via &lt;name&gt;_api</text>
-
-  <!-- arrows -->
-  <line x1="190" y1="355" x2="276" y2="162" stroke="#334155" stroke-width="2.2" marker-end="url(#a)"/>
-  <text x="205" y="250" text-anchor="middle" font-size="11" font-weight="bold" fill="#334155">HTTPS /hub/</text>
-
-  <line x1="694" y1="479" x2="796" y2="188" stroke="#1d4ed8" stroke-width="2.2" marker-end="url(#ab)"/>
-  <line x1="694" y1="479" x2="796" y2="390" stroke="#1d4ed8" stroke-width="2.2" marker-end="url(#ab)"/>
-  <text x="742" y="360" text-anchor="middle" font-size="11" font-weight="bold" fill="#1d4ed8">SSH (argv)</text>
-
-  <!-- legend -->
-  <text x="40" y="716" font-size="11.5" fill="#475569">Legend:</text>
-  <line x1="100" y1="712" x2="140" y2="712" stroke="#334155" stroke-width="2.2" marker-end="url(#a)"/>
-  <text x="148" y="716" font-size="11.5" fill="#475569">admin → hub (HTTPS)</text>
-  <line x1="300" y1="712" x2="340" y2="712" stroke="#1d4ed8" stroke-width="2.2" marker-end="url(#ab)"/>
-  <text x="348" y="716" font-size="11.5" fill="#475569">hub → server (SSH, one validated argv per action)</text>
-  <text x="760" y="716" font-size="11.5" fill="#64748b">Adding an action = add it to build_*_cmd + the allow-list + a regex.</text>
+  <rect x="0" y="0" width="1160" height="780" fill="#ffffff"/>
+  <rect x="20" y="16" width="1120" height="60" rx="8" fill="#0f172a"/>
+  <text x="580" y="39" text-anchor="middle" fill="#ffffff" font-size="19" font-weight="bold">Hub — one control plane, two transports (SSH or REST Agent)</text>
+  <text x="580" y="59" text-anchor="middle" fill="#cbd5e1" font-size="12.5">The hub never builds shell strings: every action becomes a validated argv list.</text>
+  <rect x="20" y="96" width="250" height="240" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="145" y="120" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">ADMIN</text>
+  <rect x="40" y="132" width="210" height="70" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="145.0" y="154" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#1e3a8a">Browser UI</text>
+  <text x="145.0" y="173" text-anchor="middle" font-size="11" fill="#1d4ed8">BEARER token or</text>
+  <text x="145.0" y="190" text-anchor="middle" font-size="11" fill="#1d4ed8">rhsession cookie</text>
+  <rect x="40" y="226" width="210" height="70" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="145.0" y="248" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#1e3a8a">nginx /hub/</text>
+  <text x="145.0" y="267" text-anchor="middle" font-size="11" fill="#1d4ed8">TLS + public entry</text>
+  <text x="145.0" y="284" text-anchor="middle" font-size="11" fill="#1d4ed8">→ 127.0.0.1:8088</text>
+  <rect x="300" y="96" width="400" height="560" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <text x="500" y="120" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">HUB (hub.py — stdlib only, loopback)</text>
+  <rect x="320" y="132" width="360" height="53" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="500.0" y="154" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#334155">Handler (ThreadingHTTPServer)</text>
+  <text x="500.0" y="173" text-anchor="middle" font-size="11" fill="#475569">auth · login rate-limit · audit log</text>
+  <rect x="320" y="206" width="360" height="70" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="500.0" y="228" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#334155">hubcmds.py — allow-list</text>
+  <text x="500.0" y="247" text-anchor="middle" font-size="11" fill="#475569">action + args → validated argv</text>
+  <text x="500.0" y="264" text-anchor="middle" font-size="11" fill="#475569">every arg checked by RE_* regex</text>
+  <rect x="320" y="290" width="170" height="87" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="405.0" y="312" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#065f46">SSH transport</text>
+  <text x="405.0" y="331" text-anchor="middle" font-size="11" fill="#047857">run_on_server</text>
+  <text x="405.0" y="348" text-anchor="middle" font-size="11" fill="#047857">_ssh_base</text>
+  <text x="405.0" y="365" text-anchor="middle" font-size="11" fill="#047857">argv, one arg each</text>
+  <rect x="510" y="290" width="170" height="87" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="595.0" y="312" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#4c1d95">REST Agent</text>
+  <text x="595.0" y="331" text-anchor="middle" font-size="11" fill="#5b21b6">run_on_agent</text>
+  <text x="595.0" y="348" text-anchor="middle" font-size="11" fill="#5b21b6">POST /api/exec</text>
+  <text x="595.0" y="365" text-anchor="middle" font-size="11" fill="#5b21b6">Bearer token</text>
+  <rect x="320" y="398" width="360" height="70" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="500.0" y="420" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#334155">Persistent state</text>
+  <text x="500.0" y="439" text-anchor="middle" font-size="11" fill="#475569">inventory.json · config.json</text>
+  <text x="500.0" y="456" text-anchor="middle" font-size="11" fill="#475569">atomic writes under a lock</text>
+  <rect x="320" y="478" width="360" height="87" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="500.0" y="500" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#1e3a8a">Service controls (v2.0.2)</text>
+  <text x="500.0" y="519" text-anchor="middle" font-size="11" fill="#1d4ed8">carrier + protocol · health test · VLESS config</text>
+  <text x="500.0" y="536" text-anchor="middle" font-size="11" fill="#1d4ed8">manage peer · remove both ends</text>
+  <text x="500.0" y="553" text-anchor="middle" font-size="11" fill="#1d4ed8">carrier labels show the reported protocol (? = unknown)</text>
+  <rect x="730" y="96" width="410" height="640" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="935" y="120" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">MANAGED FLEET (inventory.json)</text>
+  <rect x="750" y="132" width="370" height="70" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="935.0" y="154" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#14532d">Iran server #1 (role: iran)</text>
+  <text x="935.0" y="173" text-anchor="middle" font-size="11" fill="#166534">ratholectl — rathole server + nginx</text>
+  <text x="935.0" y="190" text-anchor="middle" font-size="11" fill="#166534">add/rm node · kcp · noise · backhaul · frp · gre</text>
+  <rect x="750" y="230" width="370" height="53" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="935.0" y="252" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#14532d">Iran server #2 … N</text>
+  <text x="935.0" y="271" text-anchor="middle" font-size="11" fill="#166534">each fronts its own domain / 443</text>
+  <rect x="750" y="296" width="370" height="70" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="935.0" y="318" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#14532d">Foreign node #1 (role: node)</text>
+  <text x="935.0" y="337" text-anchor="middle" font-size="11" fill="#166534">ratholenode — rathole client</text>
+  <text x="935.0" y="354" text-anchor="middle" font-size="11" fill="#166534">services.conf + bh-services.conf</text>
+  <rect x="750" y="394" width="370" height="53" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="935.0" y="416" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#14532d">Foreign node #2 … N</text>
+  <text x="935.0" y="435" text-anchor="middle" font-size="11" fill="#166534">outbound-only tunnels</text>
+  <rect x="750" y="460" width="370" height="87" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="935.0" y="482" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#065f46">Lifecycle</text>
+  <text x="935.0" y="501" text-anchor="middle" font-size="11" fill="#047857">deploy_to_server → install.sh --update on the server</text>
+  <text x="935.0" y="518" text-anchor="middle" font-size="11" fill="#047857">snapshot → health check → auto-rollback</text>
+  <text x="935.0" y="535" text-anchor="middle" font-size="11" fill="#047857">audit log: user · server · action · rc</text>
+  <rect x="750" y="576" width="370" height="70" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="935.0" y="598" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#4c1d95">REST Agent (optional)</text>
+  <text x="935.0" y="617" text-anchor="middle" font-size="11" fill="#5b21b6">ratholeagent.py · rathole-agent.service :8089</text>
+  <text x="935.0" y="634" text-anchor="middle" font-size="11" fill="#5b21b6">GET /api/ping · POST /api/exec (argv, allow-list)</text>
+  <line x1="250" y1="162" x2="316" y2="162" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
+  <line x1="250" y1="250" x2="316" y2="250" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
+  <line x1="695" y1="336" x2="748" y2="176" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
+  <text x="700" y="268" text-anchor="middle" font-size="10.5" fill="#475569">ssh</text>
+  <line x1="700" y1="336" x2="748" y2="618" stroke="#9333ea" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrU)"/>
+  <text x="714" y="500" text-anchor="middle" font-size="10.5" fill="#9333ea">https</text>
+  <text x="20" y="700" text-anchor="start" font-size="11.5" fill="#64748b">Security model: no string interpolation into a shell — the hub only ever sends argv lists, validated before they leave the process.</text>
 </svg>

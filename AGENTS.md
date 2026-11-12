@@ -53,7 +53,7 @@ A node's `name` is simultaneously its URL path, its nginx `map` entry, and the X
 - **Security-critical:** it never runs raw strings on servers. `build_iran_cmd` / `build_node_cmd` map an `action` + validated args (via the `RE_*` regexes) to an **argv list**, executed over SSH with each arg passed separately (`run_on_server` → `_ssh_base`) or — for `transport: "api"` servers — POSTed to the agent's `/api/exec` (`run_on_agent`). When adding a server action, add it to the right `build_*_cmd` **and** the allow-list of actions (`WRITE_ACTIONS` for mutators), and validate every arg with a regex — do not interpolate user input into a shell string. The agent has its own binary allow-list and a 1 MiB payload cap; HTTPS with a self-signed cert is allowed only via `insecure_ssl` on the server record (or `RATHOLE_AGENT_INSECURE_SSL=1`).
 - **The hub UI has no wiring/patch-board page.** v2.0.2 removed `#/wiring`; carrier/protocol switching, health test, VLESS-config copy, and paired removal live on each service row of the Iran/node pages (labels show the reported protocol, e.g. `FRP / QUIC`, `Backhaul / WSMUX`; `?` means not reported). Routes: `#/dashboard`, `#/server/<name>`, `#/routing` (read-only topology), `#/audit`, `#/settings`.
 - **Private GitHub repos:** `install.sh --token`/`-t` (or `RATHOLE_GH_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`) downloads private raw content / the API archive and skips public ghproxy mirrors; `tools/update-private.sh` updates an installed server from a private repo (release assets or `main` source).
-- `deploy_to_server` (the hub "update" button) fetches the latest Release `install.sh` **on the server itself** (over SSH, via the ghproxy mirror loop) and runs it with `--update` — so servers pull from GitHub and no longer depend on the hub's local `bundle_dir` being fresh. The repo slug comes from config `gh_repo` (default `loopy-iri/tunnelplus`, validated by `RE_SLUG`); the remote command is a fixed `bash -c` script with only that validated slug interpolated. `provision_server` bootstraps SSH key auth.
+- `deploy_to_server` (the hub "update" button) fetches the latest Release `install.sh` **on the server itself** (over SSH, via the ghproxy mirror loop) and runs it with `--update` — so servers pull from GitHub and no longer depend on the hub's local `bundle_dir` being fresh. The repo slug comes from config `gh_repo` (default `l8PYGIT/RatholeEngine`, validated by `RE_SLUG`); the remote command is a fixed `bash -c` script with only that validated slug interpolated. `provision_server` bootstraps SSH key auth.
 
 ## Commands
 
@@ -73,8 +73,8 @@ RATHOLEHUB_MOCK=1 RATHOLEHUB_CONF=/tmp/hub-conf.json RATHOLEHUB_INV=/tmp/hub-inv
 bash package.sh                                     # → rathole-manager.zip (bundles rathole-manager/ + docs/; falls back to tar.gz)
 
 # One-command install from GitHub (fetches the latest Release bundle, then runs bootstrap):
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --panel --domain ... --fullchain ... --key ...
-#   install.sh: defaults to loopy-iri/tunnelplus; RATHOLE_GH="owner/repo" overrides the repo slug; RATHOLE_RELEASE="vX" pins a version.
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --panel --domain ... --fullchain ... --key ...
+#   install.sh: defaults to l8PYGIT/RatholeEngine; RATHOLE_GH="owner/repo" overrides the repo slug; RATHOLE_RELEASE="vX" pins a version.
 
 # Local install on a fresh server (no download; bundle already present):
 sudo bash bootstrap.sh                              # interactive; asks panel/node/update/rollback
@@ -85,7 +85,7 @@ sudo bash bootstrap.sh --local ./rathole-manager.zip --panel --domain ... --full
 
 `update.sh` is the safe upgrade path (auto-detects panel/node/hub). Before touching anything it takes a **full snapshot** (CLI + configs + systemd units, per role) into `/var/backups/rathole-manager/pre-update-<ts>/` (`manifest.txt` + `backup.tar.gz`), applies the update, runs a per-role **health check** (`rathole-server`/`rathole-client`/`ratholehub` active + `nginx -t`), and **auto-rolls-back** to the snapshot on failure. Retention = last 7 (env `RATHOLE_BACKUP_RETENTION`).
 
-- **From the server itself:** `ratholectl update` / `ratholenode update` (new subcommands) download the latest Release `install.sh` from GitHub — through the ghproxy mirror loop so it works from inside Iran — and run it with `--update` (which reaches this same `update.sh` via `bootstrap.sh --local`). The hub "update" button (`deploy_to_server`) does the identical thing remotely over SSH. Slug from `RATHOLE_GH` (default `loopy-iri/tunnelplus`), version from `RATHOLE_RELEASE` (default `latest`).
+- **From the server itself:** `ratholectl update` / `ratholenode update` (new subcommands) download the latest Release `install.sh` from GitHub — through the ghproxy mirror loop so it works from inside Iran — and run it with `--update` (which reaches this same `update.sh` via `bootstrap.sh --local`). The hub "update" button (`deploy_to_server`) does the identical thing remotely over SSH. Slug from `RATHOLE_GH` (default `l8PYGIT/RatholeEngine`), version from `RATHOLE_RELEASE` (default `latest`).
 
 - Manual: `update.sh --list-backups`, `update.sh --rollback [<ts>]`, `update.sh --no-rollback`. `bootstrap.sh` forwards `--rollback`/`--list-backups` (and menu entries 5/6) to `update.sh`, using a local `update.sh` without re-downloading when possible.
 - This complements the narrower `.rathole-good.bak` (nginx rollback inside `regenerate`) and `ratholectl backup`/`ratholenode backup` (state-only tarballs). The rathole binary is not changed by `update.sh`, so it is intentionally excluded from snapshots.

@@ -11,7 +11,7 @@
 شما می‌توانید کل پروژه (شامل سرور ایران، نود خارج، یا پنل هاب) را با یک دستور ساده نصب یا آپدیت کنید:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
 ```
 
 این دستور آخرین نسخه‌ی انتشاریافته را به همراه فایل‌های باینری بهینه‌شده برای معماری سرور شما (x86_64 یا aarch64) دانلود و اجرا می‌کند. اسکریپت `install.sh` فقط چند پرچم مخصوص خودش را می‌گیرد و بقیه‌ی آرگومان‌ها را دست‌نخورده به `bootstrap.sh` می‌دهد.
@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.s
 
 ### ۱. نصب سرور ایران (Iran Panel):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- \
   --panel \
   --domain mydomain.com \
   --fullchain /etc/letsencrypt/live/mydomain.com/fullchain.pem \
@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.s
 
 ### ۲. نصب نود خارج (Foreign Node):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- \
   --node -- \
   --server mydomain.com:443 \
   --name node-germany \
@@ -76,7 +76,7 @@ sudo HUB_PORT=8088 bash rathole-manager/ratholehub/install-hub.sh
 
 برای ارتقا به آخرین نسخه (همراه با snapshot کامل، health-check و رول‌بک خودکار در صورت خطا):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --update
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --update
 ```
 
 اگر از قبل نصب دارید، ساده‌تر است مستقیم از خود سرور بزنید:
@@ -95,14 +95,14 @@ ratholenode update beta
 
 یا با نصب یک‌خطی:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --beta --update
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --beta --update
 ```
 
 برگشت به کانال پایدار با `ratholectl update` (بدون آرگومان) یا `ratholectl update stable` انجام می‌شود؛ در نصب یک‌خطی معادلش `--stable` است.
 
 برای pin کردن نسخه‌ی مشخص:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v2.0.2 --update
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.0.2 --update
 ```
 
 ### 🔒 نصب/آپدیت از مخزن خصوصی

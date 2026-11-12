@@ -9,6 +9,9 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+### Changed
+- **انتقال کامل مخزن به `l8PYGIT/RatholeEngine`:** همه‌ی آدرس‌های `loopy-iri/tunnelplus` در کد و مستندات به slug جدید تغییر کرد — پیش‌فرض `install.sh` (`RATHOLE_GH`)، دانلود `ratholeagent.py` در `ratholectl`/`ratholenode`، پیش‌فرض `gh_repo` در `hub.py`، `tools/update-private.sh`، `tools/mkdocs_wiki_links.py` و همه‌ی نمونه‌های نصب در README/`docs/`/ویکی. حالا دستور یک‌خطی و صفحه‌ی مستندات به مخزن فعلی اشاره می‌کنند و از ریلیزهای همین مخزن نصب می‌شوند.
+
 ## [2.0.3] - 2026-11-12
 
 ### Added
@@ -80,7 +83,7 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ### Changed
 - **همگام‌سازی مستندات و انتشار:** راهنماها با dual-core Backhaul، دستورهای واقعی CLI و رابط Hub نسخه‌ی ۱.۹.۱ تطبیق داده شدند.
-- **مخزن پیش‌فرض:** لینک‌ها، نصاب‌ها و Hub به مخزن فعلی `loopy-iri/tunnelplus` منتقل شدند تا نصب یک‌خطی و آپدیت از Release درست کار کند.
+- **مخزن پیش‌فرض:** لینک‌ها، نصاب‌ها و Hub به مخزن فعلی `l8PYGIT/RatholeEngine` منتقل شدند تا نصب یک‌خطی و آپدیت از Release درست کار کند.
 
 ## [1.9.1] - 2026-08-14
 
@@ -440,7 +443,7 @@ in release DGHIGHAN moshkeli ra mibandad ke server-haye beta ra downgrade mikard
 
 ### Added
 - **hub — sim-keshi-ye node-e Iran be node/upstream ba yek dokme:** dar jadval-e node-haye har server-e Iran, dokme-ye jadid **«afzoodan be node»** ezafe shod. ba click yek modal baz mishavad ke list-e **hameye** node-haye kharej + upstream-hayeshan ra neshan midahad (anhayi ke tunnel-eshan be hamin server-e Iran vasl ast ba `✓` alamat-gozari va default entekhab mishavand). baad az entekhab-e maghsad, token/inbound-e vaghei-ye node-e Iran (ke dar `ls` mask ast) az `ratholectl show <node>` gerefte mishavad (endpoint-e jadid `GET /api/servers/<iran>/nodeconnect/<node>`) va rooye node-e maghsad be onvan service sabt mishavad (`add_svc` ya `upstream_add_svc`). hame ba regex etebarsanji va argv (bedoon interpolation).
-- **ratholectl — dstvr-e nasb-e node be shekl-e curl yek-khatti:** baad az `ratholectl add <name> <inbound>` (va `ratholectl token <name>`) alaan **avval** dstvr-e amade-ye `curl -fsSL …/install.sh | sudo bash -s -- --node -- --server <panel>:443 --name … --token … --inbound-port …` chap mishavad (ba field-haye por-shode az state)، sps shekl-e mahalli-ye `install-node.sh`. agar domain khali bashad (halat IP-tunnel)، `--server` ba IP-e omomi (`detect_ip`) por mishavad. slug/ref az `RATHOLE_GH`/`RATHOLE_REF` (pishfarz `loopy-iri/RatholeEngine` + `main`). dar hub ham chon in khorooji chand-khatti-ye `add_node` dar `outModal` (ba dokme-ye copy) neshan dade mishavad، mostaghim ghabel-e kopy ast
+- **ratholectl — dstvr-e nasb-e node be shekl-e curl yek-khatti:** baad az `ratholectl add <name> <inbound>` (va `ratholectl token <name>`) alaan **avval** dstvr-e amade-ye `curl -fsSL …/install.sh | sudo bash -s -- --node -- --server <panel>:443 --name … --token … --inbound-port …` chap mishavad (ba field-haye por-shode az state)، sps shekl-e mahalli-ye `install-node.sh`. agar domain khali bashad (halat IP-tunnel)، `--server` ba IP-e omomi (`detect_ip`) por mishavad. slug/ref az `RATHOLE_GH`/`RATHOLE_REF` (pishfarz `l8PYGIT/RatholeEngine` + `main`). dar hub ham chon in khorooji chand-khatti-ye `add_node` dar `outModal` (ba dokme-ye copy) neshan dade mishavad، mostaghim ghabel-e kopy ast
 
 ### Fixed
 - **hub — node bedoon tunnel-e asli (`?`):** vaghti node az tarigh-e hub nasb/provision mishod, server-e Iran be onvan tunnel-e **main** set nemishod va dar safhe-ye node khali/`?` mimond. hala: (1) form-e «nasb khodkar» yek select-e «server Iran» darad ke baad az deploy khodkar `ratholenode set SERVER <iran>:443` ra ejra mikonad (agar faghat yek server Iran bashad، hamon entekhab mishavad)؛ (2) dar safhe-ye har node dokme-ye jadid **«tanzim tunnel asli»** ejaze midahad node-haye mojood ra be yek server Iran vasl koni. amal-e `set_server` dar hub ba regex etebarsanji va be sorat-e argv ejra mishavad (bedoon interpolation)
@@ -550,15 +553,15 @@ in release DGHIGHAN moshkeli ra mibandad ke server-haye beta ra downgrade mikard
   - transport-ha: websocket+TLS / kcp / plain / noise / game-SNI
   - install/update/rollback: `install.sh`، `bootstrap.sh`، `update.sh` ba snapshot + health-check
 
-[Unreleased]: https://github.com/loopy-iri/RatholeEngine/compare/v1.4.4...HEAD
-[1.4.4]: https://github.com/loopy-iri/RatholeEngine/compare/v1.4.3...v1.4.4
-[1.4.3]: https://github.com/loopy-iri/RatholeEngine/compare/v1.4.2...v1.4.3
-[1.4.2]: https://github.com/loopy-iri/RatholeEngine/compare/v1.4.1...v1.4.2
-[1.4.1]: https://github.com/loopy-iri/RatholeEngine/compare/v1.4.0...v1.4.1
-[1.4.0]: https://github.com/loopy-iri/RatholeEngine/compare/v1.3.0...v1.4.0
-[1.3.0]: https://github.com/loopy-iri/RatholeEngine/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/loopy-iri/RatholeEngine/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/loopy-iri/RatholeEngine/compare/v1.0.2...v1.1.0
-[1.0.2]: https://github.com/loopy-iri/RatholeEngine/compare/v1.0.1...v1.0.2
-[1.0.1]: https://github.com/loopy-iri/RatholeEngine/compare/v1.0.0...v1.0.1
-[1.0.0]: https://github.com/loopy-iri/RatholeEngine/releases/tag/v1.0.0
+[Unreleased]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.4.4...HEAD
+[1.4.4]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.4.3...v1.4.4
+[1.4.3]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.4.2...v1.4.3
+[1.4.2]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.4.1...v1.4.2
+[1.4.1]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.0.2...v1.1.0
+[1.0.2]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/l8PYGIT/RatholeEngine/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/l8PYGIT/RatholeEngine/releases/tag/v1.0.0

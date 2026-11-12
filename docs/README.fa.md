@@ -9,16 +9,16 @@
 _یک پورت (۴۴۳) · یک دامنه · یک گواهی · مسیریابی نودها با path_
 _ساخته‌شده برای تونل مقاومِ سانسور به داخل ایران._
 
-[![CI](https://github.com/loopy-iri/tunnelplus/actions/workflows/ci.yml/badge.svg)](https://github.com/loopy-iri/tunnelplus/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/loopy-iri/tunnelplus?sort=semver&color=7c3aed)](https://github.com/loopy-iri/tunnelplus/releases/latest)
-[![License](https://img.shields.io/github/license/loopy-iri/tunnelplus?color=blue)](../LICENSE)
-[![Stars](https://img.shields.io/github/stars/loopy-iri/tunnelplus?style=flat&color=16a34a)](https://github.com/loopy-iri/tunnelplus/stargazers)
+[![CI](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/l8PYGIT/RatholeEngine?sort=semver&color=7c3aed)](https://github.com/l8PYGIT/RatholeEngine/releases/latest)
+[![License](https://img.shields.io/github/license/l8PYGIT/RatholeEngine?color=blue)](../LICENSE)
+[![Stars](https://img.shields.io/github/stars/l8PYGIT/RatholeEngine?style=flat&color=16a34a)](https://github.com/l8PYGIT/RatholeEngine/stargazers)
 <br/>
 ![shell](https://img.shields.io/badge/shell-bash-4EAA25?logo=gnubash&logoColor=white)
 ![python](https://img.shields.io/badge/python-stdlib%20only-3776AB?logo=python&logoColor=white)
 ![tunnel](https://img.shields.io/badge/tunnel-rathole%20%2B%20nginx-7c3aed)
 
-[**English**](../README.md) · [**فارسی**](#این-چیست) · [**ویکی جامع (Wiki)**](https://github.com/loopy-iri/tunnelplus/wiki) · [شروع سریع](#شروع-سریع) · [Telegram](https://t.me/l8PY4NET)
+[**English**](../README.md) · [**فارسی**](#این-چیست) · [**ویکی جامع (Wiki)**](https://github.com/l8PYGIT/RatholeEngine/wiki) · [شروع سریع](#شروع-سریع) · [Telegram](https://t.me/l8PY4NET)
 
 </div>
 
@@ -123,7 +123,7 @@ ratholectl ip-cert-off                 # حذف vhost IP TLS
 
 > **نکتهٔ دستور نصب نود:** بعد از `ratholectl add <name> <inbound>` (و `ratholectl show <name>`)، **اول** یک دستور نصب آمادهٔ کپی به شکل curl یک‌خطی چاپ می‌شود که مستقیم روی نود خارج اجرا می‌شود، سپس شکل محلی `install-node.sh`:
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --node -- \
+> curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --node -- \
 >   --server <panel>:443 --name <name> --token <T> --inbound-port <inbound>
 > ```
 > اگر دامنه‌ای ست نشده باشد (حالت تانل با IP)، `--server` با IP عمومی سرور پر می‌شود.
@@ -564,24 +564,24 @@ curl -H "Authorization: Bearer <TOKEN>" -H 'Content-Type: application/json' \
 
 ### نصب تک‌کامانده از گیت‌هاب (curl | sudo bash)
 
-ساده‌ترین راه؛ آخرین بسته‌ی release را از گیت‌هاب می‌گیرد و نصاب را اجرا می‌کند. پیش‌فرض روی `loopy-iri/tunnelplus` است — برای fork خودت متغیر `RATHOLE_GH` را ست کن:
+ساده‌ترین راه؛ آخرین بسته‌ی release را از گیت‌هاب می‌گیرد و نصاب را اجرا می‌کند. پیش‌فرض روی `l8PYGIT/RatholeEngine` است — برای fork خودت متغیر `RATHOLE_GH` را ست کن:
 
 ```bash
 # کاملاً تعاملی (حالت پنل/نود و اطلاعات را می‌پرسد)
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
 
 # سرور ایران (پنل) غیرتعاملی:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --panel \
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --panel \
   --domain panel.example.ir \
   --fullchain /root/cert/panel.example.ir/fullchain.pem \
   --key       /root/cert/panel.example.ir/privkey.pem
 
 # نود خارج غیرتعاملی:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --node -- \
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --node -- \
   --server panel.example.ir:443 --name trk01 --token <T> --inbound-port 2087
 
 # آپدیت کامل (تشخیص خودکار پنل/نود/هاب، با snapshot + رولبک خودکار):
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --update
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --update
 ```
 
 > `install.sh` فایل‌های `rathole-manager.zip` و `bootstrap.sh` را از آخرین GitHub Release (که workflowِ release می‌سازد) دانلود می‌کند و بعد به `bootstrap.sh` تحویل می‌دهد. برای تغییر مخزن: `RATHOLE_GH="you/repo"`.
@@ -589,7 +589,7 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.s
 > **نصب یک نسخه‌ی خاص:** با فلگ `--release` (اگر بدون آرگومان اجرا کنی، خودش می‌پرسد؛ Enter = آخرین نسخه):
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v2.0.2 --panel --domain ... --fullchain ... --key ...
+> curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.0.2 --panel --domain ... --fullchain ... --key ...
 > ```
 >
 > `--beta` آخرین pre-release و `--stable` آخرین نسخه‌ی پایدار را می‌گیرد. از روی سرورِ نصب‌شده: `ratholectl update v2.0.2` یا `ratholenode update v2.0.2`.
@@ -634,7 +634,7 @@ sudo env RATHOLE_GH="OWNER/REPO" bash /tmp/install.sh \
   --token "$RATHOLE_GH_TOKEN" --panel --domain ...
 ```
 
-- `install.sh` فلگ `--token`/`-t` را می‌شناسد؛ توکن از env هم خوانده می‌شود: `RATHOLE_GH_TOKEN` (یا `GH_TOKEN`/`GITHUB_TOKEN`). فایل‌های raw با هدر `Authorization: Bearer` دانلود می‌شوند و در صورت نیاز از آرشیو API گیت‌هاب استفاده می‌شود؛ **برای مخزن خصوصی mirrorهای عمومی حذف می‌شوند**. slug مخزن از `RATHOLE_GH` خوانده می‌شود (پیش‌فرض `loopy-iri/tunnelplus`) و توکن به‌صورت `RATHOLE_GH_TOKEN` به `bootstrap.sh` تحویل داده می‌شود.
+- `install.sh` فلگ `--token`/`-t` را می‌شناسد؛ توکن از env هم خوانده می‌شود: `RATHOLE_GH_TOKEN` (یا `GH_TOKEN`/`GITHUB_TOKEN`). فایل‌های raw با هدر `Authorization: Bearer` دانلود می‌شوند و در صورت نیاز از آرشیو API گیت‌هاب استفاده می‌شود؛ **برای مخزن خصوصی mirrorهای عمومی حذف می‌شوند**. slug مخزن از `RATHOLE_GH` خوانده می‌شود (پیش‌فرض `l8PYGIT/RatholeEngine`) و توکن به‌صورت `RATHOLE_GH_TOKEN` به `bootstrap.sh` تحویل داده می‌شود.
 - **روی سرور نصب‌شده:** `sudo env RATHOLE_GH="OWNER/REPO" bash tools/update-private.sh` — آخرین release asset (یا سورس `main` با `RATHOLE_RELEASE=main`) را می‌گیرد و `bootstrap.sh --local --update` را اجرا می‌کند (همان snapshot + health-check + rollback). توکن را مخفی می‌پرسد یا از `RATHOLE_GH_TOKEN` می‌خواند و در پایان از محیط unset می‌کند. نسخه با `RATHOLE_RELEASE` تعیین می‌شود. (این فایل داخل بستهٔ نصبی نیست؛ از checkout/مخزن برش دار و روی سرور اجرا کن.)
 - `ratholectl update` / `ratholenode update` از مسیر mirrorهای **عمومی** گیت‌هاب استفاده می‌کنند؛ برای مخزن خصوصی به‌جای آن‌ها `tools/update-private.sh` را روی همان سرور اجرا کن.
 

@@ -88,5 +88,5 @@ ratholenode set-main <ip>:443 <ip> /path/to/cert   # ثبت trusted root روی 
 - [`README.fa.md`](README.fa.md) — مرجع کامل CLI و روش‌های نصب.
 - [`install-manual.fa.md`](install-manual.fa.md) — نصب دستی گام‌به‌گام (فارسی)
 - [`install-manual.md`](install-manual.md) — Manual install walkthrough (English)
-- [**Wiki — مرجع کامل دستورات**](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference)
+- [**Wiki — مرجع کامل دستورات**](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference)
 - [`../rathole-multilocation-pasargad.md`](../rathole-multilocation-pasargad.md) — سند طراحی/عیب‌یابی تفصیلی اصلی.

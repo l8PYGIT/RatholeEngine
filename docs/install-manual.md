@@ -699,7 +699,7 @@ journalctl -u rathole-client -f   # node
 
 ## 8. Private-repo install & updates
 
-Everything above assumes the public repo (`loopy-iri/tunnelplus`; `RATHOLE_GH="owner/repo"` overrides the slug). If your fork/mirror is **private**, the files are served through the GitHub API and the public ghproxy mirrors are skipped (they cannot read a private repo).
+Everything above assumes the public repo (`l8PYGIT/RatholeEngine`; `RATHOLE_GH="owner/repo"` overrides the slug). If your fork/mirror is **private**, the files are served through the GitHub API and the public ghproxy mirrors are skipped (they cannot read a private repo).
 
 ### 8.1 One-command install from a private repo
 

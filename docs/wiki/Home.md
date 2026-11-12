@@ -8,7 +8,7 @@
 
 ![داشبورد RatholeHub — نسخهٔ نمایشی](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
 
-> 🌐 **نسخهٔ وب مستندات:** همین محتوا به‌صورت یک **وب‌سایت استاتیک** هم قابل ساخت است. راهنمای ساخت/انتشار و مقایسهٔ پلتفرم‌های ویکی وب (MkDocs Material، VitePress — که مرزبان استفاده می‌کند —، Docusaurus و Docsify) در [`docs/website.md`](https://github.com/loopy-iri/tunnelplus/blob/main/docs/website.md) آمده است.
+> 🌐 **نسخهٔ وب مستندات:** همین محتوا به‌صورت یک **وب‌سایت استاتیک** هم قابل ساخت است. راهنمای ساخت/انتشار و مقایسهٔ پلتفرم‌های ویکی وب (MkDocs Material، VitePress — که مرزبان استفاده می‌کند —، Docusaurus و Docsify) در [`docs/website.md`](https://github.com/l8PYGIT/RatholeEngine/blob/main/docs/website.md) آمده است.
 
 ---
 
@@ -69,9 +69,9 @@
 
 ## 📜 لایسنس (License)
 
-پروژه تحت لایسنس **[AGPL-3.0-or-later](https://github.com/loopy-iri/tunnelplus/blob/main/LICENSE)** به‌صورت متن‌باز منتشر شده است.
+پروژه تحت لایسنس **[AGPL-3.0-or-later](https://github.com/l8PYGIT/RatholeEngine/blob/main/LICENSE)** به‌صورت متن‌باز منتشر شده است.
 
 نسخه‌های تا v1.7.0 تحت MIT منتشر شده بودند و همچنان تحت MIT در دسترس‌اند؛ از آن پس پروژه AGPL-3.0 است.
 نکته‌ی عملی (بند ۱۳ AGPL): اگر RatholeEngine را تغییر دهید و دیگران از طریق شبکه با نسخه‌ی تغییریافته‌ی شما
 کار کنند (مثلاً پنل وب `ratholehub` را برایشان اجرا کنید)، باید سورس نسخه‌ی خود را به آن‌ها ارائه دهید.
-جزئیات در [NOTICE](https://github.com/loopy-iri/tunnelplus/blob/main/NOTICE).
+جزئیات در [NOTICE](https://github.com/l8PYGIT/RatholeEngine/blob/main/NOTICE).

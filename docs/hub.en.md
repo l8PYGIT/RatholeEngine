@@ -245,7 +245,7 @@ This map (regexes, `build_*_cmd`, `WRITE_ACTIONS`) has lived in the small, revie
 - *Node:* `show`, `ls`, `upstream_*`, `set_server`, `set_main`, service management (`add_svc`, `rm_svc`, `add_bh_svc`, `rm_bh_svc`), control path (`control_path_*`), transport (`kcp_*`, `plain_*`, `noise_*`, `backhaul_*`, `frp_*`, `gre_*`), watchdog/adaptive, and `apply`/`restart`/`migrate`.
 - **`WRITE_ACTIONS`** marks the mutating actions; those (plus `deploy`, `provision`, and `config_save`) are written to the **audit log**: user (IP), server, action, command, and `rc` — an append-only file at `/etc/ratholehub/audit.log`, visible at `#/audit`.
 - Listens on `127.0.0.1` (behind nginx at `/hub/` or via SSH forward); no new public port is opened. Admin login is limited to 5 failed attempts per 5 minutes per IP (`429`); the session cookie `rhsession` is `hmac(api_token, expiry)` valid for 24 hours.
-- `deploy_to_server` (the "Update"/"Update All" buttons) fetches the latest `install.sh` **on the server itself** from GitHub (through the ghproxy mirror loop) and runs it with `--update`; the repo slug comes from config (`gh_repo`, default `loopy-iri/tunnelplus`, validated by `RE_SLUG`) and the channel from `update_channel` (`stable|beta`, `RE_CHAN`), and only those two validated values are substituted into the fixed `bash -c` script.
+- `deploy_to_server` (the "Update"/"Update All" buttons) fetches the latest `install.sh` **on the server itself** from GitHub (through the ghproxy mirror loop) and runs it with `--update`; the repo slug comes from config (`gh_repo`, default `l8PYGIT/RatholeEngine`, validated by `RE_SLUG`) and the channel from `update_channel` (`stable|beta`, `RE_CHAN`), and only those two validated values are substituted into the fixed `bash -c` script.
 - **REST Agent**: Bearer auth, constant-time compare, binary allow-list, 1 MiB body cap, and a 1–3600 s timeout. See [REST Agent Mode](#rest-agent-mode-ssh-free).
 
 ## Local Development (Mock Mode)
@@ -279,8 +279,8 @@ Files are served with a **filename whitelist** (no path joining, so path travers
 
 ## See also
 
-- [CLI Reference (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — `ratholectl hub` / `ratholectl agent` and related commands
-- [Hub Management (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/Hub-Management) — Persian wiki version of this page
+- [CLI Reference (Wiki)](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference) — `ratholectl hub` / `ratholectl agent` and related commands
+- [Hub Management (Wiki)](https://github.com/l8PYGIT/RatholeEngine/wiki/Hub-Management) — Persian wiki version of this page
 - [`hub.md`](hub.md) — Persian version of this document
 - [`architecture.md`](architecture.md) — System architecture overview
 - [`README.fa.md`](README.fa.md) — full CLI reference

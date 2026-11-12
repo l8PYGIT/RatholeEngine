@@ -194,8 +194,8 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 
 ## همچنین ببینید
 
-- [مرجع کامل دستورات CLI (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — syntax کامل همه دستورات
-- [راهنماهای عملی (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/Workflow-Guides) — راه‌اندازی direct-IP، مهاجرت به backhaul، چند دامنه، multi-upstream
+- [مرجع کامل دستورات CLI (ویکی)](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference) — syntax کامل همه دستورات
+- [راهنماهای عملی (ویکی)](https://github.com/l8PYGIT/RatholeEngine/wiki/Workflow-Guides) — راه‌اندازی direct-IP، مهاجرت به backhaul، چند دامنه، multi-upstream
 - [`transport-modes.en.md`](transport-modes.en.md) — نسخه انگلیسی همین سند
 - [`architecture.md`](architecture.md) — معماری کلی سیستم
 - [`hub.md`](hub.md) — پنل وب، سرویس‌کنترل‌ها، REST Agent و مدل امنیتی

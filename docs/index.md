@@ -10,7 +10,7 @@
 [شروع سریع](#شروع-سریع){ .md-button .md-button--primary }
 [معماری](architecture.md){ .md-button }
 [ویکی](wiki/Home.md){ .md-button }
-[مخزن GitHub](https://github.com/loopy-iri/tunnelplus){ .md-button }
+[مخزن GitHub](https://github.com/l8PYGIT/RatholeEngine){ .md-button }
 
 </div>
 
@@ -74,7 +74,7 @@
     نصب غیرتعاملی پنل روی سرور ایران (nginx + rathole server + `ratholectl`):
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh \
+    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
       | sudo bash -s -- --panel \
         --domain panel.example.ir \
         --fullchain /root/cert/panel.example.ir/fullchain.pem \
@@ -94,7 +94,7 @@
     (آرگومان‌های بعد از `--` به نصب‌کنندهٔ نود می‌رسند):
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh \
+    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
       | sudo bash -s -- --node -- \
         --server panel.example.ir:443 --name trk01 --token <TOKEN> --inbound-port 2087
     ```
@@ -115,7 +115,7 @@
 
     ```bash
     # تشخیص خودکار پنل/نود/هاب + snapshot + health-check + rollback خودکار
-    curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh \
+    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
       | sudo bash -s -- --update
     ```
 
@@ -217,6 +217,6 @@
     تا سایت از داخل ایران هم سریع و قابل‌اتکا بماند.
 
 پروژه تحت لایسنس **AGPL-3.0-or-later** منتشر شده است —
-[متن لایسنس](https://github.com/loopy-iri/tunnelplus/blob/main/LICENSE) ·
-[تغییرات](https://github.com/loopy-iri/tunnelplus/blob/main/CHANGELOG.md) ·
+[متن لایسنس](https://github.com/l8PYGIT/RatholeEngine/blob/main/LICENSE) ·
+[تغییرات](https://github.com/l8PYGIT/RatholeEngine/blob/main/CHANGELOG.md) ·
 [کانال تلگرام](https://t.me/l8PY4NET)

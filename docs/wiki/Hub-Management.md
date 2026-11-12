@@ -9,7 +9,7 @@
 
 > در نسخه‌ی **v2.0.2** صفحه‌ی «بورد سیم‌کشی» (`#/wiring`) حذف شده است. لینک قدیمی `#/wiring` بی‌صدا به داشبورد برمی‌گردد. جای آن، **کنترل‌های سرویس** در ردیف هر سرویس (صفحه‌ی ایران و نود) قرار گرفته است.
 
-![معماری هاب](https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/docs/assets/hub-architecture.svg)
+![معماری هاب](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/hub-architecture.svg)
 
 ![کنترل‌های سرویس — مودال «حامل و پروتکل» روی یک سرویس](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/service-controls.png)
 
@@ -217,7 +217,7 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST \
 - دکمه‌ی update هر سرور = `deploy_to_server`: روی خود سرور `install.sh` آخرین Release را دانلود و `--update` را اجرا می‌کند (snapshot + health-check + rollback خودکار). هاب به bundle محلی وابسته نیست.
 - `deploy` برای اتصال **api** هم همان مسیر را طی می‌کند: دستور روی سرور اجرا می‌شود، نه از روی هاب.
 - کانال آپدیت از config (`update_channel`: `stable` یا `beta`؛ پیش‌فرض `stable`) خوانده می‌شود. برای سرورهای بتا حتماً `beta` بگذارید تا به نسخه‌ی پایدار قدیمی‌تر downgrade نشوند.
-- slug مخزن از config (`gh_repo`، پیش‌فرض `loopy-iri/tunnelplus`) و با `RE_SLUG` اعتبارسنجی می‌شود.
+- slug مخزن از config (`gh_repo`، پیش‌فرض `l8PYGIT/RatholeEngine`) و با `RE_SLUG` اعتبارسنجی می‌شود.
 - **مخزن خصوصی:** آپدیت گروهی از هاب برای مخزن خصوصی پشتیبانی نمی‌شود (هاب روی سرور به توکن GitHub دسترسی ندارد)؛ روی هر سرور از `tools/update-private.sh` یا `install.sh --token` استفاده کنید. جزئیات: **[Workflow Guides](Workflow-Guides)**.
 
 ---

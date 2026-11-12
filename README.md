@@ -20,7 +20,7 @@ _Built for censorship-resistant tunneling into Iran._
 ![python](https://img.shields.io/badge/python-stdlib%20only-3776AB?logo=python&logoColor=white)
 ![tunnel](https://img.shields.io/badge/tunnel-rathole%20%2B%20nginx-7c3aed)
 
-[**English**](#what-is-this) · [**فارسی**](docs/README.fa.md) · [**Docs site**](https://l8pygit.github.io/RatholeEngine/) · [**Full Wiki**](https://github.com/loopy-iri/tunnelplus/wiki) · [Quick start](#quick-start) · [Documentation](#documentation) · [Telegram](https://t.me/l8PY4NET)
+[**English**](#what-is-this) · [**فارسی**](docs/README.fa.md) · [**Docs site**](https://l8pygit.github.io/RatholeEngine/) · [**Full Wiki**](https://github.com/l8PYGIT/RatholeEngine/wiki) · [Quick start](#quick-start) · [Documentation](#documentation) · [Telegram](https://t.me/l8PY4NET)
 
 </div>
 
@@ -81,20 +81,20 @@ Details: [`docs/transport-modes.md`](docs/transport-modes.md).
 
 ## Quick start
 
-**One command from GitHub** (downloads the latest release bundle, then runs the installer). Defaults to `loopy-iri/tunnelplus` — override with `RATHOLE_GH` to use a fork:
+**One command from GitHub** (downloads the latest release bundle, then runs the installer). Defaults to `l8PYGIT/RatholeEngine` — override with `RATHOLE_GH` to use a fork:
 
 ```bash
 # Fully interactive (asks panel/node + details)
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
 
 # Iran server (panel), non-interactive:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --panel \
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --panel \
   --domain panel.example.ir \
   --fullchain /root/cert/panel.example.ir/fullchain.pem \
   --key       /root/cert/panel.example.ir/privkey.pem
 
 # Foreign node, non-interactive:
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --node -- \
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --node -- \
   --server panel.example.ir:443 --name trk01 --token <T> --inbound-port 2087
 ```
 
@@ -103,7 +103,7 @@ curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.s
 Install a **specific released version** with `--release` (run with no arguments and it asks; Enter = latest):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --release v2.0.2 --panel --domain panel.example.ir --fullchain /path/fullchain.pem --key /path/privkey.pem
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.0.2 --panel --domain panel.example.ir --fullchain /path/fullchain.pem --key /path/privkey.pem
 ```
 
 `--beta` takes the newest pre-release, `--stable` the newest stable. From an installed server: `ratholectl update v2.0.2` / `ratholenode update v2.0.2`. Note `RATHOLE_RELEASE=... curl ... | sudo bash` does **not** work — the variable goes to `curl` and `sudo` strips it; use the flag.
@@ -158,7 +158,7 @@ Updates take a **full snapshot** (CLI + configs + systemd units) into `/var/back
 
 ```bash
 # Update in place (auto-detects panel/node/hub; snapshot + health-check + auto-rollback)
-curl -fsSL https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/install.sh | sudo bash -s -- --update
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --update
 #   or, from an installed tree:  sudo bash /opt/rathole-manager/update.sh
 
 sudo bash update.sh --list-backups        # list snapshots
@@ -186,7 +186,7 @@ TLS certs are never removed. The shared `common.sh` is removed only when no othe
 | Doc | Contents |
 |-----|----------|
 | [**Docs site (Pages)**](https://l8pygit.github.io/RatholeEngine/) | **Online documentation site** — Persian docs + wiki + English, built with MkDocs Material ([build guide](docs/website.md)). |
-| [**GitHub Wiki**](https://github.com/loopy-iri/tunnelplus/wiki) | **Complete GitHub Wiki** (Getting Started, CLI Reference, Adaptive Filtering, Hub, Troubleshooting). |
+| [**GitHub Wiki**](https://github.com/l8PYGIT/RatholeEngine/wiki) | **Complete GitHub Wiki** (Getting Started, CLI Reference, Adaptive Filtering, Hub, Troubleshooting). |
 | [`docs/architecture.md`](docs/architecture.md) | Three roles, state→regenerate→reload principle, path==name==map==inbound invariant. |
 | [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [`fa`](docs/transport-modes.md) | All transport and ingress modes with commands (English · فارسی). |
 | [`docs/traffic-flow.md`](docs/traffic-flow.md) | Layer-by-layer packet path incl. direct-IP and proxy (Mermaid + SVG). |

@@ -240,7 +240,7 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST $B/api/servers \
 - **node**: `show`, `ls`, `upstream_*`, `set_server`, `set_main`, مدیریت سرویس (`add_svc`, `rm_svc`, `add_bh_svc`, `rm_bh_svc`)، کنترل مسیر (`control_path_*`)، transport (`kcp_*`, `plain_*`, `noise_*`, `backhaul_*`, `frp_*`, `gre_*`)، watchdog/adaptive و `apply`/`restart`/`migrate`.
 - **`WRITE_ACTIONS`** مجموعه‌ی actionهای نوشتاری را مشخص می‌کند؛ همان‌ها (به‌همراه `deploy`، `provision` و `config_save`) در **audit log** ثبت می‌شوند: کاربر (IP)، سرور، action، دستور و `rc` — فایل append-only در `/etc/ratholehub/audit.log` و قابل‌مشاهده در `#/audit`.
 - روی `127.0.0.1` می‌شنود (پشت nginx زیر `/hub/` یا SSH-forward)؛ هیچ پورت عمومی جدیدی باز نمی‌شود. ورود مدیر محدود به ۵ تلاش ناموفق در ۵ دقیقه برای هر IP است (`429`)؛ کوکی نشست `rhsession` = `hmac(api_token, expiry)` با اعتبار ۲۴ ساعت.
-- `deploy_to_server` (دکمه‌ی «آپدیت»/«آپدیت همه») روی خودِ سرور آخرین `install.sh` را از GitHub (از طریق حلقه‌ی mirror ghproxy) می‌گیرد و با `--update` اجرا می‌کند؛ slug مخزن از config (`gh_repo`، پیش‌فرض `loopy-iri/tunnelplus`، اعتبارسنجی با `RE_SLUG`) و کانال از `update_channel` (`stable|beta`، `RE_CHAN`) می‌آید و فقط همین دو مقدارِ اعتبارسنجی‌شده در دستور ثابت `bash -c` جای‌گذاری می‌شوند.
+- `deploy_to_server` (دکمه‌ی «آپدیت»/«آپدیت همه») روی خودِ سرور آخرین `install.sh` را از GitHub (از طریق حلقه‌ی mirror ghproxy) می‌گیرد و با `--update` اجرا می‌کند؛ slug مخزن از config (`gh_repo`، پیش‌فرض `l8PYGIT/RatholeEngine`، اعتبارسنجی با `RE_SLUG`) و کانال از `update_channel` (`stable|beta`، `RE_CHAN`) می‌آید و فقط همین دو مقدارِ اعتبارسنجی‌شده در دستور ثابت `bash -c` جای‌گذاری می‌شوند.
 - **REST Agent**: احراز هویت Bearer، مقایسهٔ ثابت‌زمان، لیست‌سفید باینری، سقف ۱ مگابایت بدنه و timeout ۱–۳۶۰۰ ثانیه. جزئیات در [حالت REST Agent](#حالت-rest-agent-بدون-ssh).
 
 ## توسعه‌ی محلی (حالت Mock)
@@ -274,8 +274,8 @@ ratholehub/
 
 ## جستارهای مرتبط
 
-- [مرجع CLI (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — `ratholectl hub` / `ratholectl agent` و دستورهای مرتبط
-- [مدیریت هاب (ویکی)](https://github.com/loopy-iri/tunnelplus/wiki/Hub-Management) — نسخهٔ ویکی همین صفحه
+- [مرجع CLI (ویکی)](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference) — `ratholectl hub` / `ratholectl agent` و دستورهای مرتبط
+- [مدیریت هاب (ویکی)](https://github.com/l8PYGIT/RatholeEngine/wiki/Hub-Management) — نسخهٔ ویکی همین صفحه
 - [`hub.en.md`](hub.en.md) — نسخهٔ انگلیسی این سند
 - [`architecture.md`](architecture.md) — نمای کلی معماری
 - [`README.fa.md`](README.fa.md) — مرجع کامل CLI

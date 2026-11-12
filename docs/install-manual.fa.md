@@ -691,7 +691,7 @@ journalctl -u rathole-client -f   # نود
 
 ## ۸. نصب و آپدیت از مخزن خصوصی
 
-همهٔ مراحل بالا مخزن عمومی (`loopy-iri/tunnelplus`؛ با `RATHOLE_GH="owner/repo"` قابل تغییر) را فرض می‌کنند. اگر fork/آینهٔ تو **private** است، فایل‌ها از راه GitHub API سرو می‌شوند و mirrorهای عمومی ghproxy رد می‌شوند (به مخزن خصوصی دسترسی ندارند).
+همهٔ مراحل بالا مخزن عمومی (`l8PYGIT/RatholeEngine`؛ با `RATHOLE_GH="owner/repo"` قابل تغییر) را فرض می‌کنند. اگر fork/آینهٔ تو **private** است، فایل‌ها از راه GitHub API سرو می‌شوند و mirrorهای عمومی ghproxy رد می‌شوند (به مخزن خصوصی دسترسی ندارند).
 
 ### ۸.۱ نصب تک‌کامانده از مخزن خصوصی
 

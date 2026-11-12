@@ -214,4 +214,4 @@ Apply each step separately so you know what actually helped. Agent/HTTPS setting
 
 - [`transport-modes.en.md`](transport-modes.en.md) — KCP profiles and all transport modes
 - [`architecture.en.md`](architecture.en.md) — system architecture
-- [CLI Reference (Wiki)](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference) — `ratholectl tune`, `kcp`, `ratholenode tune`
+- [CLI Reference (Wiki)](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference) — `ratholectl tune`, `kcp`, `ratholenode tune`

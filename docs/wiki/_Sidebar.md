@@ -29,16 +29,16 @@
 ---
 
 ### 🌐 وب‌سایت مستندات
-- 🧩 **[پلتفرم وب‌سایت و راهنمای انتشار](https://github.com/loopy-iri/tunnelplus/blob/main/docs/website.md)**
-- 🖼️ **[اسکرین‌شات‌های هاب](https://github.com/loopy-iri/tunnelplus/tree/main/docs/assets/screenshots)**
+- 🧩 **[پلتفرم وب‌سایت و راهنمای انتشار](https://github.com/l8PYGIT/RatholeEngine/blob/main/docs/website.md)**
+- 🖼️ **[اسکرین‌شات‌های هاب](https://github.com/l8PYGIT/RatholeEngine/tree/main/docs/assets/screenshots)**
 
 ---
 
 ### 📜 لایسنس
-- 📄 **[AGPL-3.0](https://github.com/loopy-iri/tunnelplus/blob/main/LICENSE)**
+- 📄 **[AGPL-3.0](https://github.com/l8PYGIT/RatholeEngine/blob/main/LICENSE)**
 
 ---
 
 ### 💬 ارتباط و پشتیبانی
 - 📢 **[کانال تلگرام](https://t.me/l8PY4NET)**
-- 🐙 **[مخزن گیت‌هاب](https://github.com/loopy-iri/tunnelplus)**
+- 🐙 **[مخزن گیت‌هاب](https://github.com/l8PYGIT/RatholeEngine)**

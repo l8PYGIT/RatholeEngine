@@ -8,7 +8,7 @@ umask 077
 die(){ printf '[!] %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die 'ba sudo bash tools/update-private.sh ejra kon.'
 for tool in curl python3; do command -v "$tool" >/dev/null || die "$tool nasb nist."; done
-repo="${RATHOLE_GH:-loopy-iri/tunnelplus}"
+repo="${RATHOLE_GH:-l8PYGIT/RatholeEngine}"
 release="${RATHOLE_RELEASE:-latest}"
 [[ "$repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die 'repo bayad owner/repo bashad.'
 [[ "$release" =~ ^[A-Za-z0-9._-]+$ ]] || die 'release namotabar ast.'

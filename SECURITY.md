@@ -15,7 +15,7 @@ Out of scope: vulnerabilities in upstream binaries (`rathole`, `backhaul`, `kcpt
 
 Report privately via:
 - **Telegram:** [@l8PY4NET](https://t.me/l8PY4NET) (preferred — fastest response)
-- **GitHub Security Advisories:** use "Report a vulnerability" on the [Security tab](https://github.com/loopy-iri/tunnelplus/security/advisories/new)
+- **GitHub Security Advisories:** use "Report a vulnerability" on the [Security tab](https://github.com/l8PYGIT/RatholeEngine/security/advisories/new)
 
 Include:
 - A description of the vulnerability and its impact

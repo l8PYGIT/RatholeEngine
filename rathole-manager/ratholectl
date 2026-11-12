@@ -1153,7 +1153,7 @@ regenerate(){
 print_node_install(){
   need_bin jq; ensure_state
   local name="$1" domain ctrl node token inbound aib at
-  local gh="${RATHOLE_GH:-loopy-iri/tunnelplus}" ref="${RATHOLE_REF:-main}"
+  local gh="${RATHOLE_GH:-l8PYGIT/RatholeEngine}" ref="${RATHOLE_REF:-main}"
   domain="$(s_get '.domain')"
   node="$(jq -c --arg n "$name" '.nodes[]|select(.name==$n)' "$STATE")"
   [ -n "$node" ] || die "node '$name' peyda nashod."
@@ -2115,7 +2115,7 @@ cmd_agent(){
           mkdir -p /usr/local/share/rathole
           local _m
           for _m in "" "https://mirror.ghproxy.com/" "https://ghproxy.net/"; do
-            curl -fsSL --connect-timeout 10 "${_m}https://raw.githubusercontent.com/loopy-iri/tunnelplus/main/rathole-manager/ratholeagent.py" -o /usr/local/share/rathole/ratholeagent.py 2>/dev/null && break || true
+            curl -fsSL --connect-timeout 10 "${_m}https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/rathole-manager/ratholeagent.py" -o /usr/local/share/rathole/ratholeagent.py 2>/dev/null && break || true
           done
           chmod +x /usr/local/share/rathole/ratholeagent.py 2>/dev/null || true
           [ -f /usr/local/share/rathole/ratholeagent.py ] && agent_py="/usr/local/share/rathole/ratholeagent.py"
@@ -3333,7 +3333,7 @@ menu(){
 cmd_update(){
   need_root
   command -v curl >/dev/null 2>&1 || die "curl lazem ast (apt install -y curl)."
-  local gh="${RATHOLE_GH:-loopy-iri/tunnelplus}" rel="${RATHOLE_RELEASE:-latest}"
+  local gh="${RATHOLE_GH:-l8PYGIT/RatholeEngine}" rel="${RATHOLE_RELEASE:-latest}"
   # 'ratholectl update beta' → kanal-e pre-release. chon releases/latest/download pre-release ha
   # ra nadide migirad, aval bayad tag-e daghigh ra az atom peyda konim.
   case "${1:-}" in

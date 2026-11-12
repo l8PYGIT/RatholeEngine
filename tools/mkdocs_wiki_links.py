@@ -11,7 +11,7 @@ Three transformations run on the Markdown of every page before rendering:
    ``../README.md``, ``../LICENSE``, ``../tools/...`` or
    ``../rathole-manager/ratholectl``.  Those files are not part of the site,
    so the links are turned into absolute GitHub URLs
-   (``https://github.com/loopy-iri/tunnelplus/blob/main/...``, or
+   (``https://github.com/l8PYGIT/RatholeEngine/blob/main/...``, or
    ``/tree/main/...`` for directories), anchors preserved.
 
 3. **``raw.githubusercontent.com`` assets that point back into ``docs/``.**
@@ -33,7 +33,7 @@ import os
 import posixpath
 import re
 
-REPO = "loopy-iri/tunnelplus"
+REPO = "l8PYGIT/RatholeEngine"
 REPO_URL = "https://github.com/" + REPO
 RAW_DOCS_PREFIX = "https://raw.githubusercontent.com/" + REPO + "/main/docs/"
 

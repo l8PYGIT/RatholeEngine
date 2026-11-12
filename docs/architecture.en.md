@@ -101,4 +101,4 @@ ratholenode set-main <ip>:443 <ip> /path/to/cert    # Node: trust the cert
 - [`performance.en.md`](performance.en.md) — tuning beyond the tunnel
 - [`README.fa.md`](README.fa.md) — full CLI reference and install flows (Persian)
 - [`install-manual.md`](install-manual.md) — full manual install walkthrough (English)
-- [Wiki — CLI Reference](https://github.com/loopy-iri/tunnelplus/wiki/CLI-Reference)
+- [Wiki — CLI Reference](https://github.com/l8PYGIT/RatholeEngine/wiki/CLI-Reference)

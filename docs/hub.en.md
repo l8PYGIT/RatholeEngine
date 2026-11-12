@@ -300,3 +300,15 @@ A connected Rathole control channel does not prove an Xray inbound is usable. Ch
 that the active Xray configuration matches the panel's saved port, user and path;
 apply/restart Xray through the panel if the runtime configuration is stale. The hub
 does not automatically restart third-party panels or manage their user databases.
+
+Node `doctor` now checks actual TCP connectivity to the configured localhost backend
+and returns a failing exit status when that backend is unavailable. It cannot verify
+third-party user credentials merely from a listening socket.
+
+Adaptive switching preserves the separately configured adaptive settings when loading
+node state, verifies the alternate carrier before selecting it, enforces the configured
+cooldown, and returns to WSS after the recovery threshold. Failed config generation or
+service reload restores the prior carrier and reports failure. KCP health checks the
+remote WebSocket path rather than only its local accepting socket. TLS probes use the
+system/custom trust store, verify the hostname and RFC 6455 response headers, and stop
+reading after the bounded response headers instead of waiting for WebSocket EOF.

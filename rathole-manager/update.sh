@@ -418,11 +418,6 @@ apply_update(){
     fi
   done
 
-  if [ "$NODE" -eq 1 ]; then
-    mkdir -p /etc/systemd/system/rathole-client.service.d
-    printf '[Service]\nReadWritePaths=/etc/rathole\n' > /etc/systemd/system/rathole-client.service.d/config-lock.conf
-  fi
-
   # --- samt panel ---
   if [ "$PANEL" -eq 1 ]; then
     log "context: panel (server Iran)"
@@ -487,6 +482,12 @@ Restart=always
 RestartSec=2
 Environment=RUST_LOG=info
 LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+ReadWritePaths=/etc/rathole
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

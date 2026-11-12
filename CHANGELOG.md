@@ -4,6 +4,11 @@
 - Default portless TLS WebSocket endpoints to 443; reject invalid install tokens and ports.
 - Reject multiline service tokens and invalid inbound ports before changing state.
 - Bound hub remote execution and prevent overlapping browser overview polling.
+- Preserve node unit hardening during upgrades; fix upstream error propagation and input validation.
+- Make doctor use real localhost TCP connectivity and return meaningful failure status.
+- Repair adaptive config loading, cooldown, WSS recovery thresholds and rollback on failed switches.
+- Probe the remote KCP/WebSocket path, verify RFC 6455 headers and stop reading at header completion.
+- Close failed Agent HTTP responses and add real-core/carrier/namespace/nginx/systemd integration labs.
 - Add regression coverage for field failures. Xray panel state remains externally managed.
 
 # Changelog

@@ -46,6 +46,9 @@ jobs:
 
       - name: manager regression tests
         run: |
+          bash tests/test_upstream_failure.sh
+          bash tests/test_adaptive_controller.sh
+          bash tests/test_node_doctor.sh
           bash tests/test_field_regressions.sh
           bash tests/test_node_config.sh
           bash tests/test_frp_lifecycle.sh

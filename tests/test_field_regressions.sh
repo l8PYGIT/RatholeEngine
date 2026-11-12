@@ -27,3 +27,13 @@ done
 if (id(){ echo 0; }; export -f id; bash "$ROOT/rathole-manager/install-node.sh" --server panel.example --name n1 --token 'token ' --inbound-port 2087) >"$TMP/error" 2>&1; then exit 1; fi
 grep -q 'token namotabar' "$TMP/error"
 echo 'ok - default TLS port, explicit port, invalid ports and copied tokens'
+
+for name in $'valid\nmalformed' 'bad/name'; do
+ if (cmd_add_svc "$name" token123 2087) >/dev/null 2>&1; then echo 'FAIL - invalid service name'; exit 1; fi
+ cmp "$SVC_FILE" "$TMP/original"
+done
+for extra in name api; do
+ if [ "$extra" = name ]; then badargs=(--name $'valid\nmalformed'); else badargs=(--api-inbound-port 2088); fi
+ if (id(){ echo 0; }; export -f id; bash "$ROOT/rathole-manager/install-node.sh" --server panel.example --name n1 --token token123 --inbound-port 2087 "${badargs[@]}") >"$TMP/error" 2>&1; then exit 1; fi
+done
+echo 'ok - installer validates service name and paired API credentials'

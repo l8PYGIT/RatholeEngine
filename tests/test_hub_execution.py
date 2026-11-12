@@ -4,6 +4,19 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'rathole-ma
 import hub
 
 class ExecutionTests(unittest.TestCase):
+    def test_agent_http_error_closes_response_on_valid_and_invalid_json(self):
+        import io, urllib.error
+        for payload in [b'{"error":"denied"}', b'not-json']:
+            with self.subTest(payload=payload):
+                body = io.BytesIO(payload)
+                error = urllib.error.HTTPError('http://test', 403, 'denied', {}, body)
+                opener = Mock()
+                opener.open.side_effect = error
+                server = {'api_url': 'http://test', 'api_token': 'test'}
+                with patch.object(hub, 'get_proxy', return_value=''), patch.object(hub.urllib.request, 'build_opener', return_value=opener):
+                    self.assertEqual(hub.run_on_agent(server, ['ratholectl', 'ls'])['rc'], 403)
+                self.assertTrue(body.closed)
+
     def test_remote_execution_concurrency_is_bounded(self):
         import concurrent.futures, threading, time
         lock = threading.Lock()

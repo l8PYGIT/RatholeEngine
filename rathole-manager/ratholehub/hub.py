@@ -316,6 +316,8 @@ def run_on_agent(server, cmd_args, timeout=120):
             err_msg = err_data.get("error", "")
         except Exception:
             err_msg = str(e)
+        finally:
+            e.close()
         return {"rc": e.code, "out": "", "err": f"HTTP {e.code}: {err_msg}"}
     except Exception as e:
         return {"rc": 1, "out": "", "err": f"Agent connection error: {e}"}

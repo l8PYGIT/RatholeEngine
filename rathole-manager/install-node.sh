@@ -45,6 +45,10 @@ else
 fi
 
 if [ -z "$RESTORE" ]; then
+  [[ "$NAME" =~ ^[A-Za-z0-9_-]+$ ]] || die "name namotabar."
+  if [ -n "$API_TOKEN$API_INBOUND" ]; then
+    [[ "$API_TOKEN" =~ ^[A-Za-z0-9._=+/-]+$ && "$API_INBOUND" =~ ^[0-9]{1,5}$ ]] && ((10#$API_INBOUND >= 1 && 10#$API_INBOUND <= 65535)) || die "API token/port namotabar."
+  fi
   [[ "$TOKEN" =~ ^[A-Za-z0-9._=+/-]+$ ]] || die "token namotabar (space/newline mojaz nist)."
   [[ "$INBOUND" =~ ^[0-9]{1,5}$ ]] && ((10#$INBOUND >= 1 && 10#$INBOUND <= 65535)) || die "inbound port bayad 1..65535 bashad."
   if [[ "$SERVER" == *:* ]]; then

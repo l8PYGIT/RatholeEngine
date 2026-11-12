@@ -49,7 +49,7 @@ echo "$TOKEN" > /etc/rathole-agent/token
 chmod 600 /etc/rathole-agent/token
 
 mkdir -p /opt/rathole-manager /usr/local/share/rathole
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 if [ -f "$SCRIPT_DIR/ratholeagent.py" ]; then
   cp -f "$SCRIPT_DIR/ratholeagent.py" /usr/local/share/rathole/ratholeagent.py
 elif [ -f "/usr/local/share/rathole/ratholeagent.py" ]; then

@@ -1,0 +1,136 @@
+# ---------------------------------------------------------------------------
+# RatholeEngine — static documentation site (MkDocs Material)
+#
+# Build (offline, from the repo venv):
+#   scratch/venv/Scripts/python.exe -m mkdocs build --no-strict -f mkdocs.yml
+#   → site/  (gitignored — always rebuild from docs/)
+#
+# Preview:
+#   scratch/venv/Scripts/python.exe -m mkdocs serve -f mkdocs.yml -a 127.0.0.1:8091
+#   or serve the built output: python -m http.server 8090 -d site
+#
+# Notes for the Iran audience:
+#   * theme.font: false  → no Google Fonts request; system font stack only.
+#   * every icon/asset is bundled with Material or docs/assets/.
+#   * no CDN <script>/<link> is emitted anywhere in site/.
+# ---------------------------------------------------------------------------
+site_name: RatholeEngine
+site_description: >-
+  مستندات رسمی RatholeEngine — تونل معکوس چند-موقعیتی روی rathole + Nginx
+site_url: https://l8pygit.github.io/RatholeEngine/
+repo_url: https://github.com/l8PYGIT/RatholeEngine
+repo_name: l8PYGIT/RatholeEngine
+edit_uri: edit/main/docs/
+copyright: >-
+  RatholeEngine · AGPL-3.0-or-later · ساخته‌شده برای عبور از فیلترینگ
+
+docs_dir: docs
+site_dir: site
+use_directory_urls: true
+
+theme:
+  name: material
+  language: fa
+  font: false
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: حالت تاریک
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: حالت روشن
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+
+# Material's search plugin (richer than MkDocs' built-in one). The separator
+# also splits on ZWNJ (U+200C) so Persian compound words are searchable.
+plugins:
+  - search:
+      separator: '[\s\u200c\-\.]+'
+
+hooks:
+  - tools/mkdocs_wiki_links.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+      # Unicode slugs (pymdownx) so Persian heading anchors like
+      # `#شروع-سریع` are real anchors instead of being stripped to ASCII.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra_css:
+  - assets/site.css
+
+# Internal planning docs under docs/superpowers/ and the GitHub-wiki sidebar
+# are source material, not website pages.
+exclude_docs: |
+  superpowers/
+  wiki/_Sidebar.md
+
+# Keep GitHub-wiki / repo-root links working on the built site. The hook also
+# localises raw.githubusercontent.com assets that point back into docs/.
+nav:
+  - صفحهٔ اصلی: index.md
+  - فارسی:
+      - راهنمای نصب: install-manual.fa.md
+      - مرجع CLI: README.fa.md
+      - معماری: architecture.md
+      - حالت‌های Transport: transport-modes.md
+      - مسیر ترافیک: traffic-flow.md
+      - هاب (Hub): hub.md
+      - پرفورمنس: performance.md
+      - دربارهٔ این سایت: website.md
+  - ویکی:
+      - خانه: wiki/Home.md
+      - شروع سریع: wiki/Getting-Started.md
+      - مرجع CLI: wiki/CLI-Reference.md
+      - مدیریت هاب: wiki/Hub-Management.md
+      - عیب‌یابی: wiki/Troubleshooting.md
+      - راهنماهای عملی: wiki/Workflow-Guides.md
+      - Adaptive Filtering: wiki/Adaptive-Filtering-Guide.md
+  - English:
+      - Install Manual: install-manual.md
+      - Architecture: architecture.en.md
+      - Transport Modes: transport-modes.en.md
+      - Hub: hub.en.md
+      - Traffic Flow: traffic-flow.en.md
+      - Performance: performance.en.md
+      - Website & Platforms: website.en.md

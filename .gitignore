@@ -45,3 +45,6 @@ opencode.json
 .vscode/
 .hub_demo/
 scratch/
+
+# ---- MkDocs static site (generated; rebuild from docs/) ----
+site/

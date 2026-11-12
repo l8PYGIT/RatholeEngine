@@ -6,6 +6,52 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-11-12
+
+### Added
+- **Static documentation website (MkDocs Material):** `mkdocs.yml` + Persian landing page `docs/index.md` + a wiki-link hook (`tools/mkdocs_wiki_links.py`) + custom styling; the output is fully offline (no CDN/Google Fonts), RTL, with built-in search and light/dark themes. Build/deploy guide and platform comparison (MkDocs Material, VitePress — what Marzban uses —, Docusaurus, Docsify) in `docs/website.md` / `docs/website.en.md`.
+- **GitHub Pages deployment:** new `.github/workflows/docs.yml` builds the site from `docs/` and publishes it to Pages.
+- **Real Hub screenshots (mock mode):** six 1440×900 images under `docs/assets/screenshots/` (dashboard, Iran page, node page, service controls, routing map, settings), used in the README, the wiki and the site landing page.
+
+### Changed
+- **Full documentation sync with v2.0.2:** README, `docs/` (fa/en), the wiki and `ratholehub/README.md` — removed wiring-board claims, documented service controls, carrier protocol labels, the REST Agent, private-repo installs, the FRP/GRE/FRP+GRE carriers, and refreshed examples.
+- **AGENTS.md / CLAUDE.md:** updated the REST Agent role, independent carriers, the `/_rh/<hex>` control path and the wiki/doc index.
+
+### Fixed
+- **Node token/arguments after the `--` separator are preserved by `install.sh`.** Arguments placed after `--` (e.g. the node's `--token` and `--inbound-port`) were dropped while parsing; now every argument after `--` reaches `bootstrap.sh` untouched. Test: `tests/test_installer_tokens.py`.
+
+## [2.0.2] - 2026-10-16
+
+### Removed
+- **Interactive Visual Wiring Board (`#/wiring`) and the Circuit Inspector HUD** were removed from the Hub UI. The legacy `#/wiring` URL silently falls back to the dashboard, and navigation is now Dashboard / Routing map / Audit / Settings. The routing map (`#/routing`) remains as a **read-only** topology view.
+
+### Added
+- **Service controls on every service row — on both the Iran and the node page:** **Carrier and protocol** (switch carrier/protocol), **Health test** (runs `doctor` and shows its output), **Create VLESS config** (builds and copies a `vless://` link after validating the UUID, port, path and public host), **Manage peer** (jump to the peer server page) and **Remove both ends** (delete from Iran plus `rm_svc`/`rm_bh_svc` on the node). For SNI/game services a hint points to the gaming-services section instead.
+
+### Changed
+- **Carriers report the actual protocol:** the carrier label now shows the protocol reported by the server — `FRP / TCP|KCP|QUIC|WEBSOCKET`, `FRP + GRE / <transport>`, `Backhaul / WS|WSMUX|WSS|WSSMUX`, `KCP / UDP · <profile>` — and `?` means the protocol was not reported. The `hub.py` parsers now return transport/profile; the label alone does not prove connectivity, the health test does.
+- **Much smaller Hub UI:** `app.js` shrank by ~1047 lines and `app.css` by ~254 lines, with i18n keys replaced/updated accordingly.
+
+## [2.0.1] - 2026-10-16
+
+### Added
+- **REST Agent with HTTPS support:** `ratholeagent.py` gained `--tls-cert`/`--tls-key` (and the `RATHOLE_AGENT_TLS_CERT`/`RATHOLE_AGENT_TLS_KEY` env vars) and serves HTTPS automatically when `/etc/rathole-agent/cert.pem` + `key.pem` exist; the Hub connects through an `HTTPSHandler`, and a self-signed cert is accepted only with `insecure_ssl` on the server record (`/etc/ratholehub/inventory.json`) or `RATHOLE_AGENT_INSECURE_SSL=1`.
+- **Readiness/probe commands in the CLI and Hub:** `ratholectl frp ready <name>` checks with `ss` that the proxy is listening on `127.0.0.1:<port>`, and `ratholenode gre probe <peer_ip> [gre_name]` tests the GRE link with `ping -I`; the `frp_ready` and `gre_probe` actions were added to the Hub allow-list with regex validation.
+- **GRE IP fields for REST API nodes:** the server IP and tunnel IP are editable in the Hub UI and auto-detected for Agent-managed nodes.
+- **Automatic port on carrier switch and live badges:** the inbound port is read from the fresh Iran/node state instead of a default, the carrier badge is shown in the services table and node overview, and the single matching Iran node is auto-resolved.
+- **Agent self-healing and multi-service FRP ports:** the agent fetches `ratholeagent.py` from raw GitHub (through the ghproxy mirrors) when it is missing, and each FRP service on a node keeps its own remote port.
+
+### Fixed
+- **Public IP routing and carrier synchronization between Iran and nodes:** connection/display paths now use the public IP instead of an internal address, and carrier selection is applied identically on both sides.
+- **frpconnect and loopback:** `127.x`/`localhost`/`::1`/`0.0.0.0` addresses are replaced with the public IP, `inbound_port` is also read from the in-memory state, adaptive no longer overrides a manually selected carrier, and `doctor` warns when nothing is listening on the inbound port.
+- **`doctor` and backhaul:** the backhaul probe is authorized with the token, and a 401 response is accepted as "alive".
+- **FRP disconnect and 6-carrier sync:** the FRP disconnect was fixed and all six carriers are synchronized between Iran and the node; multi-lane status stays in sync and duplicate toasts were silenced.
+- **Update and health check:** the install collision on `ratholeagent.py` in `update.sh` was fixed, and the node health check no longer breaks on an empty `services.conf`.
+- **Agent install lifecycle:** `install-agent` is consistent (symlink/paths/unit), a `main`-source update fallback was added for private repos, and the agent token no longer appears in systemd units or startup logs (legacy units migrate to the protected token file).
+- **Agent robustness and error messages:** the request body is drained on auth failure to avoid connection resets, and REST-agent connection errors plus service startup errors are reported with clearer messages.
+- **Hub provisioning, transport lifecycle and private updates:** these three paths were repaired and covered by dedicated tests.
+- **Node REST API and FRP/GRE/Backhaul controls:** audited and fixed, and Hub→node command dispatch was corrected.
+
 ## [2.0.0] - 2026-10-14
 
 ### Added

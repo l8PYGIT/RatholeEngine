@@ -13,7 +13,7 @@ Production credentials, public addresses, private keys and raw logs are excluded
 - Full shell regression suite on every host. Missing jq initially caused misleading
   failures on one node; installing jq fixed both and the node installer now requires it.
 - Real Rathole TCP, WebSocket and Noise payload checks on every host.
-- Real FRP TCP/KCP/QUIC/WebSocket, Backhaul WS/WSMUX and three kcptun profiles:
+- Real FRP TCP/KCP/QUIC/WebSocket, Backhaul WS/WSMUX/WSS/WSSMUX and three kcptun profiles:
   wrong-key rejection, payload delivery, stopped-client failure and reconnection,
   using ephemeral loopback listeners on every host.
 - Real kernel GRE in isolated network namespaces on every host: payload, MTU 1476,
@@ -24,6 +24,7 @@ Production credentials, public addresses, private keys and raw logs are excluded
   an unhealthy-after-restore failure result; service-control calls were stubbed.
 - Generated nginx configuration on the front end, in a separate nginx instance:
   TLS/path routing, reverse proxy, hub/sub paths, plain/header routing and SNI passthrough.
+  Backhaul WSSMUX through these generated locations was also checked before and after SNI activation.
 - Actual WSS-to-KCP failover and WSS recovery using a real core, nginx, kcptun, temporary
   state, hot reload and payload verification. Cooldown, hostname rejection and an
   alternate with a listening local socket but a dead remote were checked.

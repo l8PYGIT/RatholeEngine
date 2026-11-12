@@ -102,13 +102,19 @@ class RealCarrierTests(unittest.TestCase):
 
     def backhaul(self,protocol):
         if not BACKHAUL:self.skipTest('set BACKHAUL_TEST_BIN')
-        def configs(control,public,echo):
-            common=f'transport = "{protocol}"\ntoken = "integration-token"\nlog_level = "error"\nweb_port = 0\n'
-            mux='mux_version = 1\nmux_framesize = 32768\nmux_recievebuffer = 4194304\nmux_streambuffer = 65536\n'
-            server=f'[server]\nbind_addr = "127.0.0.1:{control}"\n'+common+mux+f'heartbeat = 5\nchannel_size = 128\nmux_con = 2\nports = ["127.0.0.1:{public}={echo}"]\n'
-            client=f'[client]\nremote_addr = "127.0.0.1:{control}"\n'+common+mux+'connection_pool = 2\nretry_interval = 1\ndial_timeout = 2\n'
-            return server,client,client.replace('integration-token','wrong-token')
-        self.exercise(configs,BACKHAUL,BACKHAUL)
+        with tempfile.TemporaryDirectory(prefix='rathole-backhaul-tls-') as folder:
+            tls=''
+            if protocol in ('wss','wssmux'):
+                cert,key=Path(folder)/'cert.pem',Path(folder)/'key.pem'
+                subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=localhost','-keyout',str(key),'-out',str(cert)],check=True,capture_output=True)
+                tls=f'tls_cert = "{cert}"\ntls_key = "{key}"\n'
+            def configs(control,public,echo):
+                common=f'transport = "{protocol}"\ntoken = "integration-token"\nlog_level = "error"\nweb_port = 0\n'
+                mux='mux_version = 1\nmux_framesize = 32768\nmux_recievebuffer = 4194304\nmux_streambuffer = 65536\n'
+                server=f'[server]\nbind_addr = "127.0.0.1:{control}"\n'+common+mux+tls+f'heartbeat = 5\nchannel_size = 128\nmux_con = 2\nports = ["127.0.0.1:{public}={echo}"]\n'
+                client=f'[client]\nremote_addr = "127.0.0.1:{control}"\n'+common+mux+'connection_pool = 2\nretry_interval = 1\ndial_timeout = 2\n'
+                return server,client,client.replace('integration-token','wrong-token')
+            self.exercise(configs,BACKHAUL,BACKHAUL)
 
     def kcp(self,profile):
         if not(KCP_SERVER and KCP_CLIENT):self.skipTest('set KCP_SERVER_TEST_BIN and KCP_CLIENT_TEST_BIN')
@@ -130,5 +136,7 @@ class RealCarrierTests(unittest.TestCase):
     def test_frp_websocket(self):self.frp('websocket')
     def test_backhaul_ws(self):self.backhaul('ws')
     def test_backhaul_wsmux(self):self.backhaul('wsmux')
+    def test_backhaul_wss(self):self.backhaul('wss')
+    def test_backhaul_wssmux(self):self.backhaul('wssmux')
 
 if __name__=='__main__':unittest.main()

@@ -1,3 +1,11 @@
+## Unreleased — field reliability fixes
+
+- Allow Rathole configuration-lock writes under systemd hardening, including upgrades.
+- Default portless TLS WebSocket endpoints to 443; reject invalid install tokens and ports.
+- Reject multiline service tokens and invalid inbound ports before changing state.
+- Bound hub remote execution and prevent overlapping browser overview polling.
+- Add regression coverage for field failures. Xray panel state remains externally managed.
+
 # Changelog (English)
 
 All notable changes are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).

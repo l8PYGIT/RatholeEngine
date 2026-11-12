@@ -46,6 +46,7 @@ jobs:
 
       - name: manager regression tests
         run: |
+          bash tests/test_field_regressions.sh
           bash tests/test_node_config.sh
           bash tests/test_frp_lifecycle.sh
           bash tests/test_node_failure_status.sh
@@ -104,3 +105,6 @@ jobs:
 
       - name: verify pinned backhaul core patch (uTLS)
         run: bash tests/test_core_backhaul_patch.sh
+
+      - name: hub polling concurrency regression
+        run: node --test tests/test_hub_polling.js

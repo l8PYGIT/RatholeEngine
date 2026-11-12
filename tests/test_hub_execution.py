@@ -4,6 +4,40 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'rathole-ma
 import hub
 
 class ExecutionTests(unittest.TestCase):
+    def test_remote_execution_concurrency_is_bounded(self):
+        import concurrent.futures, threading, time
+        lock = threading.Lock()
+        counts = {'active': 0, 'peak': 0}
+        def execute(*args, **kwargs):
+            with lock:
+                counts['active'] += 1
+                counts['peak'] = max(counts['peak'], counts['active'])
+            time.sleep(.03)
+            with lock:
+                counts['active'] -= 1
+            return {'rc': 0}
+        with patch.object(hub, '_run_on_server', side_effect=execute):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+                results = list(pool.map(lambda _: hub.run_on_server({'host': 'test'}, ['true']), range(12)))
+        self.assertLessEqual(counts['peak'], 4)
+        self.assertTrue(all(r['rc'] == 0 for r in results))
+
+    def test_execution_slot_released_after_failure(self):
+        slots = Mock()
+        slots.acquire.return_value = True
+        with patch.object(hub, '_execution_slots', slots), patch.object(hub, '_run_on_server', side_effect=RuntimeError('test')):
+            with self.assertRaises(RuntimeError):
+                hub.run_on_server({'host': 'test'}, ['true'])
+        slots.release.assert_called_once()
+
+    def test_busy_hub_does_not_spawn_another_command(self):
+        slots = Mock()
+        slots.acquire.return_value = False
+        with patch.object(hub, '_execution_slots', slots), patch.object(hub, '_run_on_server') as execute:
+            self.assertEqual(hub.run_on_server({'host': 'test'}, ['true'])['rc'], 75)
+        execute.assert_not_called()
+        slots.release.assert_not_called()
+
     def test_api_server_url_can_be_corrected_without_rotating_token(self):
         handler = object.__new__(hub.Handler)
         handler._send = lambda code, body: (code, body)

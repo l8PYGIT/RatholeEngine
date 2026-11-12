@@ -320,7 +320,22 @@ def run_on_agent(server, cmd_args, timeout=120):
     except Exception as e:
         return {"rc": 1, "out": "", "err": f"Agent connection error: {e}"}
 
+_execution_slots = threading.BoundedSemaphore(4)
+
+
 def run_on_server(server, cmd_args, timeout=120):
+    # mahdoodiyat-e hamzamani: poll-e chand tab nabayad SSH ra eshba konad.
+    started = time.monotonic()
+    if not _execution_slots.acquire(timeout=min(timeout, 5)):
+        return {"rc": 75, "out": "", "err": "Hub busy; retry shortly"}
+    try:
+        remaining = max(0.01, timeout - (time.monotonic() - started))
+        return _run_on_server(server, cmd_args, timeout=remaining)
+    finally:
+        _execution_slots.release()
+
+
+def _run_on_server(server, cmd_args, timeout=120):
     if server.get("transport") == "api":
         return run_on_agent(server, cmd_args, timeout=timeout)
     if MOCK:

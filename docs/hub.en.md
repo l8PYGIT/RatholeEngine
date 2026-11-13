@@ -53,7 +53,7 @@ sudo ratholectl hub on 8088   # → https://<domain>/hub/
 
 ## UI
 
-The UI is a static asset tree under `ratholehub/ui/`, served by the stdlib backend with a **filename whitelist**. It has no frontend build step or runtime dependency. It is bilingual (Persian/English) with RTL/LTR switching, light/dark themes, responsive desktop/mobile layouts, accessible dialogs, keyboard focus management, inline validation, and reduced-motion support. `install-hub.sh` and `update.sh` install/update the whole tree (`hub.py` + `hubcmds.py` + `ui/`). Refresh is page-aware (default 20 seconds).
+The UI is a static asset tree under `ratholehub/ui/`, served by the stdlib backend with a **filename whitelist**. It has no frontend build step or runtime dependency. It is bilingual (Persian/English) with RTL/LTR switching, light/dark themes, responsive desktop/mobile layouts, accessible dialogs, keyboard focus management, inline validation, and reduced-motion support. `install-hub.sh` and `update.sh` install/update the whole tree (`hub.py` + `hubcmds.py` + `ui/`). Refresh is page-aware (default 120 seconds).
 
 ### UI Pages
 
@@ -284,3 +284,31 @@ Files are served with a **filename whitelist** (no path joining, so path travers
 - [`hub.md`](hub.md) — Persian version of this document
 - [`architecture.md`](architecture.md) — System architecture overview
 - [`README.fa.md`](README.fa.md) — full CLI reference
+
+## Polling and installation troubleshooting
+
+Overview requests for the same server are coalesced in each browser tab. Automatic
+refresh runs every 120 seconds; manual refresh is available. The hub allows at most
+four concurrent remote commands, and returns a retryable busy result when saturated.
+
+The TLS WebSocket client defaults a portless server address to port 443. Explicit
+ports are preserved. Installation rejects whitespace/multiline tokens and out-of-range
+ports before writing configuration. Rathole units grant write access only to
+`/etc/rathole` inside the protected configuration tree for the core configuration lock.
+
+A connected Rathole control channel does not prove an Xray inbound is usable. Check
+that the active Xray configuration matches the panel's saved port, user and path;
+apply/restart Xray through the panel if the runtime configuration is stale. The hub
+does not automatically restart third-party panels or manage their user databases.
+
+Node `doctor` now checks actual TCP connectivity to the configured localhost backend
+and returns a failing exit status when that backend is unavailable. It cannot verify
+third-party user credentials merely from a listening socket.
+
+Adaptive switching preserves the separately configured adaptive settings when loading
+node state, verifies the alternate carrier before selecting it, enforces the configured
+cooldown, and returns to WSS after the recovery threshold. Failed config generation or
+service reload restores the prior carrier and reports failure. KCP health checks the
+remote WebSocket path rather than only its local accepting socket. TLS probes use the
+system/custom trust store, verify the hostname and RFC 6455 response headers, and stop
+reading after the bounded response headers instead of waiting for WebSocket EOF.

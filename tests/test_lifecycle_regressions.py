@@ -20,6 +20,19 @@ def update_source():
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_update_node_unit_keeps_installer_hardening(self):
+        import re
+        install = (ROOT / 'rathole-manager/install-node.sh').read_text(encoding='utf-8')
+        update = update_source()
+        def unit(text):
+            start = text.index('ExecStart=/usr/local/bin/rathole /etc/rathole/client.toml')
+            end = text.index('[Install]', start)
+            return dict(line.split('=', 1) for line in text[start:end].splitlines() if '=' in line)
+        base, upgraded = unit(install), unit(update)
+        for key in ['NoNewPrivileges', 'PrivateTmp', 'ProtectHome', 'ProtectSystem', 'ReadWritePaths', 'UMask']:
+            self.assertIn(key, base)
+            self.assertEqual(upgraded.get(key), base[key], key)
+
     def test_apply_failure_rolls_back_and_stops_remaining_mutations(self):
         source = update_source()
         split = source.index('# ==================== jarian-e asli')

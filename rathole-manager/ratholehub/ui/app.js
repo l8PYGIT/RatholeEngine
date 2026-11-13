@@ -99,7 +99,8 @@ function onOv(n){
  else if(ROUTE.page==='server'&&fnd(n).role==='iran'&&fnd(ROUTE.param).role==='node')renderServerPage(ROUTE.param);
  else if(ROUTE.page==='routing')scheduleGraph();
 }
-async function loadOv(n){const {j}=await api('GET','api/servers/'+n+'/overview');OVS[n]=j||{};onOv(n);}
+const OV_PENDING=new Set();
+async function loadOv(n){if(OV_PENDING.has(n))return;OV_PENDING.add(n);try{const {j}=await api('GET','api/servers/'+n+'/overview');OVS[n]=j||{};onOv(n);}finally{OV_PENDING.delete(n);}}
 
 function shell(){
  applyStatic();
@@ -2386,5 +2387,5 @@ function editServer(n){const s=fnd(n);
 async function savePw(){const cur=$('cpw').value,nw=$('npw').value;if(!nw){toast(t('need_newpw'));return;}const {status,j}=await api('POST','api/config',{current_password:cur,new_password:nw});if(status!==200){toast('error: '+(j.error||status));return;}toast(t('pw_changed'));$('cpw').value='';$('npw').value='';}
 async function rotTok(){if(!confirm(t('cf_rottok')))return;const {status,j}=await api('POST','api/config',{rotate_token:true});if(status!==200){toast('error: '+(j.error||status));return;}TOKEN=j.api_token;localStorage.setItem('rh_token',TOKEN);toast(t('tok_applied'));renderSettingsPage();}
 // refresh-e khodkar: faghat overview-haye safhe-ye faal (server SSH kamtar mikhorad)
-setInterval(()=>{if($('auto')&&$('auto').checked&&TOKEN)pollByPage();},20000);
+setInterval(()=>{if($('auto')&&$('auto').checked&&TOKEN)pollByPage();},120000);
 shell();

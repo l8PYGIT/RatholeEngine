@@ -94,3 +94,14 @@ if command -v flock >/dev/null 2>&1; then
 else
   ok 'flock dar in shell nist; fallback-e portable-e mkdir estefade shod'
 fi
+
+# Portless TLS endpoints have the same default in additional upstreams.
+UP_DIR="$ROOT/default-upstream"; mkdir -p "$UP_DIR"
+printf 'SERVER=panel.example\n' > "$UP_DIR/portless.env"
+up_toml(){ echo "$ROOT/default-upstream.toml"; }
+up_svc(){ echo "$ROOT/empty-upstream.conf"; }
+: > "$ROOT/empty-upstream.conf"
+gen_up_client portless
+assert_toml "$ROOT/default-upstream.toml"
+grep -qx 'remote_addr = "panel.example:443"' "$ROOT/default-upstream.toml" || fail 'portless upstream did not default to 443'
+ok 'upstream TLS port defaults to 443'

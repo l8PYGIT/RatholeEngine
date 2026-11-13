@@ -12,7 +12,7 @@ class RealAdaptive(unittest.TestCase):
     def test_real_failover_and_recovery(self):
         children=[];logs=[]
         with tempfile.TemporaryDirectory(prefix='rathole-adaptive-') as tmp,echo_server() as echo:
-            d=pathlib.Path(tmp);control,public,front,udp,kcp=[free_port() for _ in range(5)]
+            d=pathlib.Path(tmp);d.chmod(0o755);control,public,front,udp,kcp=[free_port() for _ in range(5)]
             def start(binary,config,name,nginx=False):
                 path=d/(name+'.conf');path.write_text(config);path.chmod(0o600)
                 log=open(d/(name+'.log'),'w');logs.append(log)
@@ -29,7 +29,8 @@ class RealAdaptive(unittest.TestCase):
                 subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=lab.example','-addext','subjectAltName=DNS:lab.example','-keyout',str(key),'-out',str(cert)],check=True,capture_output=True)
                 server=f'[server]\nbind_addr = "127.0.0.1:{control}"\n[server.transport]\ntype = "websocket"\n[server.transport.websocket]\ntls = false\n[server.services.test]\ntoken = "integration-token"\nbind_addr = "127.0.0.1:{public}"\n'
                 start(CORE,server,'core-server')
-                nginx=f'worker_processes 1; daemon off; pid {d}/nginx.pid; error_log {d}/error.log; events {{worker_connections 64;}} http {{access_log off; server {{listen 127.0.0.1:{front} ssl; ssl_certificate {cert}; ssl_certificate_key {key}; location / {{proxy_pass http://127.0.0.1:{control}; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 30s;}}}}}}'
+                temps=' '.join(f'{kind}_temp_path {d}/{kind};' for kind in ['client_body','proxy','fastcgi','uwsgi','scgi'])
+                nginx=f'worker_processes 1; daemon off; pid {d}/nginx.pid; error_log {d}/error.log; events {{worker_connections 64;}} http {{{temps} access_log off; server {{listen 127.0.0.1:{front} ssl; ssl_certificate {cert}; ssl_certificate_key {key}; location / {{proxy_pass http://127.0.0.1:{control}; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 30s;}}}}}}'
                 tls=start(NGINX,nginx,'nginx',nginx=True)
                 common={'key':'integration-token','crypt':'aes','mode':'fast2','datashard':10,'parityshard':3,'quiet':True}
                 ks=start(KS,json.dumps(dict(common,listen=f'127.0.0.1:{udp}',target=f'127.0.0.1:{control}')),'kcp-server')

@@ -1,5 +1,7 @@
 ## Unreleased — field reliability fixes
 
+- Isolate every nginx lab temporary directory; verify large buffered responses and preserve production directory ownership.
+
 - Allow Rathole configuration-lock writes under systemd hardening, including upgrades.
 - Default portless TLS WebSocket endpoints to 443; reject invalid install tokens and ports.
 - Reject multiline service tokens and invalid inbound ports before changing state.

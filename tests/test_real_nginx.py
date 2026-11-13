@@ -11,6 +11,11 @@ def port():
 class NginxIntegration(unittest.TestCase):
     def test_generated_ingress_routes(self):
         servers=[];process=None;carriers=[]
+        def ownership(p):
+            if not p.exists():return None
+            st=p.stat();return (st.st_uid,st.st_gid,st.st_mode)
+        shared=[pathlib.Path('/var/lib/nginx')/name for name in ['body','proxy','fastcgi','uwsgi','scgi']]
+        original={p:ownership(p) for p in shared}
         def backend(text):
             class Handler(http.server.BaseHTTPRequestHandler):
                 def do_GET(self):
@@ -19,10 +24,11 @@ class NginxIntegration(unittest.TestCase):
             s=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler);servers.append(s)
             threading.Thread(target=s.serve_forever,daemon=True).start();return s.server_port
         try:
-            fake,data,hub,sub,proxy=[backend(x) for x in ['fake','data','hub','sub','proxy']]
+            hub_text='hub'+('x'*262144)
+            fake,data,hub,sub,proxy=[backend(x) for x in ['fake','data',hub_text,'sub','proxy']]
             direct,plain,internal,front,game=[port() for _ in range(5)]
             with tempfile.TemporaryDirectory(prefix='rathole-nginx-') as tmp:
-                d=pathlib.Path(tmp);crt=d/'cert.pem';key=d/'key.pem'
+                d=pathlib.Path(tmp);d.chmod(0o755);crt=d/'cert.pem';key=d/'key.pem'
                 subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=lab.example','-addext','subjectAltName=DNS:lab.example,DNS:game.lab.example','-keyout',str(key),'-out',str(crt)],check=True,capture_output=True)
                 state={'domain':'lab.example','cert_fullchain':str(crt),'cert_key':str(key),'control_port':fake,'control_path':'/_rh/0123456789abcdef0123456789abcdef','fake_port':fake,'sub_port':sub,'hub_port':hub,'plain_port':plain,'direct_port':direct,'direct_header':'X-Cdn-Id','internal_port':internal,'nodes':[{'name':'lab','port':data,'inbound_port':data,'token':'integration-token'}],'proxies':[{'name':'proxy','upstream':f'http://127.0.0.1:{proxy}'}]}
                 if BACKHAUL:
@@ -46,17 +52,19 @@ class NginxIntegration(unittest.TestCase):
                     load=f'load_module {modules[0]};' if sni and modules else ''
                     stream=f'stream {{ include {d}/stream.conf; }}' if sni else ''
                     extra=f'server {{ listen 127.0.0.1:{game} ssl; ssl_certificate {crt}; ssl_certificate_key {key}; return 200 "game"; }}' if sni else ''
-                    main=f'{load} worker_processes 1; daemon off; pid {d}/nginx.pid; error_log {d}/error.log; events {{worker_connections 128;}} http {{ access_log off; map $http_upgrade $connection_upgrade {{default upgrade; \"\" close;}} include {d}/http.conf; {extra} }} {stream}'
+                    temps=' '.join(f'{kind}_temp_path {d}/{kind};' for kind in ['client_body','proxy','fastcgi','uwsgi','scgi'])
+                    main=f'{load} worker_processes 1; daemon off; pid {d}/nginx.pid; error_log {d}/error.log; events {{worker_connections 128;}} http {{ {temps} access_log off; map $http_upgrade $connection_upgrade {{default upgrade; \"\" close;}} include {d}/http.conf; {extra} }} {stream}'
                     (d/'nginx.conf').write_text(main)
                     check=subprocess.run([BIN,'-p',str(d)+'/', '-c',str(d/'nginx.conf'),'-t'],capture_output=True,text=True)
                     self.assertEqual(check.returncode,0,check.stderr)
                     process=subprocess.Popen([BIN,'-p',str(d)+'/', '-c',str(d/'nginx.conf')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
                     time.sleep(.3)
                     self.assertIsNone(process.poll(),(d/'error.log').read_text())
-                def request(path='/',host='lab.example',tls=True,listen=None,headers=()):
+                def request(path='/',host='lab.example',tls=True,listen=None,headers=(),rate=None):
                     selected=listen or front
                     url=f'{"https" if tls else "http"}://{host}:{selected}{path}'
-                    args=['curl','-fsS','--max-time','3','--noproxy','*','--resolve',f'{host}:{selected}:127.0.0.1','--cacert',str(crt)]
+                    args=['curl','-fsS','--max-time','8' if rate else '3','--noproxy','*','--resolve',f'{host}:{selected}:127.0.0.1','--cacert',str(crt)]
+                    if rate:args+=['--limit-rate',rate]
                     for header in headers:args+=['-H',header]
                     return subprocess.check_output(args+[url],text=True)
                 def check_backhaul():
@@ -69,7 +77,7 @@ class NginxIntegration(unittest.TestCase):
                     self.fail('Backhaul WSSMUX through generated nginx routing failed')
                 generate()
                 check_backhaul()
-                for path,expected in [('/','fake'),('/lab','data'),('/proxy/','proxy'),('/hub/','hub'),('/sub/a','sub')]:self.assertEqual(request(path),expected,path)
+                for path,expected in [('/','fake'),('/lab','data'),('/proxy/','proxy'),('/hub/',hub_text),('/sub/a','sub')]:self.assertEqual(request(path,rate='128k' if path=='/hub/' else None),expected,path)
                 self.assertEqual(request(tls=False,listen=plain,path='/lab'),'data')
                 self.assertEqual(request(tls=False,listen=direct,headers=['X-Cdn-Id: lab']),'data')
                 self.assertEqual(request(tls=False,listen=direct),'fake')
@@ -90,5 +98,6 @@ class NginxIntegration(unittest.TestCase):
                 try:child.wait(timeout=3)
                 except subprocess.TimeoutExpired:child.kill();child.wait()
             for s in servers:s.shutdown();s.server_close()
+            for p,before in original.items():self.assertEqual(ownership(p),before,'lab changed shared nginx temp ownership: '+str(p))
 
 if __name__=='__main__':unittest.main()

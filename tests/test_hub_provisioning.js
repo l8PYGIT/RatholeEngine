@@ -342,8 +342,17 @@ test('both service pages expose all migrated controls and no board route',()=>{
   const html=c.serviceButtons(side,'server','svc');
   for(const action of ['configure','health','copy','manage','remove'])assert.ok(html.includes("'"+action+"'"));
  }
- assert.ok(definition('renderIran').includes("serviceButtons('iran'"));
- assert.ok(definition('renderNode').includes("serviceButtons('node'"));
+ // radif-haye jadval compact shode-and: hamn 5 akshan az menu-ye '⋯' (serviceMenu) ersal mishavand
+ vm.runInContext(definition('serviceMenu'),c);
+ for(const side of ['iran','node']){
+  const html=c.serviceMenu(side,'server','svc');
+  for(const action of ['configure','health','copy','manage','remove'])assert.ok(html.includes("'"+action+"'"));
+  assert.ok(html.includes('details class="more"'));
+ }
+ assert.ok(definition('renderIran').includes("serviceMenu('iran'"));
+ assert.ok(definition('renderNode').includes("serviceMenu('node'"));
+ // selector-e hamel-e har nod bayad dar safhe-ye Iran baghi bemanad (yek-kliki, do-taraf)
+ assert.ok(definition('renderIran').includes('iranNodeCarrierSel(n,ov,d.name)'));
  assert.doesNotMatch(source, /#\/wiring|drawPatchBoard|PATCH_CUSTOM_CIRCUITS|copyV2rayRecipe/);
 });
 test('copy config uses the supplied UUID and public address',async()=>{

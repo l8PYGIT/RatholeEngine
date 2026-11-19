@@ -450,13 +450,15 @@ function renderIran(n,ov){
      nodes.forEach(d=>{ const isN=nnodes.indexOf(d.name)>=0;
       const st=hn[d.name]; const hdot=st?`<span class="dot ${st==='ok'?'d-ok':'d-bad'}" title="${st==='ok'?t('nd_up'):t('nd_down')}" style="margin-inline-end:6px"></span>`:'';
       const nbadge=` <span class="badge">${h(carrierLabel(iranNodeMode(ov,d.name),ov))}</span>`;
+      const csel=iranNodeCarrierSel(n,ov,d.name);
       s+=`<tr><td>${hdot}${esc(d.name)}${nbadge}</td><td class="mono">${esc(d.port)}</td><td class="mono">${esc(d.inbound)}</td><td class="mono">${esc(d.api)}</td>
-      <td class="btns"><button class="gh" onclick="run('${n}','show_node',{name:'${esc(d.name)}'})">${t('show_token')}</button>
+      <td class="btns nowrap"><button class="gh" onclick="run('${n}','show_node',{name:'${esc(d.name)}'})">${t('show_token')}</button>
       <button class="g" onclick="wireNode('${n}','${esc(d.name)}')">${t('wire_to_node')}</button>
       <button class="gh" onclick="editNode('${n}','${esc(d.name)}')">${t('edit')}</button>
       <button class="gh" onclick="renameNode('${n}','${esc(d.name)}')">${t('rename')}</button>
       <button class="gh" onclick="if(confirmT('cf_rotate','${esc(d.name)}'))run('${n}','rotate_node',{name:'${esc(d.name)}'})">${t('rotate')}</button>
-      ${serviceButtons('iran',n,d.name)}
+      ${csel}
+      ${serviceMenu('iran',n,d.name)}
       <button class="r" onclick="rmNode('${n}','${esc(d.name)}')">${t('remove')}</button></td></tr>`;});
      s+='</table>';}
     s+='</div>';
@@ -810,7 +812,7 @@ function renderNode(n,ov){
    const dot=svcDot(d.name);
    const rmFn=isMux?`rmBhSvc('${n}','${esc(d.name)}')`:`rmSvc('${n}','${esc(d.name)}')`;
    s+=`<tr><td>${dot}${esc(d.name)}</td><td>${laneBadge}</td><td>${esc(d.inbound)}</td>
-    <td class="btns">${serviceButtons('node',n,d.name)}<button class="r" onclick="${rmFn}">${t('remove')}</button></td></tr>`;
+    <td class="btns nowrap">${serviceMenu('node',n,d.name)}<button class="r" onclick="${rmFn}">${t('remove')}</button></td></tr>`;
   });
   s+='</table>';
  }
@@ -1005,6 +1007,15 @@ function serviceButtons(side,server,name){
  const call=side==='iran'?'serviceControl':'nodeServiceAction';
  const btn=(action,label,cls='gh')=>`<button class="${cls}" type="button" onclick="${call}('${h(server)}','${h(name)}','${action}')">${label}</button>`;
  return btn('configure',t('service_config'),'s')+btn('health',t('service_health'))+btn('copy',t('service_copy'))+btn('manage',t('service_peer'))+btn('remove',t('service_remove_pair'),'r');
+}
+
+// hamn mojoodi-ye 5 akshan-e service dar yek menu-ye compact ('⋯') ta radif-e jadval
+// yek-khati bemanad (chideman-e v2.0.1) va hamzaman hame-ye emkanat-e jadid ham basand.
+function serviceMenu(side,server,name){
+ const call=side==='iran'?'serviceControl':'nodeServiceAction';
+ const item=(action,label,cls='')=>`<button class="mi ${cls}" type="button" onclick="${call}('${h(server)}','${h(name)}','${action}')">${label}</button>`;
+ return `<details class="more"><summary class="gh" title="${t('service_more')}" aria-label="${t('service_more')}">⋯</summary>
+  <div class="more-menu">${item('configure',t('service_config'))}${item('health',t('service_health'))}${item('copy',t('service_copy'))}${item('manage',t('service_peer'))}${item('remove',t('service_remove_pair'),'mi-r')}</div></details>`;
 }
 
 function serviceControl(iran,name,action,next,peerName){
@@ -2220,10 +2231,35 @@ function iranNodeCarrierSel(iran,ov,name){
 }
 
 // avaz kardan-e transport-e YEK node samt-e Iran ba hamahang-sazi-ye khodkar-e do-tarafe.
+// avaz kardan-e hamel-e YEK node az samte Iran, ba hamzaman-sazi-e KHODKAR-e do-taraf.
+// hamel-haye sade (ws/kcp/plain/noise/backhaul) yek-kliki va bedoone modal ejra mishavand;
+// hamel-haye frp/gre/frp_gre voroodi-e bishtar (IP/transport) mikhahand → modal.
 async function setIranNodeCarrier(iran,name,next,cur){
  if(next===cur)return;
- const sel=$('icar_'+iran+'__'+name); if(sel)sel.value=cur;
- quickCarrierModal(iran,name,next);
+ const sel=$('icar_'+iran+'__'+name);
+ const revert=()=>{if(sel)sel.value=cur;};
+ if(next==='frp'||next==='gre'||next==='frp_gre'){quickCarrierModal(iran,name,next);revert();return;}
+ const peers=SERVERS.filter(s=>s.role==='node');
+ const sNode=findNodeServer(name)||(peers.length===1?peers[0]:null);
+ if(!sNode){
+  revert();
+  if(peers.length)quickCarrierModal(iran,name,next);
+  else toast(t('no_node_dst'));
+  return;
+ }
+ if(!confirm(t('icarrier_confirm').replace('%s',t('carrier_'+next)||next).replace('%n',name))){revert();return;}
+ const existingIran=((OVS[iran]||{}).nodes||[]).find(x=>x.name===name);
+ const port=(existingIran&&(existingIran.inbound_port||existingIran.inbound))||null;
+ toast(t('carrier_syncing').replace('%s',next.toUpperCase()));
+ try{
+  const ok=await configureServiceCarrier(iran,name,next,port,{node_server:sNode.name,silent:true});
+  if(ok===false){revert();return;}          // configureServiceCarrier khodesh toast-e khata midahad
+  toast(t('carrier_synced').replace('%s',next.toUpperCase()));
+  await loadOv(iran);await loadOv(sNode.name);
+ }catch(e){
+  revert();
+  toast('⚠️ '+(e&&e.message?e.message:t('carrier_sync_fail')));
+ }
 }
 
 function bhOnNode(n){formModal(t('t_bh_node'),bhNodeFields(),

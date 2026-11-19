@@ -2,7 +2,7 @@
 const DICT={
  fa:{
  service_game_hint:"این سرویس SNI است؛ از بخش سرویس‌های گیمینگ مدیریت کنید.",service_peer_unavailable:"وضعیت سرویس‌های نود قابل دریافت نیست؛ تغییری اعمال نشد.",
-service_config:"حامل و پروتکل",service_health:"تست سلامت",service_copy:"ساخت کانفیگ VLESS",service_peer:"مدیریت سمت مقابل",service_remove_pair:"حذف از دو سمت",service_iran_missing:"سرویس متناظر در ایران پیدا نشد؛ وضعیت سرورها را تازه کنید.",service_testing:"در حال تست",service_uuid:"UUID واقعی کاربر Xray",service_public_host:"دامنه یا IP عمومی ایران",service_config_invalid:"UUID، آدرس عمومی، مسیر یا پورت معتبر نیست.",service_remove_confirm:"سرویس %s از ایران و نود حذف شود؟",
+service_config:"حامل و پروتکل",service_health:"تست سلامت",service_copy:"ساخت کانفیگ VLESS",service_peer:"مدیریت سمت مقابل",service_remove_pair:"حذف از دو سمت",service_more:"سایر عملیات سرویس",carrier_syncing:"در حال همگام‌سازی حامل %s روی ایران و نود…",carrier_synced:"✓ حامل هر دو سمت به %s تغییر کرد.",carrier_sync_fail:"همگام‌سازی حامل انجام نشد؛ تغییر لغو شد تا تانل قطع نشود.",service_iran_missing:"سرویس متناظر در ایران پیدا نشد؛ وضعیت سرورها را تازه کنید.",service_testing:"در حال تست",service_uuid:"UUID واقعی کاربر Xray",service_public_host:"دامنه یا IP عمومی ایران",service_config_invalid:"UUID، آدرس عمومی، مسیر یا پورت معتبر نیست.",service_remove_confirm:"سرویس %s از ایران و نود حذف شود؟",
   auto:'بروزرسانی خودکار',refresh:'تازه سازی',theme:'پوسته',view:'نوع نمایش',nav_label:'منوی اصلی',settings:'تنظیمات',audit:'گزارش فعالیت‌ها',logout:'خروج',
   login_title:'ورود به پنل مدیریت',pw_ph:'رمز عبور مدیریت',login_btn:'ورود',pw_wrong:'رمز عبور اشتباه است',
   add_server:'افزودن سرور',f_name:'نام',f_host:'هاست / IP',f_user:'کاربر SSH',f_port:'پورت SSH',add_btn:'+ افزودن',
@@ -221,7 +221,7 @@ service_config:"حامل و پروتکل",service_health:"تست سلامت",ser
  },
  en:{
  service_game_hint:"Manage this SNI service in the gaming services section.",service_peer_unavailable:"Node service state is unavailable; no changes applied.",
-service_config:"Carrier and protocol",service_health:"Health test",service_copy:"Create VLESS config",service_peer:"Manage peer",service_remove_pair:"Remove both ends",service_iran_missing:"Matching Iran service not found; refresh server status.",service_testing:"Testing",service_uuid:"Actual Xray user UUID",service_public_host:"Public Iran domain or IP",service_config_invalid:"Invalid UUID, public host, path or port.",service_remove_confirm:"Remove service %s from Iran and node?",
+service_config:"Carrier and protocol",service_health:"Health test",service_copy:"Create VLESS config",service_peer:"Manage peer",service_remove_pair:"Remove both ends",service_more:"More service actions",carrier_syncing:"Syncing carrier %s on both Iran and the node…",carrier_synced:"✓ Both sides switched to %s.",carrier_sync_fail:"Carrier sync failed; change reverted so the tunnel stays up.",service_iran_missing:"Matching Iran service not found; refresh server status.",service_testing:"Testing",service_uuid:"Actual Xray user UUID",service_public_host:"Public Iran domain or IP",service_config_invalid:"Invalid UUID, public host, path or port.",service_remove_confirm:"Remove service %s from Iran and node?",
   auto:'Auto refresh',refresh:'Refresh',theme:'Theme',view:'View',nav_label:'Main navigation',settings:'Settings',audit:'Activity log',logout:'Logout',
   login_title:'Panel login',pw_ph:'Admin password',login_btn:'Login',pw_wrong:'Wrong password',
   add_server:'Add server',f_name:'Name',f_host:'Host/IP',f_user:'SSH user',f_port:'SSH port',add_btn:'+ Add',

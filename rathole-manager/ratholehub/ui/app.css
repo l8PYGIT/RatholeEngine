@@ -222,6 +222,31 @@ button.s:hover, button.gh:hover { border-color: var(--border-strong); background
 button.gh { border-color: var(--border); background: transparent; color: var(--text-muted); }
 .icon-btn { width: 44px; min-width: 44px; height: 44px; padding: 0; }
 .btns { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+/* radif-e yek-khati (chideman-e qadimi): akshan-haye ziyad dar menu-ye '⋯' jam mishavand */
+.btns.nowrap { flex-wrap: nowrap; }
+/* flex items nabayad feshorde shavand (varna matn-e dokme mishkand) */
+td.btns.nowrap > * { flex: 0 0 auto; }
+td.btns.nowrap > button { white-space: nowrap; min-height: 34px; padding: 6px 9px; font-size: 12px; }
+td.btns.nowrap > select { min-height: 34px; padding: 4px 8px; font-size: 12px; width: auto; max-width: 250px; }
+/* agar radif az tool-e jadval bishtar shod: scroll-e ofoghi dar baksh — na boridan-e content */
+.sec { overflow-x: auto; }
+
+/* menu-ye compact-e akshan ('⋯') — bedoone-e JS va ba <details> */
+details.more { position: relative; display: inline-block; }
+details.more > summary { list-style: none; cursor: pointer; user-select: none;
+  min-height: 34px; min-width: 34px; padding: 0 10px; display: inline-flex;
+  align-items: center; justify-content: center; border-radius: 7px;
+  border: 1px solid var(--border); font-size: 15px; line-height: 1; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more[open] > summary { border-color: var(--border-strong); background: var(--surface-hover); }
+details.more .more-menu { position: absolute; z-index: 40; inset-inline-end: 0; top: calc(100% + 6px);
+  min-width: 210px; padding: 5px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 9px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35); }
+details.more .more-menu .mi { width: 100%; justify-content: flex-start; text-align: start;
+  border: 0; background: transparent; padding: 9px 10px; border-radius: 6px; font-size: 13px; }
+details.more .more-menu .mi:hover { background: var(--surface-hover); }
+details.more .more-menu .mi-r { color: var(--danger, #ef4444); }
 
 input, select {
   width: auto;

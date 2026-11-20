@@ -170,6 +170,18 @@ Then add the server in the hub with **Connection = Agent REST API**, its **API U
 
 ## Update & rollback
 
+> **⚠️ Updating from v2.0.3 or older?** Those builds still hard-code the *old* repository slug
+> (`loopy-iri/tunnelplus`), which no longer exists, so `ratholectl update` / `ratholenode update`
+> fail with *“download install.sh az hameye mirror-ha shekast khord”*. Run the one-time migration
+> below; it installs v2.0.4 (correct slug) and afterwards plain `ratholectl update` works again:
+>
+> ```bash
+> sudo RATHOLE_GH=l8PYGIT/RatholeEngine ratholectl update      # panel
+> sudo RATHOLE_GH=l8PYGIT/RatholeEngine ratholenode update     # node
+> # or, independent of the installed CLI:
+> curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --update
+> ```
+
 Updates take a **full snapshot** (CLI + configs + systemd units) into `/var/backups/rathole-manager/` before touching anything, run a per-role **health check** afterwards, and **auto-roll-back** to the snapshot if the service fails to come up or `nginx -t` breaks.
 
 ```bash

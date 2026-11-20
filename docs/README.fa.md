@@ -609,6 +609,18 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 
 ### آپدیت و رولبک
 
+!!! warning "آپدیت از v2.0.3 یا قدیمی‌تر"
+    نسخه‌های ≤۲.۰.۳ آدرس مخزن قدیمی (`loopy-iri/tunnelplus`) را هاردکد دارند و آن مخزن ۴۰۴ می‌دهد؛ پس `ratholectl update` با خطای «hameye mirror-ha shekast khord» متوقف می‌شود. یک‌بار این را بزن:
+
+    ```bash
+    sudo RATHOLE_GH=l8PYGIT/RatholeEngine ratholectl update    # پنل
+    sudo RATHOLE_GH=l8PYGIT/RatholeEngine ratholenode update   # نود
+    # یا مستقل از CLI نصب‌شده:
+    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --update
+    ```
+
+    بعد از آن نسخه ۲.۰.۴ نصب می‌شود و `ratholectl update` عادی کار می‌کند.
+
 `update.sh` قبل از هر تغییر یک **snapshot کامل** (CLI + کانفیگ‌ها + یونیت‌های systemd) در `/var/backups/rathole-manager/pre-update-<ts>/` (شامل `manifest.txt` و `backup.tar.gz`) می‌گیرد، بعد از آپدیت **health-check** می‌زند (سرویس بالا آمد؟ `nginx -t` سالم؟) و اگر خراب بود **خودکار به snapshot برمی‌گردد**.
 
 > **ساده‌ترین راه از خودِ سرور:** `sudo ratholectl update` (روی ایران) یا `sudo ratholenode update` (روی نود) — `install.sh` آخرین Release را از GitHub (با mirrorهای ghproxy برای دور زدن فیلترینگ) می‌گیرد و همین `update.sh` را با snapshot + rollback اجرا می‌کند. در **هاب** هم دکمه‌ی «آپدیت» هر سرور دقیقاً همین کار را از راه دور انجام می‌دهد (دیگر به bundle محلی هاب وابسته نیست).

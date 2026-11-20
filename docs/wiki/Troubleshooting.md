@@ -8,6 +8,46 @@
 
 ---
 
+## آپدیت از v2.0.3 یا قدیمی‌تر شکست می‌خورد (slug قدیمی مخزن)
+
+اگر روی نسخه‌ی **v2.0.3 یا قدیمی‌تر** هستی و `ratholectl update` این خطا را می‌دهد:
+
+```text
+[+] download install.sh az GitHub Release: loopy-iri/tunnelplus (latest)...
+[!] download install.sh az hameye mirror-ha shekast khord (filtering/slug/release ra barresi kon).
+```
+
+علتش این است: نسخه‌های ≤۲.۰.۳ آدرس مخزن قدیمی (`loopy-iri/tunnelplus`) را هاردکد دارند و آن مخزن دیگر وجود ندارد (404). پس آن نسخه‌ها **نمی‌توانند خودشان را آپدیت کنند**.
+
+**راه‌حل یک‌باره** (بعد از آن `ratholectl update` عادی کار می‌کند، چون v2.0.4 آدرس درست دارد):
+
+```bash
+# پنل ایران
+sudo RATHOLE_GH=l8PYGIT/RatholeEngine ratholectl update
+
+# نود خارج
+sudo RATHOLE_GH=l8PYGIT/RatholeEngine ratholenode update
+```
+
+یا مستقل از CLI نصب‌شده:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
+  | sudo bash -s -- --update
+```
+
+بعد از آپدیت:
+
+```bash
+sudo ratholectl version     # باید manager_version=2.0.4 باشد
+sudo ratholectl doctor
+```
+
+!!! note "چرا `RATHOLE_GH` لازم است؟"
+    `ratholectl` مقدار پیش‌فرض slug را از `${RATHOLE_GH:-...}` می‌خواند؛ در نسخه‌های ≤۲.۰.۳ آن پیش‌فرض قدیمی است و با این متغیر محیطی دور زده می‌شود.
+
+---
+
 ## ابزار تشخیص خودکار
 
 ```bash

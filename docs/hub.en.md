@@ -106,6 +106,7 @@ The visual wiring board (`#/wiring`) was removed in v2.0.2 and replaced by **ser
 **Carrier switching behavior**:
 - Switching reads the existing inbound port from fresh Iran state and does not change it (the `127.0.0.1:<iran_port>` mapping and the node inbound are preserved).
 - Backhaul has its own registry (`bh-services.conf`): a service moved to Backhaul leaves `services.conf` and is registered in the Backhaul registry, and vice versa.
+- **The FRP transport is remembered** (v2.0.5): if you set FRP to `kcp`/`quic` and then temporarily move the carrier to `ws` (which runs `frp off`), re-configuring FRP defaults to that previous transport instead of `tcp`. `ratholectl frp status` also reports the last transport while FRP is disabled.
 - The main carrier is shared by a node's Rathole services; changing the port/protocol of a shared Iran listener may require syncing the other nodes of that listener.
 - Game/SNI services: the carrier and VLESS buttons show a hint toast; manage them in the "Game services (SNI/443)" section of the Iran page.
 - If a multi-server operation is interrupted, the partial result is reported and state is re-read; a complete automatic rollback for every carrier combination is not guaranteed.

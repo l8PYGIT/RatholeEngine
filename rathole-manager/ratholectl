@@ -2901,11 +2901,14 @@ cmd_frp(){
   local sub="${1:-status}"; shift || true
   case "$sub" in
     on)
-      local port="${1:-7000}" token="${2:-}" transport="${3:-tcp}"
+      local port="${1:-7000}" token="${2:-}" transport="${3:-}"
       if [ "$token" = "tcp" ] || [ "$token" = "kcp" ] || [ "$token" = "quic" ] || [ "$token" = "websocket" ]; then
         transport="$token"
         token=""
       fi
+      # transport-e entekhab-shode ra be yad dasht (bad az 'frp off' ham mipayad).
+      [ -n "$transport" ] || transport="$(jq -r '.frp_transport // empty' "$STATE" 2>/dev/null)"
+      transport="${transport:-tcp}"
       echo "$port" | grep -qE '^[0-9]+$' || die "port bayad adad bashad."
       [ "$port" = "443" ] && die "port 443 rezerv ast; port-e digari (masalan 7000) bede."
       [ -n "$token" ] || token="$(jq -r '.frp_token // empty' "$STATE" 2>/dev/null)"
@@ -2929,7 +2932,7 @@ cmd_frp(){
       print_frp_connect
       ;;
     off)
-      local tmp; tmp="$(mktemp)"; jq '(.nodes[] | select(.transport == "frp")) |= del(.transport) | del(.frp_port, .frp_token, .frp_transport)' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
+      local tmp; tmp="$(mktemp)"; jq '(.nodes[] | select(.transport == "frp")) |= del(.transport) | del(.frp_port, .frp_token)' "$STATE" > "$tmp" && mv "$tmp" "$STATE"
       systemctl disable --now "$FRP_SVC" 2>/dev/null || true
       rm -f "$FRP_TOML"
       log "FRP server khamoosh shod."
@@ -2968,7 +2971,8 @@ cmd_frp(){
         command -v ss >/dev/null 2>&1 && { ss -ltnH "sport = :$fp" 2>/dev/null | grep -q . && echo "  gvshdadn :$fp: $(c_g 'blh')" || echo "  gvshdadn :$fp: $(c_r 'khir')"; }
         command -v systemctl >/dev/null 2>&1 && { systemctl is-active --quiet "$FRP_SVC" && echo "  $FRP_SVC: $(c_g 'active')" || echo "  $FRP_SVC: $(c_r 'inactive')"; }
       else
-        echo "FRP (reverse tunnel): $(c_y 'khamoosh')"
+        local ftr_off; ftr_off="$(jq -r '.frp_transport // empty' "$STATE" 2>/dev/null)"
+        echo "FRP (reverse tunnel): $(c_y 'khamoosh')${ftr_off:+   (akharin transport: $ftr_off)}"
       fi
       ;;
     ready)

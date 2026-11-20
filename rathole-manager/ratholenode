@@ -906,12 +906,15 @@ cmd_frp(){
 }
 
 cmd_frp_on(){
-  local remote="${1:-}" token="${2:-}" transport="${3:-tcp}" rport="${4:-}"
+  local remote="${1:-}" token="${2:-}" transport="${3:-}" rport="${4:-}"
   if [ "$token" = "tcp" ] || [ "$token" = "kcp" ] || [ "$token" = "quic" ] || [ "$token" = "websocket" ]; then
     transport="$token"
     token=""
   fi
   load_env
+  # transport-e ghabli (az node.env) agar daghighan moshakhas nashode bashad.
+  [ -n "$transport" ] || transport="${FRP_TRANSPORT:-}"
+  transport="${transport:-tcp}"
   [ -n "$token" ] || token="${FRP_TOKEN:-}"
   [ -n "$remote" ] && [ -n "$token" ] || die "estefade: ratholenode frp on <iran_ip:port> <token> [transport] [remote_port]"
   case "$remote" in

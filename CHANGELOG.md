@@ -9,6 +9,9 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+### Fixed
+- **فراموش‌شدن ترانسپورت FRP هنگام برگشت به FRP:** با `frp off` (که هنگام سوییچ حامل به `ws` اجرا می‌شود) مقدار `frp_transport` از state پاک می‌شد و «تنظیم مجدد FRP» با پیش‌فرض `tcp` بالا می‌آمد، حتی اگر قبلاً `kcp` گذاشته بودی. حالا `frp off` مقدار ترانسپورت را نگه می‌دارد، `frp status` در حالت خاموش آخرین ترانسپورت را گزارش می‌کند و `frp on` بدون آرگومان از همان استفاده می‌کند (سمت نود هم از `FRP_TRANSPORT` در `node.env`).
+
 ## [2.0.4] - 2026-11-20
 
 ### Added

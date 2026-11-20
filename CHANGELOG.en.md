@@ -6,6 +6,9 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+- **FRP transport was forgotten when re-enabling FRP:** `frp off` (executed when switching the carrier to `ws`) deleted `frp_transport` from state, so re-configuring FRP came up with the default `tcp` even if you had chosen `kcp`. `frp off` now keeps the transport, `frp status` reports the last transport while disabled, and `frp on` without an argument reuses it (the node side falls back to `FRP_TRANSPORT` in `node.env`).
+
 ## [2.0.4] - 2026-11-20
 
 ### Added

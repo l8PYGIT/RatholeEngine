@@ -55,7 +55,7 @@ A single **Iran server** — behind one domain, one Let's Encrypt cert, one publ
 |------|---------|----------------|
 | **Iran panel** | [`rathole-manager/ratholectl`](rathole-manager/ratholectl) (bash) | rathole **server** + nginx. Owns node inventory. Generates `server.toml` + `rathole.conf`. |
 | **Foreign node** | [`rathole-manager/ratholenode`](rathole-manager/ratholenode) (bash) | rathole **client**. Generates `client.toml`. |
-| **Hub** | [`rathole-manager/ratholehub/hub.py`](rathole-manager/ratholehub/hub.py) (Python, stdlib only) | Central web panel driving many Iran servers and nodes over **SSH or the REST Agent**: per-service controls, read-only routing map, multi-core carrier management, audit log. |
+| **Hub** | [`rathole-manager/ratholehub/hub.py`](rathole-manager/ratholehub/hub.py) (Python, stdlib only) | Central web panel driving many Iran servers and nodes over **SSH or the REST Agent**: per-node carrier selector, per-service controls (⋯), read-only routing map, multi-core carrier management, audit log. |
 | **REST Agent** *(optional)* | [`rathole-manager/ratholeagent.py`](rathole-manager/ratholeagent.py) (Python, stdlib only) | Token-authenticated HTTP(S) daemon on `:8089` (`rathole-agent.service`) so the hub can manage a server **without SSH**. |
 
 The core design principle everywhere: **change state → regenerate config → validate → hot-reload**. Configs are never hand-edited; they are rewritten in place (inode preserved) so rathole hot-reloads without dropping active tunnels, with automatic rollback if `nginx -t` fails.
@@ -143,7 +143,8 @@ ratholectl doctor                    # health check
 `ratholectl add` also prints a ready-to-paste `curl … | sudo bash -s -- --node -- …` one-liner for the foreign node, with the token/inbound already filled in.
 
 **From the hub** you can drive all of this without the CLI:
-- **Service controls** — every service row, on both the Iran page and the node page, has **Carrier and protocol** (switch carrier), **Health test** (runs `doctor` and shows its output), **Create VLESS config** (copies a `vless://…` link; needs the real Xray user UUID + the public Iran domain/IP), **Manage peer** (jump to the other side), and **Remove both ends** (delete from Iran *and* the node in one action).
+- **Per-node carrier selector** — on the Iran page every node row has a carrier dropdown (`ws`, `kcp`, `plain`, `noise`, `backhaul`, `frp`, `gre`, `frp_gre`). Picking one is a **single click that syncs both sides**: it confirms, applies the carrier on Iran *and* the node while keeping the existing inbound port, and **reverts the dropdown if the node-side sync fails** so the tunnel is never left half-switched. `frp`/`gre`/`frp_gre` open the full modal instead (they need an explicit public IP/transport).
+- **Service controls (⋯ menu)** — on both the Iran page and the node page, the **⋯** button of each row opens: **Carrier and protocol** (full modal: carrier + peer node + public IPs + GRE address + FRP/Backhaul transport + profile + optional carrier port), **Health test** (runs `doctor` and shows its output), **Create VLESS config** (copies a `vless://…` link; needs the real Xray user UUID + the public Iran domain/IP), **Manage peer** (jump to the other side), and **Remove both ends** (delete from Iran *and* the node in one action).
 - **Carrier labels report the actual protocol** — e.g. `FRP / TCP`, `FRP / QUIC`, `Backhaul / WSMUX`, `KCP / UDP · balanced`; `?` means the protocol was not reported by the server. A label alone does not prove connectivity — use the health test.
 - **Routing map** — `#/routing` is a **read-only** topology of ingress → Iran → nodes (console / graph / table views); carrier switching and config copy live on the service rows, not here.
 - **Update all** rolls the update across every server one-by-one (progress bar + per-server status, with a green/red version badge on each).
@@ -275,7 +276,7 @@ If RatholeEngine helps you, consider supporting continued development:
 
 **دستورهای مفید CLI:** `ratholectl status` (داشبورد کامل: دامنه، پورت‌ها، گواهی، سرویس‌ها، نودها — با `--json` برای هاب)، `ratholectl paths` (مسیر همه‌ی فایل‌ها با ✓/✗)، `ratholectl version` (نسخه‌ی مدیر + rathole). `ratholectl add` یک دستور آماده‌ی `curl … | sudo bash -s -- --node -- …` هم برای نصب نود چاپ می‌کند.
 
-**از هاب:** در ردیف هر سرویس — هم صفحه‌ی ایران و هم صفحه‌ی نود — دکمه‌های **«حامل و پروتکل»**، **«تست سلامت»** (خروجی `doctor`)، **«ساخت کانفیگ VLESS»** (نیازمند UUID واقعی کاربر Xray و دامنه/IP عمومی ایران)، **«مدیریت سمت مقابل»** و **«حذف از دو سمت»**؛ نقشه‌ی مسیرها (`#/routing`) فقط نمایش توپولوژی (فقط‌خواندنی) است. دکمه‌های **«آپدیت همه»**، **«افزودن به نود»** و **«تنظیم تونل اصلی»** هم سر جای خود هستند.
+**از هاب:** در صفحه‌ی ایران، ردیف هر نود یک **سلکتور حامل** دارد — انتخاب حامل، **یک‌کلیکی روی هر دو سمت** (ایران + نود) اعمال می‌شود و اگر سمت نود شکست بخورد سلکتور برمی‌گردد. پنج اکشن دیگر (**«حامل و پروتکل»** با فرم کامل، **«تست سلامت»**، **«ساخت کانفیگ VLESS»**، **«مدیریت سمت مقابل»** و **«حذف از دو سمت»**) زیر دکمه‌ی **⋯** همان ردیف هستند — هم در صفحه‌ی ایران و هم نود. نقشه‌ی مسیرها (`#/routing`) فقط نمایش توپولوژی (فقط‌خواندنی) است. دکمه‌های **«آپدیت همه»**، **«افزودن به نود»** و **«تنظیم تونل اصلی»** هم سر جای خود هستند.
 
 **نصب/آپدیت از مخزن خصوصی:** `install.sh --token <pat>` (یا `RATHOLE_GH_TOKEN`) و `tools/update-private.sh`؛ در حالت private آینه‌های عمومی ghproxy کنار گذاشته می‌شوند.
 

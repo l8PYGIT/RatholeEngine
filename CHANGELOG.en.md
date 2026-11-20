@@ -6,8 +6,15 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
-### Changed
+## [2.0.4] - 2026-11-20
+
+### Added
 - **The per-node carrier selector is back in the Iran page row (v2.0.1 compact layout):** when v2.0.2 removed the wiring board, the inline selector was replaced by five service buttons and the row became two lines. Selecting a carrier **inside the row** now works again in one step: it asks for confirmation and applies the carrier **automatically on both sides (Iran + node)** via `configureServiceCarrier`; if the node-side sync fails the selector reverts so the tunnel never drops. `frp` / `gre` / `frp_gre` (which need IP/transport input) still open the modal. All five service actions (carrier & protocol, health test, VLESS config, manage peer, remove both ends) are preserved and moved into a `⋯` menu on the same row so it stays **single-line** (both the Iran and the node page).
+- **⋯ menu for the service actions:** the five actions (carrier & protocol, health test, VLESS config, manage peer, remove both ends) moved into a compact ⋯ menu so the row stays single-line — on both the Iran and the node page.
+
+### Fixed
+- **The ⋯ menu of the last row was clipped:** `overflow-x: auto` on the server-page sections cut off the absolutely-positioned menu of the last row; sections now use `overflow: visible` and below 1280px the action row wraps instead of scrolling horizontally.
+- **Two missing i18n keys:** `c_port` and `done` were used in code but existed in neither dictionary (the raw key was rendered); added to Persian and English.
 
 ### Changed
 - **Repository fully moved to `l8PYGIT/RatholeEngine`:** every `loopy-iri/tunnelplus` reference in code and docs now points at the new slug — the `install.sh` default (`RATHOLE_GH`), the `ratholeagent.py` download in `ratholectl`/`ratholenode`, the `gh_repo` default in `hub.py`, `tools/update-private.sh`, `tools/mkdocs_wiki_links.py`, and every install example in the README / `docs/` / wiki. The one-command install and the docs site now point at the current repository and install from its own releases.

@@ -67,9 +67,27 @@ The UI is a static asset tree under `ratholehub/ui/`, served by the stdlib backe
 
 On mobile widths (≤820px) the navigation collapses into a fixed bottom bar with the same four sections. There is no wiring-board page; the legacy `#/wiring` hash falls back to the dashboard.
 
-### Service Controls (v2.0.2)
+### Per-node carrier selector (v2.0.4)
 
-The visual wiring board (`#/wiring`) was removed in v2.0.2 and replaced by **service controls** on every service row — on both the Iran server page and the node page:
+On the **Iran** page every node row carries a **carrier selector**, so you can switch that node's carrier straight from the table without opening a modal:
+
+```
+Remove · ⋯ · [carrier ▾] · Rotate token · Rename · Edit · Add to node · Install / token
+```
+
+Selector options: `ws` · `kcp` · `plain` · `noise` · `backhaul` · `frp` · `gre` · `frp_gre`
+
+**Behavior (one click, both sides):**
+
+1. It asks for a short confirmation.
+2. It applies the carrier to **both sides** — Iran and the node — with automatic parameters: the existing inbound port is kept, each side's public IP is auto-detected, the FRP transport follows the current state and the KCP/Backhaul profile stays `balanced`.
+3. If the node-side sync fails, **the selector reverts** to its previous value so the tunnel is never left half-switched or dropped.
+4. For `frp`, `gre` and `frp_gre` (which need an explicit public IP and transport) it opens the **Carrier & protocol** modal instead so you can confirm the values.
+5. On **Game/SNI** nodes the selector is replaced by a `game` badge (an L4 service on 443 has no carrier to switch); manage those in the "Game services" section.
+
+### Service Controls — the ⋯ menu (v2.0.2, rearranged in v2.0.4)
+
+The visual wiring board (`#/wiring`) was removed in v2.0.2 and replaced by **service controls**. Since v2.0.4 these five actions live behind a **⋯** button so the row stays single-line — on both the Iran server page and the node page:
 
 | Button | Action |
 |--------|--------|
@@ -78,6 +96,8 @@ The visual wiring board (`#/wiring`) was removed in v2.0.2 and replaced by **ser
 | **Create VLESS config** | Builds and copies a `vless://` link (details below). |
 | **Manage peer** | From the Iran page it jumps to the peer node's server page (and reports an error when the peer is ambiguous); from the node page, if several Iran servers carry the same service, it asks which Iran server to use. |
 | **Remove both ends** | After confirmation removes the node from Iran (`rm_node`) and, when present, `rm_svc`/`rm_bh_svc` on the node. It refuses when the peer overview is unreachable or its service lists are incomplete. |
+
+**Selector vs. Carrier button:** both end in the same engine and both are two-sided; the selector is the fast path with automatic values, the modal button is for manual control (multi-IP servers, GRE, custom ports, lossy-link profiles).
 
 **VLESS config**: takes the actual Xray user UUID, public Iran domain/IP, port (default 443), SNI, and the WebSocket path (`/<name>`); validates the UUID, port 1–65535, a path starting with `/`, and a non-loopback host; then copies `vless://<uuid>@<host>:<port>?type=ws&security=tls&path=/<name>[&sni=...]#<name>`. It does not create an Xray user.
 
@@ -112,7 +132,8 @@ To edit, click **Manage** in the **Ports** section. `sub-path` and `hub-path` ar
 
 - **Multi-level carrier/lane model** — RATHOLE carriers, the Backhaul core, the FRP core, and GRE interfaces are controlled independently on the Iran side.
 - **Full FRP and GRE support** — FRP server/client controls (`frp_on`, `frp_off`, `frp_status`, `frp_show`) and Linux L3 GRE interfaces (`gre_on`, `gre_off`, `gre_status`, `gre_probe`) plus the FRP+GRE hybrid.
-- **Per-service controls** (v2.0.2) — replaced the wiring board: set carrier/protocol, health test, create a VLESS config, manage the peer, and remove both ends (previous section).
+- **Per-service controls** (v2.0.2) — replaced the wiring board: set carrier/protocol, health test, create a VLESS config, manage the peer, and remove both ends.
+- **Per-node carrier selector** (v2.0.4) — switch a node's carrier straight from the Iran table, one click, with automatic two-sided sync and revert-on-failure (previous section).
 - **Directed carrier selection** — picking a carrier for a node is one action: enable it on Iran if needed, point the node at it on Iran for `noise`/`backhaul`/`frp`, configure the node with parameters **auto-derived from the Iran server**, and remove the previous carrier on Iran so no inconsistent state is left.
 - **More complete settings page** — `fake-port`, `sub-port`, and `control-port` are editable from the UI.
 - **Non-tunnel reverse proxy (`proxy`)** — `proxy_add`/`proxy_rm`/`proxy_ls` build a `/<name>/` path on the same 443 that proxies to an arbitrary upstream (not rathole).

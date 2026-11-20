@@ -229,7 +229,6 @@ td.btns.nowrap > * { flex: 0 0 auto; }
 td.btns.nowrap > button { white-space: nowrap; min-height: 34px; padding: 6px 9px; font-size: 12px; }
 td.btns.nowrap > select { min-height: 34px; padding: 4px 8px; font-size: 12px; width: auto; max-width: 250px; }
 /* agar radif az tool-e jadval bishtar shod: scroll-e ofoghi dar baksh — na boridan-e content */
-.sec { overflow-x: auto; }
 
 /* menu-ye compact-e akshan ('⋯') — bedoone-e JS va ba <details> */
 details.more { position: relative; display: inline-block; }
@@ -315,7 +314,9 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 
 .spage-head { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-height: 64px; margin-bottom: 16px; padding: 10px 0 14px; border-bottom: 1px solid var(--border); }
 .spage-head .btns { margin-inline-start: auto; }
-.spage .sec { margin-top: 12px; padding: 14px 16px; overflow-x: auto; }
+.spage .sec { margin-top: 12px; padding: 14px 16px; }
+/* menu-ye '...' absolut ast; hich scroll-containeri nabayad an ra clip konad */
+.spage .sec, .sec { overflow: visible; }
 .back { border-color: var(--border); background: transparent; color: var(--text); }
 .back .icon { transform: scaleX(var(--dir-scale, 1)); }
 [dir="rtl"] .back .icon { --dir-scale: -1; }
@@ -530,3 +531,11 @@ pre { max-height: 260px; margin: 8px 0 0; padding: 12px; overflow: auto; border:
   .flow, .cable-flow { animation: none !important; }
 }
 
+/* radif-e akshan-ha: dar viewport-haye tang mishkand (bejaye scroll-e ofoghi) */
+@media (max-width: 1280px) {
+  /* radif-e akshan-ha compact mishavad ta hadaksar 2 khat beshavad */
+  td.btns.nowrap { flex-wrap: wrap; gap: 5px; }
+  td.btns.nowrap > button { font-size: 11px; padding: 4px 7px; min-height: 30px; }
+  td.btns.nowrap > select { max-width: 100%; min-height: 30px; font-size: 11px; }
+  details.more > summary { min-height: 30px; min-width: 30px; }
+}

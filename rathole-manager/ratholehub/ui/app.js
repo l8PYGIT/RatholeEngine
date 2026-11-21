@@ -187,6 +187,7 @@ setInterval(()=>{const c=$('clock');if(c)c.textContent=new Date().toLocaleTimeSt
 let OVS={};                                            // cache: name -> akharin overview
 let VIEW=localStorage.getItem('rh_view')||'grid';      // chinesh dashboard: grid|list
 let ROUTE={page:'dashboard',param:null};
+let _navAnimate=false, _tabAnimate=false;
 function parseHash(){const hh=location.hash||'#/dashboard';
  let m=hh.match(/^#\/server\/([A-Za-z0-9_-]+)$/); if(m)return{page:'server',param:m[1]};
  m=hh.match(/^#\/(dashboard|routing|audit|settings)$/); return m?{page:m[1],param:null}:{page:'dashboard',param:null};}
@@ -195,13 +196,18 @@ window.addEventListener('hashchange',()=>{if(TOKEN)router();});
 function markNav(){document.querySelectorAll('.sitem').forEach(e=>{
  const active=e.dataset.pg===ROUTE.page;e.classList.toggle('active',active);e.setAttribute('aria-current',active?'page':'false');});}
 async function router(){
- if(!TOKEN)return; ROUTE=parseHash(); markNav();
+ if(!TOKEN)return; if(typeof closeAllMoreMenus==='function')closeAllMoreMenus(null,true); ROUTE=parseHash(); markNav();
  await ensureServers();
- if(ROUTE.page==='server')renderServerPage(ROUTE.param);
- else if(ROUTE.page==='routing')renderRouting();
- else if(ROUTE.page==='audit')renderAuditPage();
- else if(ROUTE.page==='settings')renderSettingsPage();
- else renderDashboard();
+ _navAnimate=true;
+ try{
+  const pg=$('page');
+  if(ROUTE.page==='server')renderServerPage(ROUTE.param);
+  else if(ROUTE.page==='routing')renderRouting();
+  else if(ROUTE.page==='audit')renderAuditPage();
+  else if(ROUTE.page==='settings')renderSettingsPage();
+  else renderDashboard();
+  if(pg){pg.classList.remove('view-enter');void pg.offsetWidth;pg.classList.add('view-enter');}
+ }finally{_navAnimate=false;}
 }
 async function ensureServers(){if(SERVERS.length)return;const {j}=await api('GET','api/servers');SERVERS=j||[];}
 // sazegari ba code-haye ghadimi: refresh-e inventory + safhe-ye faal
@@ -249,7 +255,7 @@ function cmdkEntries(query){
   if(!q||(pg.label+' '+pg.id).toLowerCase().includes(q))out.push({sec:'pages',...pg});
  });
  [
-  {icon:'server',label:t('cmdk_add_srv'),meta:'+',run:()=>{nav('#/dashboard');requestAnimationFrame(()=>{const d=$('add_srv_details');if(d){d.open=true;const inp=$('n');if(inp)inp.focus();}});}},
+  {icon:'server',label:t('cmdk_add_srv'),meta:'+',run:()=>{nav('#/dashboard');requestAnimationFrame(()=>{const d=$('add_srv_details');if(d){toggleDiagDetails(d,true);const inp=$('n');if(inp)inp.focus();}});}},
   {icon:'shield',label:t('hub_proxy_btn'),meta:'Proxy',run:()=>editHubProxy()},
   {icon:'download',label:t('upd_all'),meta:'Deploy',run:()=>{nav('#/dashboard');updateAll();}},
   {icon:'refresh',label:t('refresh'),meta:'Sync',run:()=>refreshPage()},
@@ -326,6 +332,7 @@ function openCmdPalette(preset=''){
 }
 
 function shell(){
+ if(typeof closeAllMoreMenus==='function')closeAllMoreMenus(null,true);
  applyStatic();
  if(!TOKEN){document.body.classList.add('login');
   $('app').innerHTML=`<main id="page"><section class="login-panel" aria-labelledby="login_title">
@@ -531,6 +538,7 @@ function setDashFilter(patch){
  const clr=$('flt_clr');
  if(clr)clr.style.display=(DASH_FILTER.q||DASH_FILTER.role!=='all'||DASH_FILTER.status!=='all')?'':'none';
  drawCards();
+ const c=$('servers');if(c)c.classList.remove('stagger-in');
  SERVERS.forEach(s=>{if(OVS[s.name])updateCard(s.name);});
 }
 function resetDashFilter(){
@@ -595,7 +603,7 @@ function renderDashboard(){
    <summary>
     <span class="brand-mark" style="width:28px;height:28px;border-radius:8px;display:inline-grid;place-items:center;">${icon('server')}</span>
     <span style="font-size:13.5px;font-weight:700;">${t('add_server')}</span>
-    <span class="badge b-role" style="margin-inline-start:auto;">${t('add_btn')}</span>
+    <span class="badge b-role">${t('add_btn')}</span>
    </summary>
    <div class="cbody" style="padding:14px 18px 18px;">
     <div class="server-form">
@@ -636,6 +644,8 @@ function renderDashboard(){
  if(qEl)qEl.addEventListener('input',()=>setDashFilter({q:qEl.value}));
  updateDashboardKpis();
  drawCards();
+ const srvGrid=$('servers');
+ if(srvGrid&&typeof _navAnimate!=='undefined'&&_navAnimate)srvGrid.classList.add('stagger-in');
  updateHubStrip(); loadHubStatus();
  SERVERS.forEach(s=>{if(OVS[s.name])updateCard(s.name);loadOv(s.name);});
 }
@@ -665,7 +675,7 @@ function drawCards(){
 function updateCard(n){
  const ov=OVS[n]; if(!ov)return;
  if(typeof updateDashboardKpis==='function')updateDashboardKpis();
- if(DASH_FILTER.status!=='all'&&!$('srv_'+n)){drawCards();SERVERS.forEach(s=>{if(OVS[s.name]&&s.name!==n)updateCard(s.name);});return;}
+ if(DASH_FILTER.status!=='all'&&!$('srv_'+n)){drawCards();const c=$('servers');if(c)c.classList.remove('stagger-in');SERVERS.forEach(s=>{if(OVS[s.name]&&s.name!==n)updateCard(s.name);});return;}
  setDot(n,ovDotCls(n,ov));
  const hd=$('hd_'+n); if(hd)hd.innerHTML=headBadges(n,ov);
  const mt=$('mt_'+n); if(!mt)return;
@@ -689,6 +699,7 @@ function updateCard(n){
 
 // ---------- safhe: server (hameye amaliat-e ghadimi inja) ----------
 function renderServerPage(n){
+ if(typeof closeAllMoreMenus==='function')closeAllMoreMenus(null,true);
  const pg=$('page'); if(!pg)return; const s=fnd(n);
  if(!s.name){pg.innerHTML=`<div class="ptitle"><button class="back" type="button" onclick="nav('#/dashboard')">${icon('arrow')}${t('back')}</button><h2>${t('srv_notfound')}</h2></div>`;return;}
  const ov=OVS[n];
@@ -738,10 +749,15 @@ function connSummary(ov,role){
 }
 let IRAN_TAB = localStorage.getItem('rh_iran_tab') || 'nodes';
 function setIranTab(n, tab){
+  if(typeof closeAllMoreMenus==='function')closeAllMoreMenus(null,true);
   IRAN_TAB = tab;
   localStorage.setItem('rh_iran_tab', tab);
   const el = $('body_' + n);
-  if(el && OVS[n]) el.innerHTML = renderIran(n, OVS[n]);
+  if(el && OVS[n]){
+    _tabAnimate = true;
+    try { el.innerHTML = renderIran(n, OVS[n]); }
+    finally { _tabAnimate = false; }
+  }
 }
 
 function renderIran(n,ov){
@@ -792,6 +808,9 @@ function renderIran(n,ov){
     return `<button type="button" class="tab-btn ${act}" onclick="setIranTab('${n}','${tab.id}')">${tab.label}${cnt}</button>`;
   }).join('') + `</div>`;
 
+  const tabAnim=typeof _tabAnimate!=='undefined'&&_tabAnimate;
+  const navAnim=typeof _navAnimate!=='undefined'&&_navAnimate;
+  s+=`<div class="tab-panel${tabAnim?' view-enter':''}">`;
   if(IRAN_TAB === 'nodes'){
     s+=`<div class="sec"><div class="sec-head-row"><h4>${t('nodes_svcs')} <button class="g" onclick="addNode('${n}')">${t('add_node')}</button></h4>
       ${(ov.nodes||[]).length?`<div class="search-box inline-search">${icon('search')}<input type="search" data-tbl-filter="iran_nodes_tbl" placeholder="${h(t('flt_search_svc'))}" aria-label="${h(t('flt_search_svc'))}"></div>`:''}</div>`;
@@ -833,7 +852,7 @@ function renderIran(n,ov){
 
     s+=`<div class="sec"><h4>⚡ ${t('carriers_avail')}</h4>
       <div class="sub" style="margin-bottom:8px">${h(t('carriers_avail_hint'))}</div>
-      <div class="carrier-grid">
+      <div class="carrier-grid${(tabAnim||navAnim)?' stagger-in':''}">
         <div class="carrier-card ${isBh?'active':''}">
           <div>
             <div class="carrier-head">
@@ -977,7 +996,7 @@ function renderIran(n,ov){
     </div>
     <div class="sec"><h4>${t('ingress_sec')}</h4>
       <div class="sub" style="margin-bottom:12px">${h(t('ingress_hint'))}</div>
-      <div class="carrier-grid" style="margin-top:0">
+      <div class="carrier-grid${(tabAnim||navAnim)?' stagger-in':''}" style="margin-top:0">
         <!-- Direct-IP -->
         <div class="carrier-card ${isDirect?'active':''}">
           <div>
@@ -1058,6 +1077,7 @@ function renderIran(n,ov){
       <div class="sub" style="margin-top:8px">${h(t('reapply_hint'))}</div>
     </div>`;
   }
+  s+='</div>';
   return s;
 }
 
@@ -2699,21 +2719,126 @@ function editServer(n){const s=fnd(n);
 
 async function savePw(){const cur=$('cpw').value,nw=$('npw').value;if(!nw){toast(t('need_newpw'));return;}const {status,j}=await api('POST','api/config',{current_password:cur,new_password:nw});if(status!==200){toast('error: '+(j.error||status));return;}toast(t('pw_changed'));$('cpw').value='';$('npw').value='';}
 async function rotTok(){if(!confirm(t('cf_rottok')))return;const {status,j}=await api('POST','api/config',{rotate_token:true});if(status!==200){toast('error: '+(j.error||status));return;}TOKEN=j.api_token;localStorage.setItem('rh_token',TOKEN);toast(t('tok_applied'));renderSettingsPage();}
+function prefersReducedMotion(){
+ return typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+function closeMoreMenu(d,instant){
+ const menu=(d&&d._menu)||(d&&d.querySelector&&d.querySelector('.more-menu'));
+ if(d)d.open=false;
+ if(!menu)return;
+ clearTimeout(menu._closeTimer);
+ menu._closeTimer=null;
+ const finish=()=>{
+  menu.classList.remove('fixed-menu','more-menu-portal','is-open','is-closing');
+  menu.style.top='';
+  menu.style.left='';
+  menu.style.transformOrigin='';
+  delete menu.dataset.side;
+  if(d&&d.isConnected){if(menu.parentElement!==d)d.appendChild(menu);}
+  else if(menu.parentElement===document.body){menu.remove();}
+ };
+ if(instant||!menu.classList.contains('more-menu-portal')||prefersReducedMotion()){
+  finish();
+  return;
+ }
+ menu.classList.remove('is-open');
+ menu.classList.add('is-closing');
+ menu._closeTimer=setTimeout(finish,130);
+}
+function closeAllMoreMenus(except=null,instant=false){
+ document.querySelectorAll('details.more[open]').forEach(d=>{if(d!==except)closeMoreMenu(d,instant);});
+ document.querySelectorAll('body > .more-menu-portal').forEach(menu=>{
+  if(except&&menu._owner===except)return;
+  if(menu._owner)closeMoreMenu(menu._owner,instant);
+  else menu.remove();
+ });
+}
 function positionMoreMenu(d){
- const menu=d&&d.querySelector('.more-menu'), sum=d&&d.querySelector('summary');
+ const menu=(d&&d._menu)||(d&&d.querySelector&&d.querySelector('.more-menu'));
+ const sum=d&&d.querySelector&&d.querySelector('summary');
  if(!menu||!sum)return;
- if(!d.open){menu.classList.remove('fixed-menu');menu.style.top='';menu.style.left='';return;}
- menu.classList.add('fixed-menu');
+ d._menu=menu;
+ menu._owner=d;
+ if(!d.open){closeMoreMenu(d,false);return;}
+ closeAllMoreMenus(d,true);
+ clearTimeout(menu._closeTimer);
+ menu._closeTimer=null;
+ if(document.body&&menu.parentElement!==document.body)document.body.appendChild(menu);
+ menu.classList.remove('is-closing','is-open');
+ menu.classList.add('fixed-menu','more-menu-portal');
  menu.style.top='0px';
  menu.style.left='0px';
  const origin=menu.getBoundingClientRect();
  const sr=sum.getBoundingClientRect(), mr=menu.getBoundingClientRect();
  const isRtl=document.documentElement.dir==='rtl';
- const top=(sr.bottom+6+mr.height<=window.innerHeight-12)?(sr.bottom+6):Math.max(12,sr.top-mr.height-6);
+ const openBelow=(sr.bottom+6+mr.height<=window.innerHeight-12)||(sr.top-mr.height-6<12);
+ const top=openBelow?Math.min(sr.bottom+6,window.innerHeight-mr.height-12):Math.max(12,sr.top-mr.height-6);
  let left=isRtl?sr.left:(sr.right-mr.width);
  left=Math.max(12,Math.min(left,window.innerWidth-mr.width-12));
  menu.style.top=(top-origin.top)+'px';
  menu.style.left=(left-origin.left)+'px';
+ menu.style.transformOrigin=(openBelow?'top ':'bottom ')+(isRtl?'left':'right');
+ menu.dataset.side=openBelow?'bottom':'top';
+ requestAnimationFrame(()=>{if(d.open&&menu.parentElement)menu.classList.add('is-open');});
+}
+function toggleDiagDetails(d,forceOpen){
+ if(!d)return;
+ const sum=d.querySelector(':scope > summary');
+ const body=sum&&sum.nextElementSibling;
+ const willOpen=typeof forceOpen==='boolean'?forceOpen:(!d.open||d.dataset.closing==='1');
+ if(willOpen===d.open&&d.dataset.closing!=='1'&&d.dataset.opening!=='1')return;
+ const startH=d.offsetHeight;
+ if(d._anim){try{d._anim.cancel();}catch(_){}d._anim=null;}
+ if(d._bodyAnim){try{d._bodyAnim.cancel();}catch(_){}d._bodyAnim=null;}
+ if(!sum||!body||typeof d.animate!=='function'||prefersReducedMotion()){
+  delete d.dataset.closing;
+  delete d.dataset.opening;
+  d.style.overflow='';
+  d.open=willOpen;
+  if(willOpen&&body&&typeof body.animate==='function'){
+   body.animate([{opacity:0},{opacity:1}],{duration:120,easing:'ease'});
+  }
+  return;
+ }
+ if(willOpen){
+  d.dataset.closing='0';
+  d.dataset.opening='1';
+  d.style.overflow='hidden';
+  d.open=true;
+  const endH=d.offsetHeight;
+  const anim=d.animate([{height:startH+'px'},{height:endH+'px'}],{duration:240,easing:'cubic-bezier(0.23, 1, 0.32, 1)'});
+  d._anim=anim;
+  d._bodyAnim=body.animate([{opacity:0,transform:'translateY(-6px)'},{opacity:1,transform:'translateY(0)'}],{duration:220,easing:'cubic-bezier(0.23, 1, 0.32, 1)'});
+  anim.onfinish=()=>{
+   if(d._anim!==anim)return;
+   d._anim=null;
+   d._bodyAnim=null;
+   d.style.overflow='';
+   delete d.dataset.opening;
+   delete d.dataset.closing;
+  };
+  anim.oncancel=()=>{if(d._anim===anim){d.style.overflow='';}};
+ }else{
+  d.dataset.opening='0';
+  d.dataset.closing='1';
+  d.style.overflow='hidden';
+  const cs=typeof getComputedStyle==='function'?getComputedStyle(d):null;
+  const borderY=cs?((parseFloat(cs.borderTopWidth)||0)+(parseFloat(cs.borderBottomWidth)||0)):2;
+  const endH=sum.offsetHeight+borderY;
+  const anim=d.animate([{height:startH+'px'},{height:endH+'px'}],{duration:180,easing:'cubic-bezier(0.23, 1, 0.32, 1)'});
+  d._anim=anim;
+  d._bodyAnim=body.animate([{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(-4px)'}],{duration:150,easing:'cubic-bezier(0.23, 1, 0.32, 1)'});
+  anim.onfinish=()=>{
+   if(d._anim!==anim)return;
+   d._anim=null;
+   d._bodyAnim=null;
+   d.open=false;
+   d.style.overflow='';
+   delete d.dataset.closing;
+   delete d.dataset.opening;
+  };
+  anim.oncancel=()=>{if(d._anim===anim){d.style.overflow='';}};
+ }
 }
 function filterTableRows(wrapId,query){
  const wrap=$(wrapId); if(!wrap)return;
@@ -2733,16 +2858,21 @@ function bindDelegatedEvents(){
  },true);
  document.addEventListener('click',e=>{
   const tgt=e.target&&e.target.closest?e.target:null;
-  const curMore=tgt?tgt.closest('details.more'):null;
-  document.querySelectorAll('details.more[open]').forEach(d=>{if(d!==curMore){d.open=false;positionMoreMenu(d);}});
+  const curMenu=tgt?tgt.closest('.more-menu'):null;
+  const curMore=(tgt&&tgt.closest('details.more'))||(curMenu&&curMenu._owner)||null;
+  closeAllMoreMenus(curMore,false);
   if(!tgt)return;
+  const diagSum=tgt.closest('details.diag-sec > summary');
+  if(diagSum){e.preventDefault();toggleDiagDetails(diagSum.parentElement);return;}
   const roleBtn=tgt.closest('[data-flt-role]');
   if(roleBtn){setDashFilter({role:roleBtn.dataset.fltRole});return;}
   const stBtn=tgt.closest('[data-flt-st]');
   if(stBtn){setDashFilter({status:stBtn.dataset.fltSt});return;}
   const svcBtn=tgt.closest('[data-svc-call]');
   if(svcBtn){
-   const m=svcBtn.closest('details.more');if(m){m.open=false;positionMoreMenu(m);}
+   const menu=svcBtn.closest('.more-menu');
+   const m=(menu&&menu._owner)||svcBtn.closest('details.more');
+   if(m)closeMoreMenu(m,true);
    const ds=svcBtn.dataset;
    if(ds.svcCall==='serviceControl')serviceControl(ds.server,ds.name,ds.action);
    else if(ds.svcCall==='nodeServiceAction')nodeServiceAction(ds.server,ds.name,ds.action);
@@ -2787,10 +2917,11 @@ function bindDelegatedEvents(){
    else openCmdPalette();
    return;
   }
-  if(e.key==='Escape')document.querySelectorAll('details.more[open]').forEach(d=>{d.open=false;positionMoreMenu(d);});
+  if(e.key==='Escape')closeAllMoreMenus(null,true);
  });
  if(typeof window!=='undefined'&&window.addEventListener){
-  window.addEventListener('scroll',()=>{document.querySelectorAll('details.more[open]').forEach(d=>{d.open=false;positionMoreMenu(d);});},true);
+  window.addEventListener('scroll',e=>{if(e&&e.target&&e.target.closest&&e.target.closest('.more-menu'))return;closeAllMoreMenus(null,true);},true);
+  window.addEventListener('resize',()=>closeAllMoreMenus(null,true));
   window.addEventListener('storage',e=>{
    if(e.key==='rh_theme'){THEME_PREF=(e.newValue==='light'||e.newValue==='dark')?e.newValue:'';applyStatic();}
    else if(e.key==='rh_sb_collapsed'){applyStatic();}
@@ -2802,6 +2933,6 @@ function bindDelegatedEvents(){
  }
 }
 // refresh-e khodkar: faghat overview-haye safhe-ye faal (server SSH kamtar mikhorad)
-setInterval(()=>{if($('auto')&&$('auto').checked&&TOKEN&&!document.querySelector('details.more[open]'))pollByPage();},20000);
+setInterval(()=>{if($('auto')&&$('auto').checked&&TOKEN&&!document.querySelector('details.more[open], .more-menu-portal'))pollByPage();},20000);
 bindDelegatedEvents();
 shell();

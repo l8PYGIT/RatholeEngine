@@ -627,3 +627,143 @@ test('Apple/Raycast UI redesign: offline Vazirmatn font, native <dialog>, top-la
   'empty HUBST.services must render healthy instead of loading');
  assert.ok(kpiBox.innerHTML.includes('75s'), 'expected hub_uptime fallback in KPI card');
 });
+
+test('More-menu body portaling, mobile sidebar stacking, dialog/diag animations & Emil motion rules',()=>{
+ const cssSrc=fs.readFileSync(path.join(__dirname,'..','rathole-manager','ratholehub','ui','app.css'),'utf8');
+ for(const tok of ['--ease-out','--ease-in-out','--ease-drawer']){
+  assert.ok(cssSrc.includes(tok),'missing motion token '+tok);
+ }
+ assert.doesNotMatch(cssSrc,/transition\s*:\s*all\b/);
+ assert.doesNotMatch(cssSrc,/scale\(\s*0\s*\)/);
+ assert.ok(cssSrc.includes('\n  .more-menu {\n')||cssSrc.includes('.more-menu {\n'),'expected decoupled .more-menu rule');
+ assert.ok(!cssSrc.includes('details.more .more-menu'),'portaled .more-menu must not require details.more ancestor');
+ assert.ok(cssSrc.includes('.more-menu.more-menu-portal.is-open'));
+ assert.ok(!cssSrc.includes('container-type: inline-size'),'.table-wrap must not trap fixed popovers');
+ assert.ok(cssSrc.includes('dialog.cmdk-dialog')&&cssSrc.includes('transition-duration: 0ms !important'));
+ assert.ok(cssSrc.includes('@media (hover: hover) and (pointer: fine)'));
+ assert.ok(cssSrc.includes('#sb::before')&&cssSrc.includes('backdrop-filter: none;'));
+ assert.ok(cssSrc.includes('@media (prefers-reduced-motion: reduce)'));
+
+ const c=context();
+ const bodyChildren=[];
+ const doc={
+  documentElement:{dir:'rtl'},
+  body:{
+   children:bodyChildren,
+   appendChild(ch){
+    if(ch.parentElement&&ch.parentElement!==doc.body&&Array.isArray(ch.parentElement.children)){
+     const i=ch.parentElement.children.indexOf(ch);
+     if(i>=0)ch.parentElement.children.splice(i,1);
+    }
+    ch.parentElement=doc.body;
+    if(!bodyChildren.includes(ch))bodyChildren.push(ch);
+    return ch;
+   },
+  },
+  querySelectorAll(sel){
+   if(sel==='details.more[open]')return details.open?[details]:[];
+   if(sel==='body > .more-menu-portal')return bodyChildren.filter(x=>x._cl.has('more-menu-portal'));
+   return [];
+  },
+ };
+ const makeEl=(tag,cls='')=>{
+  const el={
+   tagName:tag.toUpperCase(),
+   children:[],
+   parentElement:null,
+   isConnected:true,
+   dataset:{},
+   style:{},
+   open:false,
+   _cl:new Set(cls.split(/\s+/).filter(Boolean)),
+   classList:{
+    add:(...a)=>a.forEach(x=>el._cl.add(x)),
+    remove:(...a)=>a.forEach(x=>el._cl.delete(x)),
+    contains:x=>el._cl.has(x),
+   },
+   appendChild(ch){
+    if(ch.parentElement&&ch.parentElement!==el){
+     const i=ch.parentElement.children.indexOf(ch);
+     if(i>=0)ch.parentElement.children.splice(i,1);
+    }
+    if(el===doc.body&&!bodyChildren.includes(ch))bodyChildren.push(ch);
+    ch.parentElement=el;
+    if(!el.children.includes(ch))el.children.push(ch);
+    return ch;
+   },
+   remove(){
+    const idx=bodyChildren.indexOf(el);
+    if(idx>=0)bodyChildren.splice(idx,1);
+    el.parentElement=null;
+   },
+   querySelector:()=>null,
+   getBoundingClientRect:()=>({top:100,bottom:132,left:40,right:72,width:215,height:180}),
+  };
+  return el;
+ };
+ const details=makeEl('details');
+ const summary=makeEl('summary');
+ const menu=makeEl('div','more-menu');
+ details.appendChild(summary);
+ details.appendChild(menu);
+ details.querySelector=sel=>sel==='summary'?summary:(sel==='.more-menu'?menu:null);
+ Object.assign(c,{
+  document:doc,
+  window:{innerWidth:1280,innerHeight:900},
+  requestAnimationFrame:fn=>fn(),
+  clearTimeout:()=>{},
+  setTimeout:()=>0,
+  matchMedia:()=>({matches:false}),
+  getComputedStyle:()=>({borderTopWidth:'1px',borderBottomWidth:'1px'}),
+ });
+ vm.runInContext(
+  ['prefersReducedMotion','closeMoreMenu','closeAllMoreMenus','positionMoreMenu','toggleDiagDetails']
+   .map(fn=>definition(fn)).join('\n'),
+  c
+ );
+
+ details.open=true;
+ c.positionMoreMenu(details);
+ assert.equal(menu.parentElement,doc.body,'open .more-menu must portal directly to document.body');
+ assert.ok(menu.classList.contains('fixed-menu')&&menu.classList.contains('more-menu-portal'));
+ assert.ok(menu.classList.contains('is-open'));
+ assert.ok(menu.style.transformOrigin==='top left');
+ assert.equal(menu.dataset.side,'bottom');
+
+ c.closeAllMoreMenus(null,true);
+ assert.equal(details.open,false);
+ assert.equal(menu.parentElement,details,'closed .more-menu must return inside details');
+ assert.ok(!menu.classList.contains('more-menu-portal'));
+
+ // Verify interruptible WAAPI toggleDiagDetails on details.diag-sec
+ const diag=makeEl('details','diag-sec');
+ const dSum=makeEl('summary');
+ const dBody=makeEl('div','diag-content');
+ diag.appendChild(dSum);
+ diag.appendChild(dBody);
+ diag.querySelector=sel=>sel===':scope > summary'?dSum:null;
+ dSum.nextElementSibling=dBody;
+ diag.offsetHeight=48;
+ dSum.offsetHeight=44;
+ let animCalls=0, canceled=0;
+ const mkAnim=()=>{
+  const a={onfinish:null,oncancel:null,cancel(){canceled++;}};
+  animCalls++;
+  return a;
+ };
+ diag.animate=mkAnim;
+ dBody.animate=mkAnim;
+
+ c.toggleDiagDetails(diag,true);
+ assert.equal(diag.open,true);
+ assert.equal(diag.dataset.opening,'1');
+ assert.ok(animCalls>=2);
+
+ // Interrupt mid-open with close
+ c.toggleDiagDetails(diag,false);
+ assert.ok(canceled>=2,'re-toggling mid-open must cancel prior animations cleanly');
+ assert.equal(diag.dataset.closing,'1');
+ diag._anim.onfinish();
+ assert.equal(diag.open,false);
+ assert.equal(diag.dataset.closing,undefined);
+});

@@ -29,8 +29,8 @@ TEST_TMP_ROOT="$(cygpath -w "$REPO_ROOT" 2>/dev/null || echo "$REPO_ROOT")"
   # trusted-root-e gomshode bayad ghabl az openssl fail shavad; verify hichvaght disable nemishavad.
   result="$(adaptive_probe_ws_tls "127.0.0.1" "443" "/" "" "1.2.3.4" "$ROOT/missing-ca.crt" 2>/dev/null || true)"
   [ "$result" = "tls_failed:0" ] || fail "trusted-root-e gomshode rad nashod: $result"
-  declare -f adaptive_probe_ws_tls | grep -q -- '-verify_return_error' || fail 'TLS verify_return_error hazf shode'
-  declare -f adaptive_probe_ws_tls | grep -q -- '-CAfile' || fail 'trusted_root be openssl probe vasl nist'
+  declare -f adaptive_ws_probe | grep -q 'ssl.create_default_context' || fail 'TLS verification hazf shode'
+  declare -f adaptive_ws_probe | grep -q 'cafile=trust' || fail 'trusted_root be TLS probe vasl nist'
   ok 'probe TLS trusted_root ra estefade mikonad va verify ra khamoosh nemikonad'
 )
 
@@ -92,9 +92,12 @@ TEST_TMP_ROOT="$(cygpath -w "$REPO_ROOT" 2>/dev/null || echo "$REPO_ROOT")"
   ok 'adaptive: 2 failure nabayad switch kone (threshold=3)'
 
   # 3 failures: bayad switch konad
-  result="$(adaptive_should_switch 3 3 0 300 2>/dev/null)"
+  result="$(adaptive_should_switch 3 3 0 0 2>/dev/null)"
   [ "$result" = "yes" ] || fail "3 failure bayad switch kone (got: $result)"
   ok 'adaptive: 3 failure bayad switch kone'
+  result="$(adaptive_should_switch 3 3 0 300 2>/dev/null)"
+  [ "$result" = no ] || fail 'cooldown bayad jeloye flapping ra begirad'
+
 
   # 0 failure با cooldown_rem=300: nabayad switch konad
   result="$(adaptive_should_switch 0 3 5 300 2>/dev/null)"

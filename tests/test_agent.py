@@ -93,7 +93,8 @@ class TestAgent(unittest.TestCase):
             urllib.request.urlopen(req, timeout=5)
             self.fail("Should return 401 Unauthorized")
         except urllib.error.HTTPError as e:
-            self.assertEqual(e.code, 401)
+            with e:
+                self.assertEqual(e.code, 401)
 
     def test_exec_forbidden_with_wrong_token(self):
         req = urllib.request.Request(
@@ -105,7 +106,8 @@ class TestAgent(unittest.TestCase):
             urllib.request.urlopen(req, timeout=5)
             self.fail("Should return 403 Forbidden")
         except urllib.error.HTTPError as e:
-            self.assertEqual(e.code, 403)
+            with e:
+                self.assertEqual(e.code, 403)
 
     def test_exec_with_valid_token(self):
         req = urllib.request.Request(

@@ -2,45 +2,162 @@ const $=id=>document.getElementById(id);
 let TOKEN=localStorage.getItem('rh_token')||'';
 let SERVERS=[];
 let LANG=localStorage.getItem('rh_lang')||'fa';
-let THEME=localStorage.getItem('rh_theme')||document.documentElement.dataset.theme||'dark';
-let LAST_FOCUS=null;
+let THEME_PREF=(()=>{const s=localStorage.getItem('rh_theme');return (s==='light'||s==='dark')?s:'';})();
 
 function t(k){return (DICT[LANG]&&DICT[LANG][k])||DICT.fa[k]||k;}
-function applyStatic(){
- document.documentElement.lang=LANG; document.documentElement.dir=(LANG==='fa'?'rtl':'ltr');
- document.documentElement.dataset.theme=THEME;
+
+function systemTheme(){
+ return (typeof matchMedia==='function'&&matchMedia('(prefers-color-scheme:light)').matches)?'light':'dark';
 }
-function toggleLang(){LANG=(LANG==='fa'?'en':'fa');localStorage.setItem('rh_lang',LANG);applyStatic();shell();}
-function toggleTheme(){THEME=THEME==='dark'?'light':'dark';localStorage.setItem('rh_theme',THEME);applyStatic();}
+function resolvedTheme(){
+ return THEME_PREF||systemTheme();
+}
+function applyStatic(){
+ document.documentElement.lang=LANG;
+ document.documentElement.dir=(LANG==='fa'?'rtl':'ltr');
+ const m=document.querySelector('meta[name="color-scheme"]');
+ if(m)m.content=THEME_PREF||'light dark';
+ document.documentElement.dataset.theme=resolvedTheme();
+ document.documentElement.classList.toggle('sb-collapsed',localStorage.getItem('rh_sb_collapsed')==='1');
+}
+function toggleLang(){
+ LANG=(LANG==='fa'?'en':'fa');
+ localStorage.setItem('rh_lang',LANG);
+ applyStatic();
+ shell();
+}
+function toggleTheme(){
+ const target=resolvedTheme()==='dark'?'light':'dark';
+ if(target===systemTheme()){
+  THEME_PREF='';
+  localStorage.removeItem('rh_theme');
+ }else{
+  THEME_PREF=target;
+  localStorage.setItem('rh_theme',target);
+ }
+ applyStatic();
+ if(ROUTE.page==='settings')renderSettingsPage();
+}
+function setThemeMode(mode){
+ if(mode==='light'||mode==='dark'){
+  THEME_PREF=mode;
+  localStorage.setItem('rh_theme',mode);
+ }else{
+  THEME_PREF='';
+  localStorage.removeItem('rh_theme');
+ }
+ applyStatic();
+ document.querySelectorAll('[data-theme-opt]').forEach(b=>b.classList.toggle('on',b.dataset.themeOpt===(THEME_PREF||'system')));
+}
+function toggleSidebar(){
+ const next=localStorage.getItem('rh_sb_collapsed')==='1'?'0':'1';
+ if(next==='1')localStorage.setItem('rh_sb_collapsed','1');
+ else localStorage.removeItem('rh_sb_collapsed');
+ document.documentElement.classList.toggle('sb-collapsed',next==='1');
+ const b=$('sb_toggle');
+ if(b){const txt=t(next==='1'?'sb_expand':'sb_collapse');b.title=txt;b.setAttribute('aria-label',txt);}
+}
+function togglePwVis(){
+ const pw=$('pw'),btn=$('pw_eye');
+ if(!pw||!btn)return;
+ const show=pw.type==='password';
+ pw.type=show?'text':'password';
+ btn.setAttribute('aria-label',t(show?'pw_hide':'pw_show'));
+ btn.title=t(show?'pw_hide':'pw_show');
+ const useEl=btn.querySelector('use');
+ if(useEl)useEl.setAttribute('href',show?'#i-eye-off':'#i-eye');
+}
 function confirmT(k,extra){return confirm(t(k)+(extra?(' '+extra):'')+' ?');}
 
 function h(t){return (''+(t==null?'':t)).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function icon(name){return `<svg class="icon" aria-hidden="true"><use href="#i-${name}"></use></svg>`;}
-function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),5000);}
+function toast(t,ms=5000){
+ const e=$('toast');if(!e)return;
+ e.textContent=t;
+ const s=String(t||'');
+ e.classList.remove('toast-ok','toast-err','toast-sync');
+ if(ms===0||s.includes('⏳'))e.classList.add('toast-sync');
+ else if(s.startsWith('✓')||s.includes('✓'))e.classList.add('toast-ok');
+ else if(s.startsWith('✗')||s.startsWith('⚠️')||/^error:/i.test(s))e.classList.add('toast-err');
+ e.classList.add('show');
+ clearTimeout(e._t);
+ if(ms>0)e._t=setTimeout(()=>e.classList.remove('show'),ms);
+}
 async function api(m,p,b){const o={method:m,headers:{'Content-Type':'application/json'}};
  if(TOKEN)o.headers['Authorization']='Bearer '+TOKEN; if(b)o.body=JSON.stringify(b);
- const r=await fetch(p,o); let j={};try{j=await r.json()}catch(e){}
- if(r.status===401){TOKEN='';localStorage.removeItem('rh_token');shell();} return {status:r.status,j};}
+ try{
+  const r=await fetch(p,o); let j={};try{j=await r.json()}catch(e){}
+  if(r.status===401){TOKEN='';localStorage.removeItem('rh_token');shell();} return {status:r.status,j};
+ }catch(e){return {status:0,j:{error:'network error: '+(e&&e.message||e)}};}}
 function logout(){TOKEN='';localStorage.removeItem('rh_token');shell();}
-function modal(html){let m=$('modal');LAST_FOCUS=document.activeElement;
- if(!m){m=document.createElement('div');m.id='modal';m.className='modal';m.onclick=e=>{if(e.target===m)closeModal();};document.body.appendChild(m);}
- m.innerHTML=`<div class="mbox" role="dialog" aria-modal="true"><button class="modal-close" type="button" onclick="closeModal()" aria-label="${h(t('close'))}">${icon('close')}</button><div class="modal-content">${html}</div></div>`;
- const box=m.querySelector('.mbox'),title=box.querySelector('h1,h2,h3');
- if(title){title.id='modal_title';box.setAttribute('aria-labelledby','modal_title');}else box.setAttribute('aria-label',t('settings'));
- box.querySelectorAll('label:not([for])').forEach((label,i)=>{const control=label.parentElement&&label.parentElement.querySelector('input,select,textarea');if(control){if(!control.id)control.id='modal_field_'+i;label.htmlFor=control.id;}});
- m.onkeydown=e=>{
-  if(e.key==='Escape'){closeModal();return;}
-  if(e.key!=='Tab')return;
-  const items=[...box.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])')];
-  if(!items.length)return;const first=items[0],last=items[items.length-1];
-  if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
-  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
- };
- $('app').setAttribute('inert','');$('app').setAttribute('aria-hidden','true');
- m.style.display='flex';
- requestAnimationFrame(()=>{const first=box.querySelector('input:not([disabled]),select:not([disabled]),button:not(.modal-close):not([disabled])')||box.querySelector('.modal-close');if(first)first.focus();});
+
+let supportsDisplayTransition;
+function canTransitionDisplay(){
+ if(supportsDisplayTransition!==undefined)return supportsDisplayTransition;
+ if(!window.CSS?.supports?.('transition-behavior','allow-discrete')||!document.body)return false;
+ const probe=document.createElement('div');
+ probe.style.cssText='transition: display 1s allow-discrete !important; display: block;';
+ document.body.appendChild(probe);
+ getComputedStyle(probe).display;
+ probe.style.display='none';
+ supportsDisplayTransition=getComputedStyle(probe).display==='block';
+ probe.remove();
+ return supportsDisplayTransition;
 }
-function closeModal(){const m=$('modal'),app=$('app');if(m){m.style.display='none';m.innerHTML='';}if(app){app.removeAttribute('inert');app.removeAttribute('aria-hidden');}if(LAST_FOCUS&&LAST_FOCUS.focus)LAST_FOCUS.focus();LAST_FOCUS=null;}
+function supportsTopLayerExit(){
+ return Boolean(window.CSS?.supports?.('overlay','auto')&&canTransitionDisplay());
+}
+function bindDialogLightDismiss(dlg){
+ if('closedBy' in HTMLDialogElement.prototype||dlg._rthLightBound)return;
+ dlg._rthLightBound=true;
+ const outside=(e)=>{
+  const r=dlg.getBoundingClientRect();
+  return e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom;
+ };
+ let pressedOutside=false;
+ dlg.addEventListener('pointerdown',e=>{pressedOutside=outside(e);});
+ dlg.addEventListener('pointerup',e=>{if(pressedOutside&&outside(e))closeTopLayer(dlg);});
+}
+async function closeTopLayer(dlg){
+ if(!dlg||!dlg.open)return;
+ const token=(dlg._closingToken=(dlg._closingToken||0)+1);
+ if(!supportsTopLayerExit()){
+  dlg.setAttribute('data-closing','');
+  const anims=dlg.getAnimations?dlg.getAnimations({subtree:true}):[];
+  if(anims.length>0){
+   await Promise.race([Promise.allSettled(anims.map(a=>a.finished)),new Promise(r=>setTimeout(r,450))]);
+  }
+  if(token!==dlg._closingToken||!dlg.hasAttribute('data-closing'))return;
+  dlg.removeAttribute('data-closing');
+ }
+ if(dlg.open)dlg.close();
+}
+function modal(html){
+ let dlg=$('modal');
+ if(!dlg){
+  dlg=document.createElement('dialog');
+  dlg.id='modal';
+  dlg.className='modal-dialog';
+  dlg.setAttribute('closedby','any');
+  dlg.addEventListener('cancel',e=>{e.preventDefault();closeTopLayer(dlg);});
+  dlg.addEventListener('close',()=>{dlg.returnValue='';dlg.removeAttribute('data-closing');dlg.innerHTML='';});
+  bindDialogLightDismiss(dlg);
+  document.body.appendChild(dlg);
+ }
+ dlg._closingToken=(dlg._closingToken||0)+1;
+ dlg.removeAttribute('data-closing');
+ dlg.innerHTML=`<div class="mbox"><button class="modal-close" type="button" onclick="closeModal()" aria-label="${h(t('close'))}">${icon('close')}</button><div class="modal-content">${html}</div></div>`;
+ const box=dlg.querySelector('.mbox'),title=box.querySelector('h1,h2,h3');
+ if(title){title.id='modal_title';dlg.setAttribute('aria-labelledby','modal_title');dlg.removeAttribute('aria-label');}
+ else{dlg.removeAttribute('aria-labelledby');dlg.setAttribute('aria-label',t('settings'));}
+ box.querySelectorAll('label:not([for])').forEach((label,i)=>{const control=label.parentElement&&label.parentElement.querySelector('input,select,textarea');if(control){if(!control.id)control.id='modal_field_'+i;label.htmlFor=control.id;}});
+ if(!dlg.open)dlg.showModal();
+ requestAnimationFrame(()=>{
+  const first=box.querySelector('[autofocus],input:not([disabled]),select:not([disabled]),button:not(.modal-close):not([disabled])')||box.querySelector('.modal-close');
+  if(first)first.focus();
+ });
+}
+function closeModal(){const dlg=$('modal');if(dlg)closeTopLayer(dlg);}
 
 // ---------- form modal (jaigozin prompt zanjire-i) ----------
 // fields: [{id,label,type,val,ph,opts:[{v,t}],req}]  onOk(values)
@@ -94,36 +211,149 @@ function onOv(n){
  if(ROUTE.page==='dashboard'){updateCard(n);
   // doctor-e iran vaziat-e tunnel-e node-ha ra moshakhas mikonad → kart-e node-ha ham berooz shavand
   if(fnd(n).role==='iran')SERVERS.filter(s=>s.role==='node').forEach(s=>updateCard(s.name));
-  updateHubStrip();}
+  updateHubStrip();updateDashboardKpis();}
  else if(ROUTE.page==='server'&&ROUTE.param===n)renderServerPage(n);
  else if(ROUTE.page==='server'&&fnd(n).role==='iran'&&fnd(ROUTE.param).role==='node')renderServerPage(ROUTE.param);
  else if(ROUTE.page==='routing')scheduleGraph();
 }
-async function loadOv(n){const {j}=await api('GET','api/servers/'+n+'/overview');OVS[n]=j||{};onOv(n);}
+const _ovInFlight={};
+async function loadOv(n){
+ if(_ovInFlight[n])return _ovInFlight[n];
+ _ovInFlight[n]=(async()=>{
+  try{const {j}=await api('GET','api/servers/'+n+'/overview');OVS[n]=j||{};onOv(n);}
+  finally{delete _ovInFlight[n];}
+ })();
+ return _ovInFlight[n];
+}
+
+// ---------- Raycast Command Palette (Ctrl+K / Cmd+K) ----------
+let CMDK_IDX=0, CMDK_ITEMS=[];
+function cmdkEntries(query){
+ const q=String(query||'').trim().toLowerCase();
+ const out=[];
+ SERVERS.forEach(s=>{
+  const host=s.transport==='api'?(s.api_url||''):(s.host||'');
+  const txt=(s.name+' '+s.role+' '+host).toLowerCase();
+  if(!q||txt.includes(q)){
+   const ov=OVS[s.name];
+   const dot=ovDotCls(s.name,ov);
+   out.push({sec:'servers',icon:'server',dot,label:s.name,meta:s.role.toUpperCase()+' · '+host,run:()=>nav('#/server/'+s.name)});
+  }
+ });
+ [
+  {id:'dashboard',icon:'dashboard',label:t('nav_dash'),meta:'#/dashboard',run:()=>nav('#/dashboard')},
+  {id:'routing',icon:'route',label:t('nav_routing'),meta:'#/routing',run:()=>nav('#/routing')},
+  {id:'audit',icon:'history',label:t('audit'),meta:'#/audit',run:()=>nav('#/audit')},
+  {id:'settings',icon:'settings',label:t('settings'),meta:'#/settings',run:()=>nav('#/settings')}
+ ].forEach(pg=>{
+  if(!q||(pg.label+' '+pg.id).toLowerCase().includes(q))out.push({sec:'pages',...pg});
+ });
+ [
+  {icon:'server',label:t('cmdk_add_srv'),meta:'+',run:()=>{nav('#/dashboard');requestAnimationFrame(()=>{const d=$('add_srv_details');if(d){d.open=true;const inp=$('n');if(inp)inp.focus();}});}},
+  {icon:'shield',label:t('hub_proxy_btn'),meta:'Proxy',run:()=>editHubProxy()},
+  {icon:'download',label:t('upd_all'),meta:'Deploy',run:()=>{nav('#/dashboard');updateAll();}},
+  {icon:'refresh',label:t('refresh'),meta:'Sync',run:()=>refreshPage()},
+  {icon:'sidebar',label:t('cmdk_toggle_sb'),meta:'Sidebar',run:()=>toggleSidebar()},
+  {icon:'theme',label:t('cmdk_toggle_theme'),meta:'Theme',run:()=>toggleTheme()},
+  {icon:'language',label:t('cmdk_toggle_lang'),meta:LANG==='fa'?'EN':'FA',run:()=>toggleLang()}
+ ].forEach(act=>{
+  if(!q||(act.label+' '+act.meta).toLowerCase().includes(q))out.push({sec:'actions',...act});
+ });
+ return out;
+}
+function renderCmdkList(){
+ const list=$('cmdk_list'), inp=$('cmdk_in');
+ if(!list)return;
+ CMDK_ITEMS=cmdkEntries(inp?inp.value:'');
+ if(!CMDK_ITEMS.length){list.innerHTML=`<div class="empty" style="padding:18px;text-align:center">${h(t('cmdk_empty'))}</div>`;return;}
+ if(CMDK_IDX>=CMDK_ITEMS.length)CMDK_IDX=0;
+ if(CMDK_IDX<0)CMDK_IDX=CMDK_ITEMS.length-1;
+ const secTitle={servers:t('cmdk_sec_servers'),pages:t('cmdk_sec_pages'),actions:t('cmdk_sec_actions')};
+ let curSec='', html='';
+ CMDK_ITEMS.forEach((it,i)=>{
+  if(it.sec!==curSec){curSec=it.sec;html+=`<div class="cmdk-sec">${h(secTitle[curSec]||curSec)}</div>`;}
+  const lead=it.dot?`<span class="dot ${it.dot}"></span>`:icon(it.icon||'search');
+  html+=`<button type="button" class="cmdk-item${i===CMDK_IDX?' sel':''}" data-cmdk-idx="${i}">${lead}<span>${h(it.label)}</span><span class="cmdk-meta">${h(it.meta||'')}</span></button>`;
+ });
+ list.innerHTML=html;
+ const active=list.querySelector('.cmdk-item.sel');
+ if(active&&active.scrollIntoView)active.scrollIntoView({block:'nearest'});
+}
+function execCmdkIdx(i){
+ const it=CMDK_ITEMS[i];
+ if(!it)return;
+ closeCmdPalette();
+ it.run();
+}
+function closeCmdPalette(){const d=$('cmdk');if(d)closeTopLayer(d);}
+function openCmdPalette(preset=''){
+ if(!TOKEN)return;
+ let dlg=$('cmdk');
+ if(!dlg){
+  dlg=document.createElement('dialog');
+  dlg.id='cmdk';
+  dlg.className='cmdk-dialog';
+  dlg.setAttribute('closedby','any');
+  dlg.setAttribute('aria-label',t('cmdk_btn'));
+  dlg.addEventListener('cancel',e=>{e.preventDefault();closeTopLayer(dlg);});
+  dlg.addEventListener('close',()=>{dlg.returnValue='';dlg.removeAttribute('data-closing');dlg.innerHTML='';});
+  bindDialogLightDismiss(dlg);
+  document.body.appendChild(dlg);
+ }
+ dlg._closingToken=(dlg._closingToken||0)+1;
+ dlg.removeAttribute('data-closing');
+ dlg.innerHTML=`<div class="cmdk-box">
+  <div class="cmdk-head">${icon('search')}<input id="cmdk_in" class="cmdk-input" type="search" value="${h(preset)}" placeholder="${h(t('cmdk_ph'))}" autocomplete="off"><span class="kbd">ESC</span></div>
+  <div class="cmdk-list" id="cmdk_list"></div>
+  <div class="cmdk-foot"><span>${h(t('cmdk_hint_nav'))}</span><span class="kbd">⌘K / Ctrl+K</span></div>
+ </div>`;
+ CMDK_IDX=0;
+ renderCmdkList();
+ const inp=$('cmdk_in'), list=$('cmdk_list');
+ if(inp){
+  inp.addEventListener('input',()=>{CMDK_IDX=0;renderCmdkList();});
+  inp.addEventListener('keydown',e=>{
+   if(e.key==='ArrowDown'){e.preventDefault();if(CMDK_ITEMS.length){CMDK_IDX=(CMDK_IDX+1)%CMDK_ITEMS.length;renderCmdkList();}}
+   else if(e.key==='ArrowUp'){e.preventDefault();if(CMDK_ITEMS.length){CMDK_IDX=(CMDK_IDX-1+CMDK_ITEMS.length)%CMDK_ITEMS.length;renderCmdkList();}}
+   else if(e.key==='Enter'){e.preventDefault();execCmdkIdx(CMDK_IDX);}
+  });
+ }
+ if(list){
+  list.addEventListener('click',e=>{const b=e.target.closest('[data-cmdk-idx]');if(b)execCmdkIdx(+b.dataset.cmdkIdx);});
+ }
+ if(!dlg.open)dlg.showModal();
+ requestAnimationFrame(()=>{if(inp)inp.focus();});
+}
 
 function shell(){
  applyStatic();
  if(!TOKEN){document.body.classList.add('login');
   $('app').innerHTML=`<main id="page"><section class="login-panel" aria-labelledby="login_title">
-   <div class="login-brand"><span class="brand-mark">${icon('brand')}</span><div class="brand-name">rathole<span>hub</span></div></div>
-   <div class="login-body"><h1 id="login_title">${t('login_title')}</h1>
-    <div class="field"><label for="pw">${t('pw_ph')}</label><div class="login-actions"><input id="pw" type="password" autocomplete="current-password" aria-describedby="msg"><button class="g" type="button" onclick="doLogin()">${t('login_btn')}</button></div></div>
+   <div class="login-brand"><span class="brand-mark">${icon('brand')}</span><div><div class="brand-name">rathole<span>hub</span></div></div></div>
+   <div class="login-body"><h1 id="login_title">${t('login_title')}</h1><p class="login-sub">${h(t('login_sub'))}</p>
+    <div class="field"><label for="pw">${t('pw_ph')}</label><div class="login-actions"><div class="pw-wrap"><input id="pw" type="password" autocomplete="current-password" aria-describedby="msg"><button id="pw_eye" class="pw-eye" type="button" onclick="togglePwVis()" title="${h(t('pw_show'))}" aria-label="${h(t('pw_show'))}">${icon('eye')}</button></div><button class="g" type="button" onclick="doLogin()">${t('login_btn')}</button></div></div>
     <div id="msg" class="form-message" role="alert"></div>
    </div></section></main>`;
   const p=$('pw'); if(p)p.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();}); return;}
  document.body.classList.remove('login');
+ const sbCollapsed=localStorage.getItem('rh_sb_collapsed')==='1';
+ const sbTxt=t(sbCollapsed?'sb_expand':'sb_collapse');
  $('app').innerHTML=`<aside id="sb">
-   <div class="brand"><span class="brand-mark">${icon('brand')}</span><div class="brand-name">rathole<span>hub</span></div></div>
+   <div class="sb-top">
+    <div class="brand"><span class="brand-mark">${icon('brand')}</span><div class="brand-name">rathole<span>hub</span></div></div>
+    <button id="sb_toggle" class="gh sb-toggle" type="button" onclick="toggleSidebar()" title="${h(sbTxt)}" aria-label="${h(sbTxt)}">${icon('sidebar')}</button>
+   </div>
+   <button class="cmdk-trigger" type="button" onclick="openCmdPalette()" title="${h(t('cmdk_btn'))}"><span class="cmdk-trig-l">${icon('search')}<span class="cmdk-trig-txt">${h(t('cmdk_btn'))}</span></span><span class="kbd">⌘K</span></button>
    <nav class="nav-list" aria-label="${h(t('nav_label'))}">
-    <button class="sitem" type="button" data-pg="dashboard" onclick="nav('#/dashboard')">${icon('dashboard')}<span>${t('nav_dash')}</span></button>
-    <button class="sitem" type="button" data-pg="routing" onclick="nav('#/routing')">${icon('route')}<span>${t('nav_routing')}</span></button>
-    <button class="sitem" type="button" data-pg="audit" onclick="nav('#/audit')">${icon('history')}<span>${t('audit')}</span></button>
-    <button class="sitem" type="button" data-pg="settings" onclick="nav('#/settings')">${icon('settings')}<span>${t('settings')}</span></button>
+    <button class="sitem" type="button" data-pg="dashboard" onclick="nav('#/dashboard')" title="${h(t('nav_dash'))}">${icon('dashboard')}<span>${t('nav_dash')}</span></button>
+    <button class="sitem" type="button" data-pg="routing" onclick="nav('#/routing')" title="${h(t('nav_routing'))}">${icon('route')}<span>${t('nav_routing')}</span></button>
+    <button class="sitem" type="button" data-pg="audit" onclick="nav('#/audit')" title="${h(t('audit'))}">${icon('history')}<span>${t('audit')}</span></button>
+    <button class="sitem" type="button" data-pg="settings" onclick="nav('#/settings')" title="${h(t('settings'))}">${icon('settings')}<span>${t('settings')}</span></button>
    </nav>
    <div class="sfoot">
     <div class="sidebar-meta"><span class="clock" id="clock"></span><label class="sw"><input type="checkbox" id="auto" checked><span>${t('auto')}</span></label></div>
     <div class="utility-actions">
-     <button class="gh icon-btn" type="button" onclick="toggleLang()" title="${LANG==='fa'?'English':'Finglish'}" aria-label="${LANG==='fa'?'English':'Finglish'}">${icon('language')}</button>
+     <button class="gh icon-btn" type="button" onclick="toggleLang()" title="${LANG==='fa'?'English':'فارسی'}" aria-label="${LANG==='fa'?'English':'فارسی'}">${icon('language')}</button>
      <button class="gh icon-btn" type="button" onclick="toggleTheme()" title="${t('theme')}" aria-label="${t('theme')}">${icon('theme')}</button>
      <button class="gh icon-btn" type="button" onclick="refreshPage()" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button>
      <button class="s icon-btn" type="button" onclick="logout()" title="${t('logout')}" aria-label="${t('logout')}">${icon('logout')}</button>
@@ -166,16 +396,40 @@ function headBadges(n,ov){
  const role=fnd(n).role;
  if(!ov||ov.reachable===false)return `<span class="badge b-bad">${t(fnd(n).transport==='api'?'no_agent':'no_ssh')}</span>`;
  let hb='';
- if(role==='iran'){const ok=(ov.health||{}).fail===0;
-  hb=`<span class="badge ${ok?'b-ok':'b-bad'}">doctor ${(ov.health||{}).ok||0}/${((ov.health||{}).ok||0)+((ov.health||{}).fail||0)}</span>`;
-  const k=ov.kcp||{}; hb+=k.enabled?` <span class="badge b-kcp">kcp ${h(k.profile||'')}${k.port?(' :'+h(k.port)):''}${k.stealth?' · QUIC':''}</span>`:' <span class="badge b-ws">ws/443</span>';
-  const nz=ov.noise||{}; if(nz.enabled){hb+=` <span class="badge b-noise">noise${nz.port?(' :'+h(nz.port)):''}${nz.count?(' · '+h(nz.count)+' node'):''}</span>`;}
+ if(role==='iran'){
+  const hObj=ov.health||{};
+  const hTot=(hObj.ok||0)+(hObj.fail||0);
+  const ok=(hObj.fail||0)===0;
+  hb=hTot>0
+   ? `<span class="badge ${ok?'b-ok':'b-bad'}">✓ ${hObj.ok||0}/${hTot}</span>`
+   : `<span class="badge b-ok">online</span>`;
+  const nodes=ov.nodes||[];
+  const modes=[];
+  nodes.forEach(d=>{const m=iranNodeMode(ov,d.name);if(modes.indexOf(m)<0)modes.push(m);});
+  const k=ov.kcp||{};
+  if(nodes.length){
+   modes.forEach(m=>{
+    const cls=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre','game'].includes(m)?m:'ws';
+    hb+=` <span class="badge b-${cls}" dir="ltr">${h(carrierLabel(m,ov))}</span>`;
+   });
+   if(k.enabled&&modes.indexOf('kcp')<0)hb+=` <span class="badge b-kcp" dir="ltr">kcp ${h(k.profile||'')}${k.port?(' :'+h(k.port)):''}${k.stealth?' · QUIC':''}</span>`;
+  }else{
+   let shown=false;
+   const feats=(ov.status||{}).features||{};
+   if((ov.frp||{}).enabled||(feats.frp||{}).configured){hb+=` <span class="badge b-frp" dir="ltr">${h(carrierLabel('frp',ov))}</span>`;shown=true;}
+   if((ov.backhaul||{}).enabled||(feats.backhaul||{}).configured){hb+=` <span class="badge b-backhaul" dir="ltr">${h(carrierLabel('backhaul',ov))}</span>`;shown=true;}
+   if(k.enabled){hb+=` <span class="badge b-kcp" dir="ltr">kcp ${h(k.profile||'')}${k.port?(' :'+h(k.port)):''}${k.stealth?' · QUIC':''}</span>`;shown=true;}
+   const nz=ov.noise||{}; if(nz.enabled){hb+=` <span class="badge b-noise" dir="ltr">noise${nz.port?(' :'+h(nz.port)):''}</span>`;shown=true;}
+   if((ov.gre||{}).enabled||(feats.gre||{}).configured){hb+=` <span class="badge b-gre" dir="ltr">GRE</span>`;shown=true;}
+   if((ov.plain||{}).enabled||(feats.plain||{}).configured){hb+=` <span class="badge b-plain" dir="ltr">Plain</span>`;shown=true;}
+   if(!shown)hb+=' <span class="badge b-ws" dir="ltr">ws/443</span>';
+  }
  }else{
   let m = (ov.status && ov.status.main && ov.status.main.transport) || ov.main_tunnel || (ov.kcp||{}).mode || 'ws';
   const cClass=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(m)?m:'ws';
   const cTitle=h(carrierLabel(m,ov));
-  hb=`<span class="badge b-${cClass}">${cTitle}</span>`;
-  if((ov.backhaul_services||[]).length&&m!=='backhaul')hb+=` <span class="badge b-backhaul">${h(carrierLabel('backhaul',ov))}</span>`;
+  hb=`<span class="badge b-${cClass}" dir="ltr">${cTitle}</span>`;
+  if((ov.backhaul_services||[]).length&&m!=='backhaul')hb+=` <span class="badge b-backhaul" dir="ltr">${h(carrierLabel('backhaul',ov))}</span>`;
   const ts=nodeTunnelStatus(n);
   if(ts)hb+=` <span class="badge ${ts==='ok'?'b-ok':'b-bad'}">${ts==='ok'?t('tun_up'):t('tun_down')}</span>`;
  }
@@ -187,7 +441,7 @@ function latestVer(){return (HUBST&&HUBST.latest_version)||'';}
 function verBadge(ov){
  const mv=((ov||{}).version||{}).manager||''; if(!mv)return '';
  const lv=latestVer(); const old=lv&&mv!==lv;
- return ` <span class="badge ${old?'b-bad':'b-ok'}" title="${old?t('ver_old'):t('ver_ok')}">v${h(mv)}${old?' → v'+h(lv):''}</span>`;
+ return ` <span class="badge ${old?'b-bad':'b-ok'}" dir="ltr" title="${old?t('ver_old'):t('ver_ok')}">v${h(mv)}${old?' → v'+h(lv):''}</span>`;
 }
 function ovDotCls(n,ov){
  if(!ov)return 'd-un';
@@ -202,7 +456,7 @@ let HUBST=null;
 function fmtDur(s){if(s==null)return '?';const d=Math.floor(s/86400),hh=Math.floor(s%86400/3600),mm=Math.floor(s%3600/60);
  return (d?d+'d ':'')+(hh?hh+'h ':'')+mm+'m';}
 function fmtGB(b){return (b/1073741824).toFixed(1)+'G';}
-async function loadHubStatus(){const {j}=await api('GET','api/hubstatus');HUBST=j||null;updateHubStrip();}
+async function loadHubStatus(){const {j}=await api('GET','api/hubstatus');HUBST=j||null;updateHubStrip();updateDashboardKpis();}
 function updateHubStrip(){
  const box=$('hubstrip'); if(!box)return;
  const st=HUBST;
@@ -210,23 +464,23 @@ function updateHubStrip(){
  let x=`<span class="badge b-role">${t('hub_box')}</span>`;
  const sv=st.services||{};
  Object.keys(sv).forEach(u=>{const ok=sv[u]==='active';
-  x+=` <span class="badge ${ok?'b-ok':'b-bad'}">${h(u)} ${ok?'✓':'✗'}</span>`;});
- if(st.uptime!=null)x+=` <span class="sub mono">${t('hs_up')}: ${fmtDur(st.uptime)}</span>`;
- else x+=` <span class="sub mono">${t('hs_up')}(hub): ${fmtDur(st.hub_uptime)}</span>`;
- if(st.load)x+=` <span class="sub mono">${t('hs_load')}: ${st.load.join(' ')}</span>`;
+  x+=`<span class="badge ${ok?'b-ok':'b-bad'}" dir="ltr">${h(u)} ${ok?'✓':'✗'}</span>`;});
+ if(st.uptime!=null)x+=`<span class="hub-metric"><span>${h(t('hs_up'))}:</span><b class="mono">${fmtDur(st.uptime)}</b></span>`;
+ else if(st.hub_uptime!=null)x+=`<span class="hub-metric"><span>${h(t('hs_up'))} (hub):</span><b class="mono">${fmtDur(st.hub_uptime)}</b></span>`;
+ if(st.load)x+=`<span class="hub-metric"><span>${h(t('hs_load'))}:</span><b class="mono">${st.load.join(' ')}</b></span>`;
  if(st.mem_total_kb){const used=st.mem_total_kb-(st.mem_avail_kb||0);
-  x+=` <span class="sub mono">${t('hs_mem')}: ${(used/1048576).toFixed(1)}/${(st.mem_total_kb/1048576).toFixed(1)}G</span>`;}
- if(st.disk_total)x+=` <span class="sub mono">${t('hs_disk')}: ${fmtGB(st.disk_free)}/${fmtGB(st.disk_total)}</span>`;
+  x+=`<span class="hub-metric"><span>${h(t('hs_mem'))}:</span><b class="mono">${(used/1048576).toFixed(1)}/${(st.mem_total_kb/1048576).toFixed(1)}G</b></span>`;}
+ if(st.disk_total)x+=`<span class="hub-metric"><span>${h(t('hs_disk'))}:</span><b class="mono">${fmtGB(st.disk_free)}/${fmtGB(st.disk_total)}</b></span>`;
  // khoolase-ye inventory: chand server up/down (az overview-haye cache-shode)
  let up=0,down=0,unk=0;
  SERVERS.forEach(s=>{const ov=OVS[s.name];
   if(!ov)unk++;else if(ov.reachable===false)down++;else up++;});
- x+=` <span class="badge ${down?'b-bad':'b-ok'}">${up}/${SERVERS.length} ${t('hs_connected')}</span>`;
+ x+=`<span class="badge ${down?'b-bad':'b-ok'}">${up}/${SERVERS.length} ${t('hs_connected')}</span>`;
  const px = st.proxy || '';
  if(px){
-  x+=` <button class="badge b-plain" type="button" onclick="editHubProxy()" title="${t('hub_proxy_lbl')} ${h(px)}">🛡️ ${t('badge_proxied')}: <span class="mono">${h(px)}</span></button>`;
+  x+=`<button class="badge b-plain" type="button" onclick="editHubProxy()" title="${t('hub_proxy_lbl')} ${h(px)}">🛡️ ${t('badge_proxied')}: <span class="mono">${h(px)}</span></button>`;
  } else {
-  x+=` <button class="badge b-ws" type="button" onclick="editHubProxy()" title="${t('hub_proxy_btn')}">+ ${t('badge_proxied')}</button>`;
+  x+=`<button class="badge b-ws" type="button" onclick="editHubProxy()" title="${t('hub_proxy_btn')}">+ ${t('badge_proxied')}</button>`;
  }
  box.innerHTML=x;
 }
@@ -252,20 +506,96 @@ function toggleConnType(){
  document.querySelectorAll('.f-api').forEach(el=>el.style.display = isApi ? '' : 'none');
 }
 
-// ---------- safhe: dashboard (grid/list kart-haye khoolase) ----------
+// ---------- safhe: dashboard (KPI + filters + grid/list kart-haye khoolase) ----------
+let DASH_FILTER={q:'',role:'all',status:'all'};
+function filteredServers(){
+ const q=DASH_FILTER.q.trim().toLowerCase();
+ return SERVERS.filter(s=>{
+  if(DASH_FILTER.role!=='all'&&s.role!==DASH_FILTER.role)return false;
+  const ov=OVS[s.name];
+  const isOnline=Boolean(ov&&ov.reachable!==false);
+  const isOffline=Boolean(ov&&ov.reachable===false);
+  if(DASH_FILTER.status==='online'&&!isOnline)return false;
+  if(DASH_FILTER.status==='offline'&&!isOffline)return false;
+  if(q){
+   const hay=(s.name+' '+s.role+' '+(s.host||'')+' '+(s.api_url||'')+' '+((ov&&ov.domain)||'')).toLowerCase();
+   if(!hay.includes(q))return false;
+  }
+  return true;
+ });
+}
+function setDashFilter(patch){
+ Object.assign(DASH_FILTER,patch);
+ document.querySelectorAll('[data-flt-role]').forEach(b=>b.classList.toggle('on',b.dataset.fltRole===DASH_FILTER.role));
+ document.querySelectorAll('[data-flt-st]').forEach(b=>b.classList.toggle('on',b.dataset.fltSt===DASH_FILTER.status));
+ const clr=$('flt_clr');
+ if(clr)clr.style.display=(DASH_FILTER.q||DASH_FILTER.role!=='all'||DASH_FILTER.status!=='all')?'':'none';
+ drawCards();
+ SERVERS.forEach(s=>{if(OVS[s.name])updateCard(s.name);});
+}
+function resetDashFilter(){
+ DASH_FILTER={q:'',role:'all',status:'all'};
+ const inp=$('srv_q');if(inp)inp.value='';
+ setDashFilter({});
+}
+function updateDashboardKpis(){
+ const box=$('kpi_grid'); if(!box)return;
+ const irans=SERVERS.filter(s=>s.role==='iran').length;
+ const nodes=SERVERS.filter(s=>s.role==='node').length;
+ let up=0,down=0,svcs=0;
+ SERVERS.forEach(s=>{
+  const ov=OVS[s.name];
+  if(ov){
+   if(ov.reachable===false)down++;
+   else{
+    up++;
+    if(s.role==='iran')svcs+=(ov.nodes||[]).length;
+    else svcs+=(ov.services||[]).length+(ov.backhaul_services||[]).length;
+   }
+  }
+ });
+ const svs=(HUBST&&HUBST.services)||{};
+ const svcKeys=Object.keys(svs);
+ const hubOk=!HUBST?null:(svcKeys.length?svcKeys.every(k=>svs[k]==='active'):true);
+ const hubLabel=hubOk===null?t('loading'):(hubOk?t('st_ok'):t('st_bad'));
+ const hubUp=HUBST?(HUBST.uptime!=null?HUBST.uptime:HUBST.hub_uptime):null;
+ box.innerHTML=`
+  <div class="kpi-card">
+   <div class="kpi-head"><span>${h(t('kpi_servers'))}</span>${icon('server')}</div>
+   <div class="kpi-num">${SERVERS.length}</div>
+   <div class="kpi-sub">${irans} ${h(t('flt_iran'))} · ${nodes} ${h(t('flt_node'))}</div>
+  </div>
+  <div class="kpi-card">
+   <div class="kpi-head"><span>${h(t('kpi_online'))}</span>${icon('zap')}</div>
+   <div class="kpi-num"><span class="dot ${down?'d-bad':'d-ok'}"></span>${up}/${SERVERS.length}</div>
+   <div class="kpi-sub">${up} ${h(t('flt_online'))} · ${down} ${h(t('flt_offline'))}</div>
+  </div>
+  <div class="kpi-card">
+   <div class="kpi-head"><span>${h(t('kpi_services'))}</span>${icon('route')}</div>
+   <div class="kpi-num">${svcs}</div>
+   <div class="kpi-sub">${h(t('n_nodes'))} / ${h(t('n_svcs'))}</div>
+  </div>
+  <div class="kpi-card">
+   <div class="kpi-head"><span>${h(t('kpi_hub'))}</span>${icon('shield')}</div>
+   <div class="kpi-num" style="font-size:17px"><span class="dot ${hubOk===null?'d-un':(hubOk?'d-ok':'d-bad')}"></span>${h(hubLabel)}</div>
+   <div class="kpi-sub">${hubUp!=null?`${h(t('hs_up'))}: <span class="mono">${h(fmtDur(hubUp))}</span>`:h(t('hub_box'))}</div>
+  </div>`;
+}
 function renderDashboard(){
  const pg=$('page'); if(!pg)return;
+ const dirty=Boolean(DASH_FILTER.q||DASH_FILTER.role!=='all'||DASH_FILTER.status!=='all');
  pg.innerHTML=`<div class="ptitle"><h2>${t('nav_dash')}</h2><span class="page-count">${SERVERS.length}</span><span class="ptitle-spacer"></span>
    <div class="page-actions"><button class="g" id="updall" type="button" onclick="updateAll()">${icon('download')}${t('upd_all')}</button>
    <div class="vswitch" role="group" aria-label="${h(t('view'))}"><button id="vg" type="button" class="${VIEW==='grid'?'on':''}" aria-pressed="${VIEW==='grid'}" onclick="setView('grid')">${icon('grid')}${t('view_grid')}</button>
    <button id="vl" type="button" class="${VIEW==='list'?'on':''}" aria-pressed="${VIEW==='list'}" onclick="setView('list')">${icon('list')}${t('view_list')}</button></div></div></div>
   <div id="updpanel"></div>
+  <div class="kpi-grid" id="kpi_grid"></div>
   <section class="status-strip" id="hubstrip" aria-label="${h(t('hub_box'))}"></section>
   <details class="diag-sec server-panel" id="add_srv_details">
    <summary>
-    <span class="brand-mark" style="width:28px;height:28px;border-radius:6px;display:inline-grid;place-items:center;">${icon('server')}</span>
+    <span class="brand-mark" style="width:28px;height:28px;border-radius:8px;display:inline-grid;place-items:center;">${icon('server')}</span>
     <span style="font-size:13.5px;font-weight:700;">${t('add_server')}</span>
-    <span class="badge b-role" style="margin-inline-start:auto;">+ ${t('add_btn')}</span>
+    <span class="badge b-role" style="margin-inline-start:auto;">${t('add_btn')}</span>
    </summary>
    <div class="cbody" style="padding:14px 18px 18px;">
     <div class="server-form">
@@ -287,7 +617,24 @@ function renderDashboard(){
     </div>
    </div>
   </details>
+  <div class="filter-bar">
+   <div class="search-box">${icon('search')}<input id="srv_q" type="search" value="${h(DASH_FILTER.q)}" placeholder="${h(t('flt_search_srv'))}" aria-label="${h(t('flt_search_srv'))}"></div>
+   <div class="seg-group" role="group" aria-label="${h(t('role'))}">
+    <button type="button" class="seg-btn${DASH_FILTER.role==='all'?' on':''}" data-flt-role="all">${h(t('flt_all'))}</button>
+    <button type="button" class="seg-btn${DASH_FILTER.role==='iran'?' on':''}" data-flt-role="iran">${h(t('flt_iran'))}</button>
+    <button type="button" class="seg-btn${DASH_FILTER.role==='node'?' on':''}" data-flt-role="node">${h(t('flt_node'))}</button>
+   </div>
+   <div class="seg-group" role="group" aria-label="${h(t('c_status'))}">
+    <button type="button" class="seg-btn${DASH_FILTER.status==='all'?' on':''}" data-flt-st="all">${h(t('flt_all'))}</button>
+    <button type="button" class="seg-btn${DASH_FILTER.status==='online'?' on':''}" data-flt-st="online">${h(t('flt_online'))}</button>
+    <button type="button" class="seg-btn${DASH_FILTER.status==='offline'?' on':''}" data-flt-st="offline">${h(t('flt_offline'))}</button>
+   </div>
+   <button id="flt_clr" type="button" class="gh" style="${dirty?'':'display:none'}" onclick="resetDashFilter()">${h(t('flt_clear'))}</button>
+  </div>
   <div id="servers" class="grid ${VIEW==='list'?'list':''}"></div>`;
+ const qEl=$('srv_q');
+ if(qEl)qEl.addEventListener('input',()=>setDashFilter({q:qEl.value}));
+ updateDashboardKpis();
  drawCards();
  updateHubStrip(); loadHubStatus();
  SERVERS.forEach(s=>{if(OVS[s.name])updateCard(s.name);loadOv(s.name);});
@@ -298,7 +645,9 @@ function setView(v){VIEW=v;localStorage.setItem('rh_view',v);
 function drawCards(){
  const c=$('servers'); if(!c)return;
  if(!SERVERS.length){c.innerHTML=`<div class="card" style="margin:0"><div class="cbody empty">${t('no_servers')}</div></div>`;return;}
- c.innerHTML=SERVERS.map(s=>{
+ const list=filteredServers();
+ if(!list.length){c.innerHTML=`<div class="card" style="margin:0"><div class="cbody empty">${h(t('flt_no_match'))} <button class="gh" type="button" onclick="resetDashFilter()" style="margin-inline-start:8px">${h(t('flt_clear'))}</button></div></div>`;return;}
+ c.innerHTML=list.map(s=>{
   const isIran=s.role==='iran';
   const roleBadge=isIran?`<span class="badge b-ok" style="gap:4px">🇮🇷 Iran</span>`:`<span class="badge b-info" style="gap:4px">🌐 Node</span>`;
   const trBadge=s.transport==='api'?`<span class="badge b-noise" style="gap:4px;font-size:10.5px">⚡ ${t('badge_agent')}</span>`:`<span class="badge b-ws" style="gap:4px;font-size:10.5px">🔑 ${t('badge_ssh')}</span>`;
@@ -309,12 +658,14 @@ function drawCards(){
     <button class="server-link" type="button" onclick="nav('#/server/${h(s.name)}')">${h(s.name)}</button>${roleBadge}${trBadge}${pxBadge}</div>
    <div class="host mono">${hostLine}</div>
    <div class="bstrip" id="hd_${h(s.name)}"><span class="sub">${t('loading')}</span></div>
-   <div class="meta" id="mt_${h(s.name)}"><span class="qr"><button class="gh icon-btn" type="button" onclick="loadOv('${h(s.name)}')" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button></span></div>
+   <div class="meta" id="mt_${h(s.name)}"><div class="meta-info"></div><span class="qr"><button class="gh icon-btn" type="button" onclick="loadOv('${h(s.name)}')" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button></span></div>
   </article>`;
  }).join('');
 }
 function updateCard(n){
  const ov=OVS[n]; if(!ov)return;
+ if(typeof updateDashboardKpis==='function')updateDashboardKpis();
+ if(DASH_FILTER.status!=='all'&&!$('srv_'+n)){drawCards();SERVERS.forEach(s=>{if(OVS[s.name]&&s.name!==n)updateCard(s.name);});return;}
  setDot(n,ovDotCls(n,ov));
  const hd=$('hd_'+n); if(hd)hd.innerHTML=headBadges(n,ov);
  const mt=$('mt_'+n); if(!mt)return;
@@ -333,7 +684,7 @@ function updateCard(n){
   if(ov.main_server)meta+=` <span class="mono" style="font-size:11.5px;color:var(--text-muted);">→ ${h(ov.main_server)}</span>`;
  }
  if(srv.proxy)meta+=` <span class="badge b-plain">${t('badge_proxied')}</span>`;
- mt.innerHTML=meta+`<span class="qr"><button class="gh icon-btn" type="button" onclick="loadOv('${h(n)}')" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button></span>`;
+ mt.innerHTML=`<div class="meta-info">${meta}</div><span class="qr"><button class="gh icon-btn" type="button" onclick="loadOv('${h(n)}')" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button></span>`;
 }
 
 // ---------- safhe: server (hameye amaliat-e ghadimi inja) ----------
@@ -442,34 +793,35 @@ function renderIran(n,ov){
   }).join('') + `</div>`;
 
   if(IRAN_TAB === 'nodes'){
-    s+=`<div class="sec"><h4>${t('nodes_svcs')} <button class="g" onclick="addNode('${n}')">${t('add_node')}</button></h4>`;
+    s+=`<div class="sec"><div class="sec-head-row"><h4>${t('nodes_svcs')} <button class="g" onclick="addNode('${n}')">${t('add_node')}</button></h4>
+      ${(ov.nodes||[]).length?`<div class="search-box inline-search">${icon('search')}<input type="search" data-tbl-filter="iran_nodes_tbl" placeholder="${h(t('flt_search_svc'))}" aria-label="${h(t('flt_search_svc'))}"></div>`:''}</div>`;
     const nodes=ov.nodes||[];
     if(!nodes.length)s+=`<div class="empty">${t('no_nodes')}</div>`;
-    else{ s+=tbl([t('c_name'),t('c_dport'),t('c_inbound'),t('c_api'),t('c_ops')]);
+    else{ s+=`<div class="table-wrap" tabindex="0" role="region" aria-label="${h(t('nodes_svcs'))}" id="iran_nodes_tbl">`+tbl([t('c_name'),t('c_dport'),t('c_inbound'),t('c_api'),t('c_ops')]);
      const nnodes=(ov.noise||{}).nodes||[]; const hn=(ov.health||{}).nodes||{};
      nodes.forEach(d=>{ const isN=nnodes.indexOf(d.name)>=0;
       const st=hn[d.name]; const hdot=st?`<span class="dot ${st==='ok'?'d-ok':'d-bad'}" title="${st==='ok'?t('nd_up'):t('nd_down')}" style="margin-inline-end:6px"></span>`:'';
       const nbadge=` <span class="badge">${h(carrierLabel(iranNodeMode(ov,d.name),ov))}</span>`;
       const csel=iranNodeCarrierSel(n,ov,d.name);
       s+=`<tr><td>${hdot}${esc(d.name)}${nbadge}</td><td class="mono">${esc(d.port)}</td><td class="mono">${esc(d.inbound)}</td><td class="mono">${esc(d.api)}</td>
-      <td class="btns nowrap"><button class="gh" onclick="run('${n}','show_node',{name:'${esc(d.name)}'})">${t('show_token')}</button>
-      <button class="g" onclick="wireNode('${n}','${esc(d.name)}')">${t('wire_to_node')}</button>
-      <button class="gh" onclick="editNode('${n}','${esc(d.name)}')">${t('edit')}</button>
-      <button class="gh" onclick="renameNode('${n}','${esc(d.name)}')">${t('rename')}</button>
-      <button class="gh" onclick="if(confirmT('cf_rotate','${esc(d.name)}'))run('${n}','rotate_node',{name:'${esc(d.name)}'})">${t('rotate')}</button>
+      <td class="btns nowrap"><button class="gh" type="button" data-act="show_node" data-srv="${h(n)}" data-name="${h(d.name)}">${t('show_token')}</button>
+      <button class="g" type="button" data-act="wire_node" data-srv="${h(n)}" data-name="${h(d.name)}">${t('wire_to_node')}</button>
+      <button class="gh" type="button" data-act="edit_node" data-srv="${h(n)}" data-name="${h(d.name)}">${t('edit')}</button>
+      <button class="gh" type="button" data-act="rename_node" data-srv="${h(n)}" data-name="${h(d.name)}">${t('rename')}</button>
+      <button class="gh" type="button" data-act="rotate_node" data-srv="${h(n)}" data-name="${h(d.name)}">${t('rotate')}</button>
       ${csel}
       ${serviceMenu('iran',n,d.name)}
-      <button class="r" onclick="rmNode('${n}','${esc(d.name)}')">${t('remove')}</button></td></tr>`;});
-     s+='</table>';}
+      <button class="r" type="button" data-act="rm_node" data-srv="${h(n)}" data-name="${h(d.name)}">${t('remove')}</button></td></tr>`;});
+     s+='</table></div>';}
     s+='</div>';
 
     s+=`<div class="sec"><h4>${t('game_svcs')} <button class="g" onclick="gameAdd('${n}')">${t('add_game')}</button> <button class="gh" onclick="gameCert('${n}')">${t('get_cert')}</button></h4>`;
     const g=ov.game||[];
     if(!g.length)s+=`<div class="empty">${t('no_game')}</div>`;
-    else{ s+=tbl([t('c_name'),'SNI',t('c_data'),t('c_node_inb'),t('c_ops')]);
+    else{ s+=`<div class="table-wrap" tabindex="0" role="region" aria-label="${h(t('game_svcs'))}">`+tbl([t('c_name'),'SNI',t('c_data'),t('c_node_inb'),t('c_ops')]);
      g.forEach(d=>{s+=`<tr><td>${esc(d.name)}</td><td>${esc(d.sni)}</td><td>${esc(d.data)}</td><td>${esc(d.inbound)}</td>
-      <td class="btns"><button class="r" onclick="run('${n}','game_rm',{name:'${esc(d.name)}'})">${t('remove')}</button></td></tr>`;});
-     s+='</table>';}
+      <td class="btns"><button class="r" type="button" data-act="game_rm" data-srv="${h(n)}" data-name="${h(d.name)}">${t('remove')}</button></td></tr>`;});
+     s+='</table></div>';}
     s+='</div>';
   } else if(IRAN_TAB === 'carriers'){
     const isBh = featureOn(ov, 'backhaul');
@@ -492,8 +844,7 @@ function renderIran(n,ov){
               ${isBh ? `<span class="badge b-ok">${t('rc_on')}</span>` : `<span class="badge b-bad">${t('rc_off')}</span>`}
             </div>
             <div class="carrier-meta">
-              <span>پورت: 127.0.0.1:3080</span>
-              <span>حالت: wssmux (TLS)</span>
+              ${(()=>{const bf=((ov.status||{}).features||{}).backhaul||{};const bo=ov.backhaul||{};const bp=bf.port||bo.port||((ov.status||{}).ports||{}).backhaul||3080;const btr=bf.transport||bo.transport||'wsmux';const bm=bf.mode||bo.mode||'nginx_tls';const bind=bm==='direct_ip'?'0.0.0.0':'127.0.0.1';return `<span>پورت: ${bind}:${h(bp)}</span><span>حالت: ${h(btr)} (${h(bm)})</span>`;})()}
               ${bhUsageLine(ov)}
             </div>
           </div>
@@ -516,8 +867,7 @@ function renderIran(n,ov){
               ${isKcp ? `<span class="badge b-ok">${t('rc_on')}</span>` : `<span class="badge b-bad">${t('rc_off')}</span>`}
             </div>
             <div class="carrier-meta">
-              <span>پورت: UDP :443</span>
-              <span>پروفایل: Balanced</span>
+              ${(()=>{const ko=ov.kcp||{};const kp=ko.port||((ov.status||{}).ports||{}).kcp||443;const kpr=ko.profile||'balanced';return `<span>پورت: UDP :${h(kp)}</span><span>پروفایل: ${h(kpr)}</span>`;})()}
             </div>
           </div>
           <div class="carrier-actions">
@@ -536,8 +886,7 @@ function renderIran(n,ov){
               ${isNoise ? `<span class="badge b-ok">${t('rc_on')}</span>` : `<span class="badge b-bad">${t('rc_off')}</span>`}
             </div>
             <div class="carrier-meta">
-              <span>پورت: TCP :2334</span>
-              <span>الگو: Noise_NK</span>
+              ${(()=>{const nf=((ov.status||{}).features||{}).noise||{};const no=ov.noise||{};const np=nf.port||no.port||((ov.status||{}).ports||{}).noise||2334;const pat=no.pattern||'Noise_NK';return `<span>پورت: TCP :${h(np)}</span><span>الگو: ${h(pat)}</span>`;})()}
             </div>
           </div>
           <div class="carrier-actions">
@@ -557,7 +906,7 @@ function renderIran(n,ov){
               ${isPlain ? `<span class="badge b-ok">${t('rc_on')}</span>` : `<span class="badge b-bad">${t('rc_off')}</span>`}
             </div>
             <div class="carrier-meta">
-              <span>پورت: HTTP :8880</span>
+              ${(()=>{const pf=((ov.status||{}).features||{}).plain||{};const po=ov.plain||{};const pp=pf.port||po.port||((ov.status||{}).ports||{}).plain||8880;return `<span>پورت: HTTP :${h(pp)}</span>`;})()}
             </div>
           </div>
           <div class="carrier-actions">
@@ -576,8 +925,7 @@ function renderIran(n,ov){
               ${isFrp ? `<span class="badge b-ok">${t('rc_on')}</span>` : `<span class="badge b-bad">${t('rc_off')}</span>`}
             </div>
             <div class="carrier-meta">
-              <span>پورت: TCP :7000</span>
-              <span>ترانسپورت: TCP/QUIC</span>
+              ${(()=>{const ff=((ov.status||{}).features||{}).frp||{};const fp=ff.port||(ov.frp||{}).port||7000;const frpTr=(ff.transport||(ov.frp||{}).transport||'tcp').toLowerCase();const proto=(frpTr === 'quic' || frpTr === 'kcp')?'UDP':'TCP';return `<span>پورت: ${proto} :${h(fp)}</span><span>ترانسپورت: ${h(frpTr.toUpperCase())}</span>`;})()}
             </div>
           </div>
           <div class="carrier-actions">
@@ -596,8 +944,7 @@ function renderIran(n,ov){
               ${isGre ? `<span class="badge b-ok">${t('rc_on')}</span>` : `<span class="badge b-bad">${t('rc_off')}</span>`}
             </div>
             <div class="carrier-meta">
-              <span>کارت شبکه: gre1</span>
-              <span>رنج IP: 10.10.10.0/30</span>
+              ${(()=>{const gf=((ov.status||{}).features||{}).gre||{};const gs=(ov.status||{}).gre||{};const gn=gf.name||gs.name||'gre1';const gtip=gf.tunnel_ip||gs.tunnel_ip||'10.10.10.1';return `<span>کارت شبکه: ${h(gn)}</span><span>تونل IP: ${h(gtip)}/30</span>`;})()}
             </div>
           </div>
           <div class="carrier-actions">
@@ -796,25 +1143,26 @@ function renderNode(n,ov){
    ${toggleAction(!!(((ov.status||{}).adaptive||{}).enabled),`<button class="g" onclick="adaptiveOnNode('${n}')">${t('adaptive_on')}</button>`,`<button class="r" onclick="run('${n}','adaptive_off')">${t('adaptive_off')}</button>`)}
    </div></div>`;
 
- s+=`<div class="sec"><h4>${t('unified_services')} <button class="g" onclick="addUnifiedSvc('${n}')">${t('add_svc')}</button></h4>`;
  const curCarrier=nodeCarrier(ov);
  const sv=(ov.services||[]).map(d=>({name:d.name,inbound:d.inbound,lane:curCarrier}));
  const bsv=(ov.backhaul_services||[]).map(d=>({name:d.name,inbound:d.inbound,lane:'backhaul'}));
  const allSv=[...sv,...bsv];
+ s+=`<div class="sec"><div class="sec-head-row"><h4>${t('unified_services')} <button class="g" onclick="addUnifiedSvc('${n}')">${t('add_svc')}</button></h4>
+   ${allSv.length?`<div class="search-box inline-search">${icon('search')}<input type="search" data-tbl-filter="node_svcs_tbl" placeholder="${h(t('flt_search_svc'))}" aria-label="${h(t('flt_search_svc'))}"></div>`:''}</div>`;
  if(!allSv.length)s+=`<div class="empty">${t('no_svc')}</div>`;
  else{
-  s+=tbl([t('c_svc'),t('l_lane'),t('c_inbound'),t('c_ops')]);
+  s+=`<div class="table-wrap" tabindex="0" role="region" aria-label="${h(t('unified_services'))}" id="node_svcs_tbl">`+tbl([t('c_svc'),t('l_lane'),t('c_inbound'),t('c_ops')]);
   allSv.forEach(d=>{
    const isMux=d.lane==='backhaul';
    const cClass=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(d.lane)?d.lane:'ws';
    const cLabel=carrierLabel(d.lane,ov);
    const laneBadge=`<span class="badge b-${cClass}" style="font-size:11px;padding:2px 8px;border-radius:4px;">${h(cLabel)}</span>`;
    const dot=svcDot(d.name);
-   const rmFn=isMux?`rmBhSvc('${n}','${esc(d.name)}')`:`rmSvc('${n}','${esc(d.name)}')`;
-   s+=`<tr><td>${dot}${esc(d.name)}</td><td>${laneBadge}</td><td>${esc(d.inbound)}</td>
-    <td class="btns nowrap">${serviceMenu('node',n,d.name)}<button class="r" onclick="${rmFn}">${t('remove')}</button></td></tr>`;
+   const rmAct=isMux?'rm_bh_svc':'rm_svc';
+   s+=`<tr><td>${dot}${esc(d.name)}</td><td>${laneBadge}</td><td class="mono">${esc(d.inbound)}</td>
+    <td class="btns nowrap">${serviceMenu('node',n,d.name)}<button class="r" type="button" data-act="${rmAct}" data-srv="${h(n)}" data-name="${h(d.name)}">${t('remove')}</button></td></tr>`;
   });
-  s+='</table>';
+  s+='</table></div>';
  }
  s+='</div>';
 
@@ -839,13 +1187,13 @@ function renderNode(n,ov){
   s+=`<div class="up"><div class="btns" style="align-items:center">
    <b>${esc(u.id)}</b> ${kb} <span class="sub">→ ${esc(u.server)}</span><span style="flex:1"></span>
    <span class="sub">${t('carrier')}</span>${upCarrierSelect(n,u)}
-   <button class="s" onclick="run('${n}','upstream_restart',{id:'${esc(u.id)}'})">restart</button>
-   <button class="gh" onclick="run('${n}','upstream_status',{id:'${esc(u.id)}'})">${t('status')}</button>
-   <button class="gh" onclick="run('${n}','upstream_logs',{id:'${esc(u.id)}'})">${t('logs')}</button>
-   <button class="g" onclick="upAddSvc('${n}','${esc(u.id)}')">${t('add_svc')}</button>
-   <button class="r" onclick="upRm('${n}','${esc(u.id)}')">${t('del_up')}</button></div>`;
+   <button class="s" type="button" data-act="up_restart" data-srv="${h(n)}" data-id="${h(u.id)}">restart</button>
+   <button class="gh" type="button" data-act="up_status" data-srv="${h(n)}" data-id="${h(u.id)}">${t('status')}</button>
+   <button class="gh" type="button" data-act="up_logs" data-srv="${h(n)}" data-id="${h(u.id)}">${t('logs')}</button>
+   <button class="g" type="button" data-act="up_add_svc" data-srv="${h(n)}" data-id="${h(u.id)}">${t('add_svc')}</button>
+   <button class="r" type="button" data-act="up_rm" data-srv="${h(n)}" data-id="${h(u.id)}">${t('del_up')}</button></div>`;
   if((u.services||[]).length){s+=tbl([t('c_svc'),t('c_inbound'),t('c_ops')]);u.services.forEach(x=>{s+=`<tr><td>${svcDot(x.name)}${esc(x.name)}</td><td>${esc(x.inbound)}</td>
-   <td class="btns"><button class="r" onclick="upRmSvc('${n}','${esc(u.id)}','${esc(x.name)}')">${t('remove')}</button></td></tr>`;});s+='</table>';}
+   <td class="btns"><button class="r" type="button" data-act="up_rm_svc" data-srv="${h(n)}" data-id="${h(u.id)}" data-name="${h(x.name)}">${t('remove')}</button></td></tr>`;});s+='</table>';}
   s+='</div>';
  });
  s+='</div>';
@@ -877,14 +1225,15 @@ function renderRouting(){
    <button class="${GVIEW==='table'?'on':''}" onclick="setGView('table')">☰ ${t('view_table')}</button></div>
    ${GVIEW==='graph'?`<button class="gh" onclick="gResetOrder()">${t('g_reset')}</button>`:''}
    <button class="gh" onclick="pollByPage()">${t('refresh')}</button></div>
-  ${(GVIEW==='graph')?`<div class="legend"><b style="color:var(--tx)">${t('g_legend')}:</b>
+  ${(GVIEW==='graph')?`<div class="legend"><b style="color:var(--text)">${t('g_legend')}:</b>
    <span class="li"><span class="lw lw-ws"></span> ws/443</span>
    <span class="li"><span class="lw lw-kcp"></span> kcp</span>
-   <span class="li"><span class="lw" style="background:#fbbf24"></span> backhaul</span>
+   <span class="li"><span class="lw lw-backhaul"></span> backhaul</span>
    <span class="li"><span class="lw lw-noise"></span> noise</span>
    <span class="li"><span class="lw lw-plain"></span> plain</span>
-   <span class="li"><span class="lw" style="background:#f97316"></span> frp</span>
-   <span class="li"><span class="lw" style="background:#10b981"></span> gre</span>
+   <span class="li"><span class="lw lw-frp"></span> frp</span>
+   <span class="li"><span class="lw lw-gre"></span> gre</span>
+   <span class="li"><span class="lw lw-frp_gre"></span> frp+gre</span>
    <span class="li"><span class="lw lw-bad"></span> ${t('e_bad')}</span></div>`:''}
   ${isC?`<div class="rc" id="rcwrap"></div>`:`<div class="gwrap" id="gwrap"></div>
   <div class="sub" style="margin-top:8px">${GVIEW==='graph'?(t('g_hint')+' '+t('g_drag')):t('g_hint')}</div>`}`;
@@ -961,8 +1310,9 @@ function drawConsole(){
   else{
    const nn=(ov.noise||{}).nodes||[],hn=(ov.health||{}).nodes||{};
    nodes.forEach(d=>{
-    const isN=nn.indexOf(d.name)>=0,tr=isN?'noise':((ov.kcp||{}).enabled?'kcp':'ws');
-    const trb=tr==='noise'?'b-noise':(tr==='kcp'?'b-kcp':'b-ws');
+    const tr=d.transport||(nn.indexOf(d.name)>=0?'noise':((ov.kcp||{}).enabled?'kcp':'ws'));
+    const trCls={ws:'b-ws',kcp:'b-kcp',noise:'b-noise',plain:'b-plain',backhaul:'b-backhaul',frp:'b-frp',gre:'b-gre',frp_gre:'b-frp_gre'};
+    const trb=trCls[tr]||'b-ws';
     const st=hn[d.name],dot=st?`<span class="dot ${st==='ok'?'d-ok':'d-bad'}"></span>`:'<span class="dot d-un"></span>';
     const recs=nodeRecipes(s.name,ov,d);
     x+=`<div class="onode ${st==='warn'?'off':''}"><div class="oh">${dot}<span class="onm">${h(d.name)}</span>
@@ -1005,7 +1355,7 @@ function carrierLabel(carrier,ov){
 
 function serviceButtons(side,server,name){
  const call=side==='iran'?'serviceControl':'nodeServiceAction';
- const btn=(action,label,cls='gh')=>`<button class="${cls}" type="button" onclick="${call}('${h(server)}','${h(name)}','${action}')">${label}</button>`;
+ const btn=(action,label,cls='gh')=>`<button class="${cls}" type="button" data-svc-call="${call}" data-server="${h(server)}" data-name="${h(name)}" data-action="${action}">${label}</button>`;
  return btn('configure',t('service_config'),'s')+btn('health',t('service_health'))+btn('copy',t('service_copy'))+btn('manage',t('service_peer'))+btn('remove',t('service_remove_pair'),'r');
 }
 
@@ -1013,7 +1363,7 @@ function serviceButtons(side,server,name){
 // yek-khati bemanad (chideman-e v2.0.1) va hamzaman hame-ye emkanat-e jadid ham basand.
 function serviceMenu(side,server,name){
  const call=side==='iran'?'serviceControl':'nodeServiceAction';
- const item=(action,label,cls='')=>`<button class="mi ${cls}" type="button" onclick="${call}('${h(server)}','${h(name)}','${action}')">${label}</button>`;
+ const item=(action,label,cls='')=>`<button class="mi ${cls}" type="button" data-svc-call="${call}" data-server="${h(server)}" data-name="${h(name)}" data-action="${action}">${label}</button>`;
  return `<details class="more"><summary class="gh" title="${t('service_more')}" aria-label="${t('service_more')}">⋯</summary>
   <div class="more-menu">${item('configure',t('service_config'))}${item('health',t('service_health'))}${item('copy',t('service_copy'))}${item('manage',t('service_peer'))}${item('remove',t('service_remove_pair'),'mi-r')}</div></details>`;
 }
@@ -1137,6 +1487,7 @@ async function configureServiceCarrier(iranSrv, nodeName, carrier, port, extra =
     nodeServer = sNode.name;
     if (!['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'].includes(carrier)) throw new Error('حامل نامعتبر است.');
     if (extra.carrier_port && (!/^\d+$/.test(String(extra.carrier_port)) || +extra.carrier_port < 1 || +extra.carrier_port > 65535)) throw new Error('پورت حامل نامعتبر است.');
+    if (!extra.silent) toast('⏳ در حال همگام‌سازی حامل ' + carrier.toUpperCase() + ' با سرور ایران و نود (' + sNode.name + ')...', 0);
     const state = JSON.parse((await serviceAction(iranSrv, 'status')).out);
     const old = (state.nodes || []).find(x => x.name === nodeName);
     const nov = await serviceRequest('GET','api/servers/'+sNode.name+'/overview');
@@ -1228,12 +1579,13 @@ async function configureServiceCarrier(iranSrv, nodeName, carrier, port, extra =
     }
     const conn = await serviceRequest('GET', 'api/servers/' + iranSrv + '/nodeconnect/' + nodeName);
     if (!conn.name || !conn.token || !conn.inbound || !conn.remote_port) throw new Error('اطلاعات سرویس یا نگاشت پورت ایران ناقص است.');
+    const oldIranLane = oldLane === 'frp_gre' ? 'frp' : oldLane;
     if (oldLane !== targetLane) {
       if (oldLane === 'frp' || oldLane === 'frp_gre') await A(sNode.name, 'frp_off');
       else if (oldLane === 'backhaul' && !(nov.backhaul_services||[]).some(x=>x.name!==nodeName)) await A(sNode.name, 'backhaul_off');
       else if (oldLane === 'noise') await A(sNode.name, 'noise_off');
     }
-    if (targetLane !== 'noise' && oldLane !== targetLane && ['backhaul','noise','frp'].includes(oldLane)) await A(iranSrv, oldLane + '_node_off', {name:nodeName});
+    if (targetLane !== 'noise' && oldIranLane !== targetLane && ['backhaul','noise','frp'].includes(oldIranLane)) await A(iranSrv, oldIranLane + '_node_off', {name:nodeName});
     if (targetLane === 'backhaul') {
       await A(iranSrv, 'backhaul_node_on', {name:nodeName});
       // lane-e backhaul joda ast; service ra dar registry-e dorost sabt kon.
@@ -1264,7 +1616,7 @@ async function configureServiceCarrier(iranSrv, nodeName, carrier, port, extra =
         if (carrier === 'ws') await A(sNode.name,'plain_off');
         else if (carrier === 'kcp') await A(sNode.name,'kcp_on',{remote:extra.iran_ip ? extra.iran_ip + ':' + connection.remote.split(':').pop() : connection.remote,key:connection.key,profile:connection.profile});
         else if (carrier === 'noise') {
-          if (oldLane !== targetLane && ['backhaul','frp'].includes(oldLane)) await A(iranSrv, oldLane + '_node_off', {name:nodeName});
+          if (oldIranLane !== targetLane && ['backhaul','frp'].includes(oldIranLane)) await A(iranSrv, oldIranLane + '_node_off', {name:nodeName});
           await A(iranSrv, 'noise_node_on', {name:nodeName});
           noiseSwitched = true;
           await A(sNode.name,'noise_on',{remote:connection.remote,pubkey:connection.pubkey,pattern:connection.pattern || ''});
@@ -1280,11 +1632,11 @@ async function configureServiceCarrier(iranSrv, nodeName, carrier, port, extra =
     if (!extra.silent) toast('✓ تنظیمات حامل سرویس اعمال شد؛ وضعیت اتصال را بررسی کنید.');
     return {...conn,node_server:sNode.name};
   } catch (err) {
-    if (noiseSwitched && oldLane === 'ws') {
+    if (noiseSwitched && oldLane !== 'noise') {
       await serviceAction(nodeServer, 'noise_off').catch(()=>{});
       await serviceAction(iranSrv, 'noise_node_off', {name:nodeName}).catch(()=>{});
     }
-    if (frpSwitched && oldLane === 'ws') {
+    if (frpSwitched && oldLane !== 'frp' && oldLane !== 'frp_gre') {
       // dar shekast-e FRP, masir-e pishfarz-e ghabli ra dobare faal kon.
       if (frpNodeStarted) await serviceAction(nodeServer, 'frp_off').catch(()=>{});
       await serviceAction(iranSrv, 'frp_node_off', {name:nodeName}).catch(()=>{});
@@ -1341,7 +1693,7 @@ function quickCarrierModal(iran, node, curCarrier, peerName) {
     {id:'iran_ip', label:'IP عمومی سرور ایران (برای Noise / FRP / KCP / GRE):', type:'text', val:c.iran_ip || defIranIp, ph:'مثلاً 45.234.54.9'},
     {id:'node_ip', label:'IP عمومی سرور خارج (برای GRE):', type:'text', val:c.node_ip || defNodeIp, ph:'مثلاً 78.135.77.57'},
     {id:'gre_ip', label:'آدرس مجازی GRE (برای GRE یا FRP+GRE):', type:'text', val:c.gre_ip || '10.10.10.1'},
-    {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE):', type:'select', val:((iov.status||{}).features||{}).frp?.transport || (iov.frp||{}).transport || 'tcp', opts:frpTrOpts},
+    {id:'frp_tr', label:'مد ترانسپورت FRP (برای FRP یا FRP+GRE — یک پروتکل UDP فعال روی هر پورت: KCP یا QUIC):', type:'select', val:((iov.status||{}).features||{}).frp?.transport || (iov.frp||{}).transport || 'tcp', opts:frpTrOpts},
     {id:'bh_tr', label:'مد ترانسپورت Backhaul (برای Backhaul):', type:'select', val:((OVS[(sNode||{}).name]||{}).backhaul||{}).transport || 'wssmux', opts:bhTrOpts},
     {id:'profile', label:'پروفایل شتاب KCP / Backhaul:', type:'select', val:c.profile || 'balanced', opts:profOpts},
     {id:'carrier_port', label:'پورت اختصاصی حامل در ایران (اختیاری):', type:'text', val:c.carrier_port || '', ph:'پیش‌فرض: FRP=7000, BH=3080, Plain=8880, Noise=2334'}
@@ -1367,14 +1719,15 @@ function drawRouteTable(){
  const rows=M.edges.slice().sort((a,b)=>(a.tgt.name+a.node).localeCompare(b.tgt.name+b.node));
  let x=`<div style="direction:${LANG==='fa'?'rtl':'ltr'};padding:4px 10px">`;
  x+=tbl([t('c_node'),t('c_upstream'),t('c_iran'),t('c_tunnel'),t('n_svcs'),t('c_status')]);
+ const tbMap={ws:'b-ws',kcp:'b-kcp',noise:'b-noise',plain:'b-plain',backhaul:'b-backhaul',frp:'b-frp',gre:'b-gre',frp_gre:'b-frp_gre'};
  rows.forEach(e=>{
-  const tb=e.tunnel==='kcp'?'b-kcp':(e.tunnel==='noise'?'b-noise':(e.tunnel==='plain'?'b-plain':'b-ws'));
+  const tb=tbMap[e.tunnel]||'b-ws';
   const st=e.status==='warn'?`<span class="dot d-bad"></span> ${t('tun_down')}`
           :(e.status==='ok'?`<span class="dot d-ok"></span> ${t('tun_up')}`:`<span class="dot d-un"></span>`);
   const tgt=e.tgt.kind==='iran'
-    ?`<a style="color:var(--ac);cursor:pointer" onclick="nav('#/server/${h(e.tgt.name)}')">${h(e.tgt.name)}</a>`
+    ?`<a style="color:var(--primary-hover);cursor:pointer" onclick="nav('#/server/${h(e.tgt.name)}')">${h(e.tgt.name)}</a>`
     :`${h(e.tgt.name)} <span class="sub">(${t('g_external')})</span>`;
-  x+=`<tr><td><a style="color:var(--ac);cursor:pointer" onclick="nav('#/server/${h(e.node)}')">${h(e.node)}</a></td>
+  x+=`<tr><td><a style="color:var(--primary-hover);cursor:pointer" onclick="nav('#/server/${h(e.node)}')">${h(e.node)}</a></td>
    <td class="mono">${h(e.label||'main')}</td><td>${tgt}</td>
    <td><span class="badge ${tb}">${h(e.tunnel)}</span></td>
    <td class="mono">${h(e.svcs.join(', ')||'-')}</td><td>${st}</td></tr>`;});
@@ -1433,7 +1786,7 @@ function drawGraph(){
  const M=buildGraphModel();
  if(!M.irans.length&&!M.nds.length){w.innerHTML=`<div class="empty" style="padding:20px">${t('g_empty')}</div>`;return;}
  const anyOv=SERVERS.some(s=>OVS[s.name]);
- const BW=195,BH=60,GY=26,X=[26,300,606],WID=830;
+ const BW=195,BH=60,GY=26,X=[26,286,634],WID=856;
  // sotoon-e node-ha ra bar asas-e iran-e mabda sort kon ta edge-ha kamtar ghat shavand
  const firstIran={};
  M.edges.forEach(e=>{if(!(e.node in firstIran))firstIran[e.node]=(e.tgt.kind==='iran'?e.tgt.name:'zz_'+e.tgt.name);});
@@ -1471,7 +1824,7 @@ function drawGraph(){
   const y1=P1.y+P1.h*outIdx[e.tgt.name]/(outCnt[e.tgt.name]+1);
   const y2=P2.y+P2.h*inIdx[e.node]/(inCnt[e.node]+1);
   const x1=X[1]+BW,x2=X[2],mx=(x1+x2)/2;
-  const cls=e.status==='warn'?'e-bad':('e-'+(['ws','kcp','noise','plain'].indexOf(e.tunnel)>=0?e.tunnel:'ws'));
+  const cls=e.status==='warn'?'e-bad':('e-'+(['ws','kcp','noise','plain','backhaul','frp','gre','frp_gre'].indexOf(e.tunnel)>=0?e.tunnel:'ws'));
   const anim=(e.tunnel!=='ws'||e.status==='warn')?' flow':'';
   const dim=e.status==='warn'?'':''; // edge-e kharab ghermez mishavad, dim nemikonim
   edgeSvg+=`<path class="edge ${cls}${anim}${dim}" d="M ${x1} ${y1} C ${mx} ${y1} ${mx} ${y2} ${x2} ${y2}"/>`;
@@ -1484,7 +1837,7 @@ function drawGraph(){
  sv+=edgeSvg;
  // --- box: users ---
  sv+=`<g><rect class="gbox gbox-ext" x="${X[0]}" y="${uy}" width="120" height="70" rx="12"/>`;
- [[36,uy+26],[60,uy+20],[84,uy+26]].forEach(c=>{sv+=`<circle cx="${c[0]}" cy="${c[1]}" r="6" fill="#3b4c61"/><path d="M ${c[0]-9} ${c[1]+18} a 9 9 0 0 1 18 0" fill="#3b4c61"/>`;});
+ [[36,uy+26],[60,uy+20],[84,uy+26]].forEach(c=>{sv+=`<circle cx="${c[0]}" cy="${c[1]}" r="6" fill="var(--text-faint)"/><path d="M ${c[0]-9} ${c[1]+18} a 9 9 0 0 1 18 0" fill="var(--text-faint)"/>`;});
  sv+=`<text x="${X[0]+60}" y="${uy+60}" text-anchor="middle" class="gsub">${t('g_users')}</text></g>`;
  // --- box-haye iran ---
  iranCol.forEach(it=>{
@@ -1493,7 +1846,7 @@ function drawGraph(){
   const click=it.ext?'':` onclick="nav('#/server/${h(it.name)}')"`;
   const drag=it.ext?'':` data-gcol="iran" data-gname="${h(it.name)}"`;
   sv+=`<g${click}${drag}><rect class="gbox gbox-iran${it.ext?' gbox-ext':''}${off?' gbox-off':''}" x="${p.x}" y="${p.y}" width="${BW}" height="${p.h}" rx="10"><title>${h(it.ext?t('g_external'):it.name)}</title></rect>`;
-  const dcls=it.ext?'#8ba0b6':(off?'var(--rd)':(ov?(((ov.health||{}).fail===0)?'var(--gr)':'var(--rd)'):'var(--yl)'));
+  const dcls=it.ext?'#8ba0b6':(off?'var(--danger)':(ov?(((ov.health||{}).fail===0)?'var(--success)':'var(--danger)'):'var(--warning)'));
   sv+=`<circle cx="${p.x+16}" cy="${hh(20)}" r="4.5" fill="${dcls}"/>`;
   sv+=`<text x="${p.x+28}" y="${hh(24)}" class="gtxt">${h(it.name.length>20?it.name.slice(0,19)+'…':it.name)}</text>`;
   if(it.ext){sv+=`<text x="${p.x+14}" y="${hh(44)}" class="gsub">${t('g_external')}</text>`;}
@@ -1507,14 +1860,14 @@ function drawGraph(){
  nodeCol.forEach(d=>{
   const p=pn.pos[d.name];const ov=OVS[d.name];const off=ov&&ov.reachable===false;
   const bad=M.edges.some(e=>e.node===d.name&&e.status==='warn');
-  const dcls=off||bad?'var(--rd)':(ov?'var(--gr)':'var(--yl)');
+  const dcls=off||bad?'var(--danger)':(ov?'var(--success)':'var(--warning)');
   sv+=`<g onclick="nav('#/server/${h(d.name)}')" data-gcol="node" data-gname="${h(d.name)}"><rect class="gbox${off?' gbox-off':''}" x="${p.x}" y="${p.y}" width="${BW}" height="${p.h}" rx="10"><title>${h(d.name)}</title></rect>`;
   sv+=`<circle cx="${p.x+16}" cy="${p.y+20}" r="4.5" fill="${dcls}"/>`;
   sv+=`<text x="${p.x+28}" y="${p.y+24}" class="gtxt">${h(d.name.length>20?d.name.slice(0,19)+'…':d.name)}</text>`;
   const sub=(d.host||'')+(ov&&ov.services?(' · '+ov.services.length+' '+t('n_svcs')):'');
   sv+=`<text x="${p.x+14}" y="${p.y+44}" class="gsub">${h(sub.slice(0,30))}</text></g>`;});
  sv+=labSvg;
- sv+=`<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#3b4c61"/></marker></defs>`;
+ sv+=`<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-faint)"/></marker></defs>`;
  sv+='</svg>';
  if(!anyOv)sv=`<div class="empty" style="padding:12px 16px 0">${t('g_loading')}</div>`+sv;
  w.innerHTML=sv;
@@ -1533,9 +1886,9 @@ function bindGraphDrag(w){
     if(!moved&&Math.abs(dy)>6){moved=true;_gDragging=true;g.style.cursor='grabbing';svg.style.userSelect='none';}
     if(moved)g.setAttribute('transform','translate(0,'+dy+')');};
    const up=e=>{
-    document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);
+    document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up);
     svg.style.userSelect='';_gDragging=false;
-    if(!moved)return;                      // click-e sade → navigation-e aadi
+    if(!moved||e.type==='pointercancel'){if(moved)g.removeAttribute('transform');return;}                      // click-e sade → navigation-e aadi
     // click-e badi (ke browser bad az pointerup mifrestad) navigation nakonad
     g.addEventListener('click',ce=>{ce.stopPropagation();ce.preventDefault();},{capture:true,once:true});
     // tartib-e jadid: markaz-e box-e keshide-shode ra beyn-e baghye peyda kon
@@ -1548,7 +1901,7 @@ function bindGraphDrag(w){
     localStorage.setItem('rh_gorder_'+col,JSON.stringify(order.map(x=>x.n)));
     drawGraph();
    };
-   document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);
+   document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',up);
   });
  });
 }
@@ -1556,14 +1909,17 @@ function bindGraphDrag(w){
 // ---------- safhe: audit / settings (ghablan modal boodand) ----------
 async function renderAuditPage(){
  const pg=$('page'); if(!pg)return;
- pg.innerHTML=`<div class="ptitle"><h2>${t('audit')}</h2></div><section class="card" style="margin-top:0"><div class="cbody" id="auditbody"><div class="empty">${t('loading')}</div></div></section>`;
+ pg.innerHTML=`<div class="ptitle"><h2>${t('audit')}</h2></div>
+  <div class="filter-bar"><div class="search-box">${icon('search')}<input type="search" data-tbl-filter="audit_tbl" placeholder="${h(t('flt_search_audit'))}" aria-label="${h(t('flt_search_audit'))}"></div></div>
+  <section class="card" style="margin-top:0"><div class="cbody" id="auditbody"><div class="empty">${t('loading')}</div></div></section>`;
  const {j}=await api('GET','api/audit?limit=100');
  const box=$('auditbody'); if(!box)return;
  const rows=(j||[]);
  if(!rows.length){box.innerHTML=`<div class="empty">${t('no_audit')}</div>`;return;}
- let x=`<div class="table-wrap"><table><thead><tr><th>${t('c_time')}</th><th>${t('c_user')}</th><th>server</th><th>${t('c_action')}</th><th>rc</th></tr></thead><tbody>`;
+ let x=`<div class="table-wrap" tabindex="0" role="region" aria-label="${h(t('audit'))}" id="audit_tbl"><table><thead><tr><th>${t('c_time')}</th><th>${t('c_user')}</th><th>server</th><th>${t('c_action')}</th><th>rc</th></tr></thead><tbody>`;
  rows.forEach(e=>{const d=new Date((e.ts||0)*1000).toLocaleString(LANG==='fa'?'fa-IR':'en-US');
-  x+=`<tr><td>${h(d)}</td><td class="mono">${h(e.user)}</td><td>${h(e.server)}</td><td class="mono">${h(e.action)}</td><td>${h(e.rc)}</td></tr>`;});
+  const rcOk=Number(e.rc)===0;
+  x+=`<tr><td class="mono">${h(d)}</td><td class="mono">${h(e.user)}</td><td>${h(e.server)}</td><td class="mono">${h(e.action)}</td><td><span class="badge ${rcOk?'b-ok':'b-bad'}">${h(e.rc)}</span></td></tr>`;});
  box.innerHTML=x+'</tbody></table></div>';
 }
 async function renderSettingsPage(){
@@ -1571,17 +1927,32 @@ async function renderSettingsPage(){
  pg.innerHTML=`<div class="ptitle"><h2>${t('settings')}</h2></div><div id="setbody"><div class="empty">${t('loading')}</div></div>`;
  const {j}=await api('GET','api/config');const c=j||{};
  const warn=c.insecure?`<div class="settings-alert" role="alert">${t('insecure')}</div>`:'';
+ const curTheme=THEME_PREF||'system';
  const box=$('setbody'); if(!box)return;
  box.innerHTML=`${warn}
   <div class="settings-grid">
+   <section class="settings-section"><h3>${h(t('theme_appearance'))}</h3>
+    <div class="settings-kv" style="margin-bottom:14px">
+     <span class="k">${h(t('theme'))}</span>
+     <div class="theme-seg" role="group" aria-label="${h(t('theme_appearance'))}">
+      <button type="button" class="${curTheme==='system'?'on':''}" data-theme-opt="system" onclick="setThemeMode('system')">${icon('monitor')}<span>${h(t('theme_system'))}</span></button>
+      <button type="button" class="${curTheme==='light'?'on':''}" data-theme-opt="light" onclick="setThemeMode('light')">${icon('sun')}<span>${h(t('theme_light'))}</span></button>
+      <button type="button" class="${curTheme==='dark'?'on':''}" data-theme-opt="dark" onclick="setThemeMode('dark')">${icon('moon')}<span>${h(t('theme_dark'))}</span></button>
+     </div>
+     <span class="k">${h(t('lang_label'))}</span>
+     <div class="btns"><button class="s" type="button" onclick="toggleLang()">${icon('language')}<span>${LANG==='fa'?'فارسی → English':'English → فارسی'}</span></button></div>
+     <span class="k">${h(t('hub_proxy_lbl'))}</span>
+     <div class="btns"><span class="mono sub">${h(c.proxy||'direct')}</span><button class="gh" type="button" onclick="editHubProxy()">${h(t('manage'))}</button></div>
+    </div>
+   </section>
    <section class="settings-section"><h3>${t('t_settings')}</h3><div class="settings-kv">
     <span class="k">${t('l_apitoken')}</span><span class="mono">${h(c.api_token_hint||'')}</span>
     <span class="k">${t('l_listen')}</span><span class="mono">${h(c.listen_host||'')}:${h(c.listen_port||'')}</span>
    </div><div class="modal-actions"><button class="s" type="button" onclick="rotTok()">${t('rot_tok')}</button></div></section>
-   <section class="settings-section"><h3>${t('chpw')}</h3><div class="settings-form">
+   <section class="settings-section" style="grid-column:1 / -1"><h3>${t('chpw')}</h3><div class="settings-form" style="max-width:460px">
     <div class="field"><label for="cpw">${t('l_curpw')}</label><input id="cpw" type="password" autocomplete="current-password"></div>
     <div class="field"><label for="npw">${t('l_newpw')}</label><input id="npw" type="password" autocomplete="new-password" placeholder="${t('pw_hint')}"></div>
-    <button class="g" type="button" onclick="savePw()">${t('save_pw')}</button>
+    <div class="btns"><button class="g" type="button" onclick="savePw()">${t('save_pw')}</button></div>
    </div></section>
   </div>`;
 }
@@ -1668,7 +2039,7 @@ function stDot(v){return '<span class="dot '+(v==='yes'?'d-ok':'d-bad')+'"></spa
 async function statusModal(n){toast(t('loading'));
  const {j}=await api('POST','api/servers/'+n+'/action',{action:'status',args:{}});
  let d=null; try{d=JSON.parse(j&&j.out||'');}catch(e){}
- if(!d){outModal('status · '+n,((j&&j.cmd?'$ '+j.cmd+'\\n':'')+((j&&j.out)||'')+((j&&j.err)?'\\n'+j.err:'')).trim()||t('status_err'));return;}
+ if(!d){outModal('status · '+n,((j&&j.cmd?'$ '+j.cmd+'\n':'')+((j&&j.out)||'')+((j&&j.err)?'\n'+j.err:'')).trim()||t('status_err'));return;}
  const P=d.ports||{}, C=d.cert||{}, S=d.services||{};
  const portRow=(port,lbl)=>port?`<tr><td class="mono">${h(String(port))}</td><td>${h(lbl)}</td></tr>`:'';
  const certLine=C.exists==='yes'
@@ -1887,8 +2258,9 @@ async function dtLoadDomains(n){
  if(!rows.length){box.innerHTML='';return;}
  let x=`<div class="sub" style="margin:4px 0">${t('dt_served')}</div><table><tr><th>${t('dt_domain')}</th><th>${t('dt_kind')}</th><th></th></tr>`;
  rows.forEach(p=>{const dom=h(p[0]||'');const prim=(p[3]||'')==='yes';
-  x+=`<tr><td>${dom}</td><td>${prim?('<span class="badge b-role">'+t('dt_primary')+'</span>'):('<span class="badge b-kcp">'+t('dt_extra')+'</span>')}</td><td>${prim?'':('<button class="g" onclick="dtMakePrimary(\''+n+'\',\''+dom+'\')">'+t('dt_makeprimary')+'</button> '+'<button class="r" onclick="dtRmDomain(\''+n+'\',\''+dom+'\')">'+t('remove')+'</button>')}</td></tr>`;});
+  x+=`<tr><td>${dom}</td><td>${prim?('<span class="badge b-role">'+t('dt_primary')+'</span>'):('<span class="badge b-kcp">'+t('dt_extra')+'</span>')}</td><td>${prim?'':('<button class="g" type="button" data-dt-act="primary" data-dt-srv="'+h(n)+'" data-dt-dom="'+dom+'">'+t('dt_makeprimary')+'</button> '+'<button class="r" type="button" data-dt-act="rm" data-dt-srv="'+h(n)+'" data-dt-dom="'+dom+'">'+t('remove')+'</button>')}</td></tr>`;});
  x+='</table>'; box.innerHTML=x;
+ box.onclick=e=>{const b=e.target&&e.target.closest('button[data-dt-act]');if(!b)return;const srv=b.dataset.dtSrv,dom=b.dataset.dtDom;if(b.dataset.dtAct==='primary')dtMakePrimary(srv,dom);else if(b.dataset.dtAct==='rm')dtRmDomain(srv,dom);};
 }
 async function dtAddDomain(n){const d=($('dt_nd').value||'').trim();if(!d){toast(t('fill'));return;}
  const fc=($('dt_nfc').value||'').trim(),key=($('dt_nkey').value||'').trim();
@@ -1929,18 +2301,7 @@ function addUnifiedSvc(n){
     if(v.lane==='mux')run(n,'add_bh_svc',{name:v.name,token:v.token,inbound:v.inbound});
     else run(n,'add_svc',{name:v.name,token:v.token,inbound:v.inbound,remote_port:v.remote_port});
   });}
-function addSvc(n){formModal(t('t_add_svc'),[
-  {id:'name',label:t('f_name'),req:1},
-  {id:'token',label:t('l_token'),req:1},
-  {id:'inbound',label:t('l_inbound'),req:1},
-  {id:'remote_port',label:'پورت بک‌اند ایران (برای FRP)',ph:'مثلاً 21001'}],
-  v=>{closeModal();run(n,'add_svc',v);});}
 function rmSvc(n,name){if(confirm(t('cf_delsvc')+' ('+name+')'))run(n,'rm_svc',{name});}
-function addBhSvc(n){formModal(t('t_bh_addsvc'),[
-  {id:'name',label:t('f_name'),req:1},
-  {id:'token',label:t('l_bh_token'),req:1},
-  {id:'inbound',label:t('l_inbound'),req:1}],
-  v=>{closeModal();run(n,'add_bh_svc',v);});}
 function rmBhSvc(n,name){if(confirm(t('cf_delsvc')+' ('+name+')'))run(n,'rm_bh_svc',{name});}
 function upAdd(n){formModal(t('t_up_add'),[
   {id:'id',label:t('l_up_id'),ph:'iran2',req:1},
@@ -1976,9 +2337,6 @@ function directOnIran(n){formModal(t('t_direct_iran'),[
   {id:'port',label:t('l_direct_port'),val:'8081',req:1},
   {id:'header',label:t('l_direct_header'),val:'X-Cdn-Id',req:1}],
   v=>{closeModal();run(n,'direct_on',{port:v.port,header:v.header});});}
-function plainOnNode(n){formModal(t('t_plain_node'),[
-  {id:'remote',label:t('l_plain_remote'),ph:'5.202.4.40:8880',req:1}],
-  v=>{closeModal();run(n,'plain_on',{remote:v.remote});});}
 function noiseOnIran(n){formModal(t('t_noise_iran'),[
   {id:'port',label:t('l_noise_port'),val:'2334',req:1}],
   v=>{closeModal();run(n,'noise_on',{port:v.port});});}
@@ -2019,15 +2377,6 @@ function noiseNodeFields(){
  f.push({id:'pattern',label:t('l_noise_pattern'),val:'Noise_NK_25519_ChaChaPoly_BLAKE2s'});
  return f;
 }
-function noiseOnNode(n){formModal(t('t_noise_node'),noiseNodeFields(),
-  v=>{closeModal();run(n,'noise_on',{remote:v.remote,pubkey:v.pubkey,pattern:v.pattern||''});});
- const sel=$('f_iran');
- if(sel){sel.onchange=()=>noiseAutofill(sel.value);
-   const box=sel.closest('.row');
-   if(box){const b=document.createElement('button');b.className='s';b.textContent='↻';
-     b.title=t('l_autofill');b.onclick=e=>{e.preventDefault();noiseAutofill(sel.value);};box.appendChild(b);}
-   noiseAutofill(sel.value);
- }}
 
 // ---- backhaul (core-e SMUX posht-e nginx/443) ----
 // samt-e Iran transport-e BEDOON-e TLS migirad (nginx TLS ra terminate mikonad),
@@ -2044,29 +2393,6 @@ function bhOnIran(n){formModal(t('t_bh_iran'),[
 function bhNode(n,act){formModal(t(act==='on'?'bh_node_on':'bh_node_off'),[
   {id:'name',label:t('c_name'),req:1}],
   v=>{closeModal();quickCarrierModal(n,v.name,act==='on'?'backhaul':'ws');});}
-// autofill-e backhaul: az server Iran domain+token+transport+profile ra migirad ta token dasti copy nashavad.
-async function bhAutofill(iranName){
- if(!iranName){return;}
- toast(t('autofilling'));
- const {j}=await api('GET','api/servers/'+iranName+'/backhaulconnect');
- if(!j||!j.ok){toast(t('autofail'));return;}
- if($('f_domain'))$('f_domain').value=j.remote_addr||j.domain||'';
- if($('f_token'))$('f_token').value=j.token||'';
- if($('f_transport')&&j.transport){if(![...$('f_transport').options].some(o=>o.value===j.transport))$('f_transport').add(new Option(j.transport,j.transport));$('f_transport').value=j.transport;}
- if($('f_profile')&&j.profile)$('f_profile').value=j.profile;
- toast(t('autofilled'));
-}
-function bhNodeFields(){
- const irs=iranServers();
- const f=[];
- if(irs.length){f.push({id:'iran',label:t('l_autofill'),type:'select',val:irs[0].name,
-   opts:irs.map(s=>({v:s.name,t:s.name+' ('+s.host+')'}))});}
- f.push({id:'domain',label:t('l_bh_domain'),ph:'example.com or 1.2.3.4:3080',req:1});
- f.push({id:'token',label:t('l_bh_token'),req:1});
- f.push({id:'transport',label:t('l_bh_tr_cli'),type:'select',val:'wssmux',opts:BH_CLI_TR});
- f.push({id:'profile',label:t('l_bh_prof'),type:'select',val:'balanced',opts:PROF});
- return f;
-}
 // ============ reverse-proxy-e gheyre-tunnel ============
 // /<name>/ rooye haman 443 be yek upstream-e delkhah. esm ba node-ha moshtarak ast
 // (har do dar map-e /<name>) — samt-e ratholectl har do jahat check mishavad.
@@ -2087,7 +2413,7 @@ function pxRm(n){formModal(t('t_px_rm'),[{id:'name',label:t('px_name'),req:1}],
 // daghighan YEKI faal ast. in select haman vaghiat ra neshan midahad va avaz kardanash
 // yek amal-e HEDAYAT-SHODE ast: parametrha khodkar az server Iran gerefte mishavand va
 // (baraye noise/backhaul) samt-e Iran ham hamahang mishavad.
-const CARRIERS=['ws','kcp','plain','noise','backhaul','frp','gre'];
+const CARRIERS=['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'];
 
 function nodeCarrier(ov){
  const c=(((ov||{}).status||{}).main||{}).transport||(ov||{}).main_tunnel||'ws';
@@ -2114,32 +2440,11 @@ function setCarrier(n,next,cur){
  });
 }
 
-// bargasht be ws: har halat dastur-e off-e khodash ra darad.
-function carrierOffAction(cur){
- return ({kcp:'kcp_off',plain:'plain_off',noise:'noise_off',backhaul:'backhaul_off',frp:'frp_off',gre:'gre_off'})[cur]||'kcp_off';
-}
-
 function frpOnIran(n){formModal(t('t_frp_iran'),[
   {id:'port',label:t('l_frp_port'),val:'7000',req:1},
   {id:'token',label:t('l_frp_token'),ph:'اختیاری (تولید خودکار)'},
-  {id:'transport',label:t('l_frp_tr'),type:'select',val:'tcp',opts:[{v:'tcp',t:'TCP'},{v:'kcp',t:'KCP'},{v:'quic',t:'QUIC'},{v:'websocket',t:'WebSocket'}]}],
+  {id:'transport',label:t('l_frp_tr')+' (یک پروتکل UDP فعال روی هر پورت: KCP یا QUIC)',type:'select',val:'tcp',opts:[{v:'tcp',t:'TCP'},{v:'kcp',t:'KCP'},{v:'quic',t:'QUIC'},{v:'websocket',t:'WebSocket'}]}],
   v=>{closeModal();run(n,'frp_on',{port:v.port,token:v.token||'',transport:v.transport||'tcp'});});}
-
-async function frpAutofill(iranName,nodeName){
- if(!iranName)return;
- toast(t('autofilling'));
- const {j:conn}=await api('GET','api/servers/'+iranName+'/frpconnect');
- if(conn&&conn.ok){
-   if($('f_remote'))$('f_remote').value=conn.remote||(conn.host+':'+conn.port);
-   if($('f_token'))$('f_token').value=conn.token||'';
-   if($('f_transport')&&conn.transport)$('f_transport').value=conn.transport;
- }
- if(nodeName){
-   const {j:nconn}=await api('GET','api/servers/'+iranName+'/nodeconnect/'+nodeName);
-   if(nconn&&nconn.ok&&$('f_remote_port'))$('f_remote_port').value=nconn.remote_port||'';
- }
- toast(t('autofilled'));
-}
 
 function frpOnNode(n){
  const irs=iranServers();
@@ -2162,15 +2467,6 @@ function greOnIran(n){formModal(t('t_gre_iran'),[
   {id:'name',label:t('l_gre_name'),val:'gre1',req:1}],
   v=>{closeModal();run(n,'gre_on',v);});}
 
-function greOnNode(n){
-  const irs=iranServers();
-  const def=irs.length?irs[0].host:'';
-  formModal(t('t_gre_iran')+' ('+n+')',[
-    {id:'remote_ip',label:t('l_gre_remote'),val:def,req:1},
-    {id:'tunnel_ip',label:t('l_gre_tunnel'),val:'10.10.10.2',req:1},
-    {id:'name',label:t('l_gre_name'),val:'gre1',req:1}],
-    v=>{closeModal();run(n,'gre_on',v);});}
-
 // ============ HAMEL-e per-UPSTREAM (mesl-e tunnel-e asli, vali baraye har upstream) ============
 // har upstream yek server-e Iran-e mostaghel ast va TUNNEL-e khodash ra dar up_env darad،
 // pas daghighan mesl-e tunnel-e asli ENHESARI ast: yek select، na chand dokme.
@@ -2185,7 +2481,7 @@ function upCarrier(u){
 function upCarrierSelect(n,u){
  const cur=upCarrier(u), id='upcar_'+n+'__'+u.id;
  const opts=UP_CARRIERS.map(c=>`<option value="${c}"${c===cur?' selected':''}>${h(t('carrier_'+c))}</option>`).join('');
- return `<select id="${id}" title="${h(t('carrier'))}" onchange="setUpCarrier('${n}','${esc(u.id)}',this.value,'${cur}')">${opts}</select>`;
+ return `<select id="${h(id)}" title="${h(t('carrier'))}" data-upcar-srv="${h(n)}" data-upcar-id="${h(u.id)}" data-upcar-cur="${h(cur)}">${opts}</select>`;
 }
 // avaz kardan-e hamel-e yek upstream. har halat form/parametr-e khodash ra darad؛
 // 'ws' bazgasht be pishfarz ast va har hamel-e digar ra khamoosh mikonad.
@@ -2227,7 +2523,7 @@ function iranNodeCarrierSel(iran,ov,name){
  const cur=IRAN_NODE_CARRIERS.indexOf(mode)>=0?mode:'ws';
  const id='icar_'+iran+'__'+name;
  const opts=IRAN_NODE_CARRIERS.map(c=>`<option value="${c}"${c===cur?' selected':''}>${h(t('carrier_'+c)||c.toUpperCase())}</option>`).join('');
- return `<select id="${id}" title="${h(t('carrier'))}" onchange="setIranNodeCarrier('${iran}','${esc(name)}',this.value,'${cur}')">${opts}</select>`;
+ return `<select id="${h(id)}" title="${h(t('carrier'))}" data-icar-iran="${h(iran)}" data-icar-name="${h(name)}" data-icar-cur="${h(cur)}">${opts}</select>`;
 }
 
 // avaz kardan-e transport-e YEK node samt-e Iran ba hamahang-sazi-ye khodkar-e do-tarafe.
@@ -2236,8 +2532,8 @@ function iranNodeCarrierSel(iran,ov,name){
 // hamel-haye frp/gre/frp_gre voroodi-e bishtar (IP/transport) mikhahand → modal.
 async function setIranNodeCarrier(iran,name,next,cur){
  if(next===cur)return;
- const sel=$('icar_'+iran+'__'+name);
- const revert=()=>{if(sel)sel.value=cur;};
+ const getSel=()=>$('icar_'+iran+'__'+name);
+ const revert=()=>{const el=getSel();if(el)el.value=cur;};
  if(next==='frp'||next==='gre'||next==='frp_gre'){quickCarrierModal(iran,name,next);revert();return;}
  const peers=SERVERS.filter(s=>s.role==='node');
  const sNode=findNodeServer(name)||(peers.length===1?peers[0]:null);
@@ -2250,29 +2546,21 @@ async function setIranNodeCarrier(iran,name,next,cur){
  if(!confirm(t('icarrier_confirm').replace('%s',t('carrier_'+next)||next).replace('%n',name))){revert();return;}
  const existingIran=((OVS[iran]||{}).nodes||[]).find(x=>x.name===name);
  const port=(existingIran&&(existingIran.inbound_port||existingIran.inbound))||null;
- toast(t('carrier_syncing').replace('%s',next.toUpperCase()));
+ const sel0=getSel(); if(sel0)sel0.disabled=true;
+ toast(t('carrier_syncing').replace('%s',next.toUpperCase()),0);
  try{
   const ok=await configureServiceCarrier(iran,name,next,port,{node_server:sNode.name,silent:true});
   if(ok===false){revert();return;}          // configureServiceCarrier khodesh toast-e khata midahad
   toast(t('carrier_synced').replace('%s',next.toUpperCase()));
-  await loadOv(iran);await loadOv(sNode.name);
  }catch(e){
   revert();
   toast('⚠️ '+(e&&e.message?e.message:t('carrier_sync_fail')));
+ }finally{
+  const el=getSel(); if(el)el.disabled=false;
  }
 }
 
-function bhOnNode(n){formModal(t('t_bh_node'),bhNodeFields(),
-  v=>{const hasPort = /:[0-9]{1,5}$/.test(v.domain); const direct = hasPort && !/:443$/.test(v.domain); closeModal();run(n,'backhaul_on',{mode:direct?'direct_ip':'nginx_tls',remote_addr:v.domain,token:v.token,transport:v.transport||(direct?'wsmux':'wssmux'),profile:v.profile||'balanced'});});
- const sel=$('f_iran');
- if(sel){sel.onchange=()=>bhAutofill(sel.value);
-   const box=sel.closest('.row');
-   if(box){const b=document.createElement('button');b.className='s';b.textContent='↻';
-     b.title=t('l_autofill');b.onclick=e=>{e.preventDefault();bhAutofill(sel.value);};box.appendChild(b);}
-   bhAutofill(sel.value);
- }}
-
-// list-e serverhaye Iran (baraye autofill-e KCP)
+ // list-e serverhaye Iran (baraye autofill-e KCP)
 function iranServers(){return SERVERS.filter(s=>s.role==='iran');}
 // gozine-haye <option> baraye entekhab-e server Iran (host be onvan value)
 function iranSrvOptions(){return iranServers().map(s=>`<option value="${h(s.host)}">${h(s.name)} (${h(s.host)})</option>`).join('');}
@@ -2371,16 +2659,6 @@ function kcpNodeFields(){
  f.push({id:'profile',label:t('l_profile'),type:'select',val:'balanced',opts:PROF});
  return f;
 }
-function kcpOnNode(n){formModal(t('t_kcp_node'),kcpNodeFields(),
-  v=>{closeModal();run(n,'kcp_on',{remote:v.remote,key:v.key,profile:v.profile||'balanced'});});
- // dokme-ye autofill + trigger ba taghir-e select
- const sel=$('f_iran');
- if(sel){sel.onchange=()=>kcpAutofill(sel.value);
-   const box=sel.closest('.row');
-   if(box){const b=document.createElement('button');b.className='s';b.textContent='↻';
-     b.title=t('l_autofill');b.onclick=e=>{e.preventDefault();kcpAutofill(sel.value);};box.appendChild(b);}
-   kcpAutofill(sel.value); // avvalin bar khodkar por kon
- }}
 function upKcpOn(n,id){formModal(t('t_kcp_up')+' ('+id+')',kcpNodeFields(),
   v=>{closeModal();run(n,'upstream_kcp_on',{id,remote:v.remote,key:v.key,profile:v.profile||'balanced'});});
  const sel=$('f_iran');
@@ -2421,6 +2699,109 @@ function editServer(n){const s=fnd(n);
 
 async function savePw(){const cur=$('cpw').value,nw=$('npw').value;if(!nw){toast(t('need_newpw'));return;}const {status,j}=await api('POST','api/config',{current_password:cur,new_password:nw});if(status!==200){toast('error: '+(j.error||status));return;}toast(t('pw_changed'));$('cpw').value='';$('npw').value='';}
 async function rotTok(){if(!confirm(t('cf_rottok')))return;const {status,j}=await api('POST','api/config',{rotate_token:true});if(status!==200){toast('error: '+(j.error||status));return;}TOKEN=j.api_token;localStorage.setItem('rh_token',TOKEN);toast(t('tok_applied'));renderSettingsPage();}
+function positionMoreMenu(d){
+ const menu=d&&d.querySelector('.more-menu'), sum=d&&d.querySelector('summary');
+ if(!menu||!sum)return;
+ if(!d.open){menu.classList.remove('fixed-menu');menu.style.top='';menu.style.left='';return;}
+ menu.classList.add('fixed-menu');
+ menu.style.top='0px';
+ menu.style.left='0px';
+ const origin=menu.getBoundingClientRect();
+ const sr=sum.getBoundingClientRect(), mr=menu.getBoundingClientRect();
+ const isRtl=document.documentElement.dir==='rtl';
+ const top=(sr.bottom+6+mr.height<=window.innerHeight-12)?(sr.bottom+6):Math.max(12,sr.top-mr.height-6);
+ let left=isRtl?sr.left:(sr.right-mr.width);
+ left=Math.max(12,Math.min(left,window.innerWidth-mr.width-12));
+ menu.style.top=(top-origin.top)+'px';
+ menu.style.left=(left-origin.left)+'px';
+}
+function filterTableRows(wrapId,query){
+ const wrap=$(wrapId); if(!wrap)return;
+ const q=String(query||'').trim().toLowerCase();
+ wrap.querySelectorAll('tr').forEach((tr,idx)=>{
+  if(tr.querySelector('th')&&idx===0)return;
+  if(tr.closest('thead'))return;
+  tr.style.display=(!q||tr.textContent.toLowerCase().includes(q))?'':'none';
+ });
+}
+function bindDelegatedEvents(){
+ if(typeof document==='undefined'||document._rthBound)return;
+ document._rthBound=true;
+ document.addEventListener('toggle',e=>{
+  const d=e.target;
+  if(d&&d.matches&&d.matches('details.more'))positionMoreMenu(d);
+ },true);
+ document.addEventListener('click',e=>{
+  const tgt=e.target&&e.target.closest?e.target:null;
+  const curMore=tgt?tgt.closest('details.more'):null;
+  document.querySelectorAll('details.more[open]').forEach(d=>{if(d!==curMore){d.open=false;positionMoreMenu(d);}});
+  if(!tgt)return;
+  const roleBtn=tgt.closest('[data-flt-role]');
+  if(roleBtn){setDashFilter({role:roleBtn.dataset.fltRole});return;}
+  const stBtn=tgt.closest('[data-flt-st]');
+  if(stBtn){setDashFilter({status:stBtn.dataset.fltSt});return;}
+  const svcBtn=tgt.closest('[data-svc-call]');
+  if(svcBtn){
+   const m=svcBtn.closest('details.more');if(m){m.open=false;positionMoreMenu(m);}
+   const ds=svcBtn.dataset;
+   if(ds.svcCall==='serviceControl')serviceControl(ds.server,ds.name,ds.action);
+   else if(ds.svcCall==='nodeServiceAction')nodeServiceAction(ds.server,ds.name,ds.action);
+   return;
+  }
+  const actBtn=tgt.closest('[data-act]');
+  if(!actBtn)return;
+  const ds=actBtn.dataset, srv=ds.srv, nm=ds.name, id=ds.id;
+  switch(ds.act){
+   case 'show_node': run(srv,'show_node',{name:nm}); break;
+   case 'wire_node': wireNode(srv,nm); break;
+   case 'edit_node': editNode(srv,nm); break;
+   case 'rename_node': renameNode(srv,nm); break;
+   case 'rotate_node': if(confirmT('cf_rotate',nm))run(srv,'rotate_node',{name:nm}); break;
+   case 'rm_node': rmNode(srv,nm); break;
+   case 'game_rm': run(srv,'game_rm',{name:nm}); break;
+   case 'rm_bh_svc': rmBhSvc(srv,nm); break;
+   case 'rm_svc': rmSvc(srv,nm); break;
+   case 'up_restart': run(srv,'upstream_restart',{id}); break;
+   case 'up_status': run(srv,'upstream_status',{id}); break;
+   case 'up_logs': run(srv,'upstream_logs',{id}); break;
+   case 'up_add_svc': upAddSvc(srv,id); break;
+   case 'up_rm': upRm(srv,id); break;
+   case 'up_rm_svc': upRmSvc(srv,id,nm); break;
+  }
+ });
+ document.addEventListener('input',e=>{
+  const el=e.target;
+  if(el&&el.dataset&&el.dataset.tblFilter)filterTableRows(el.dataset.tblFilter,el.value);
+ });
+ document.addEventListener('change',e=>{
+  const el=e.target;
+  if(!el||!el.dataset)return;
+  if(el.dataset.icarIran!=null)setIranNodeCarrier(el.dataset.icarIran,el.dataset.icarName,el.value,el.dataset.icarCur);
+  else if(el.dataset.upcarSrv!=null)setUpCarrier(el.dataset.upcarSrv,el.dataset.upcarId,el.value,el.dataset.upcarCur);
+ });
+ document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&String(e.key).toLowerCase()==='k'&&TOKEN){
+   e.preventDefault();
+   const d=$('cmdk');
+   if(d&&d.open)closeCmdPalette();
+   else openCmdPalette();
+   return;
+  }
+  if(e.key==='Escape')document.querySelectorAll('details.more[open]').forEach(d=>{d.open=false;positionMoreMenu(d);});
+ });
+ if(typeof window!=='undefined'&&window.addEventListener){
+  window.addEventListener('scroll',()=>{document.querySelectorAll('details.more[open]').forEach(d=>{d.open=false;positionMoreMenu(d);});},true);
+  window.addEventListener('storage',e=>{
+   if(e.key==='rh_theme'){THEME_PREF=(e.newValue==='light'||e.newValue==='dark')?e.newValue:'';applyStatic();}
+   else if(e.key==='rh_sb_collapsed'){applyStatic();}
+  });
+  if(typeof matchMedia==='function'){
+   const mq=matchMedia('(prefers-color-scheme:light)');
+   if(mq&&mq.addEventListener)mq.addEventListener('change',()=>{if(!THEME_PREF)applyStatic();});
+  }
+ }
+}
 // refresh-e khodkar: faghat overview-haye safhe-ye faal (server SSH kamtar mikhorad)
-setInterval(()=>{if($('auto')&&$('auto').checked&&TOKEN)pollByPage();},20000);
+setInterval(()=>{if($('auto')&&$('auto').checked&&TOKEN&&!document.querySelector('details.more[open]'))pollByPage();},20000);
+bindDelegatedEvents();
 shell();

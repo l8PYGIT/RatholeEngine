@@ -9,7 +9,9 @@ class TestAgent(unittest.TestCase):
     def setUpClass(cls):
         cls.token = "test-secret-token-12345678"
         cls.port = 0
-        cls.server = ratholeagent.create_agent_server("127.0.0.1", cls.port, cls.token, role="node")
+        cls.server = ratholeagent.create_agent_server(
+            "127.0.0.1", cls.port, cls.token, role="node", allow_test_python=True
+        )
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -46,7 +48,7 @@ class TestAgent(unittest.TestCase):
         process.__enter__ = Mock(return_value=process)
         process.__exit__ = Mock(return_value=False)
         with patch.object(ratholeagent.os, 'name', 'posix'), patch.object(ratholeagent.os, 'killpg', create=True) as killpg, patch.object(ratholeagent.subprocess, 'Popen', return_value=process) as popen:
-            status, result = self.post_payload({'cmd':['cat'], 'timeout':1})
+            status, result = self.post_payload({'cmd':['ratholectl'], 'timeout':1})
         self.assertEqual(status, 200)
         self.assertEqual(result['rc'], 124)
         self.assertTrue(popen.call_args.kwargs['start_new_session'])
@@ -69,9 +71,9 @@ class TestAgent(unittest.TestCase):
         self.assertIn("bounded", result["out"])
 
     def test_invalid_execution_payloads(self):
-        for payload in [[], None, {"cmd": [None]}, {"cmd": ["cat"], "timeout": "bad"},
-                        {"cmd": ["cat"], "timeout": 0}, {"cmd": ["cat"], "timeout": 3601},
-                        {"cmd": ["timeout", "-1", "cat"]}]:
+        for payload in [[], None, {"cmd": [None]}, {"cmd": ["ratholectl"], "timeout": "bad"},
+                        {"cmd": ["ratholectl"], "timeout": 0}, {"cmd": ["ratholectl"], "timeout": 3601},
+                        {"cmd": ["timeout", "-1", "ratholectl"]}]:
             with self.subTest(payload=payload):
                 self.assertEqual(self.post_payload(payload)[0], 400)
         self.assertEqual(self.post_payload({"cmd": ["timeout", "5", "forbidden-binary"]})[0], 403)
@@ -118,6 +120,61 @@ class TestAgent(unittest.TestCase):
             data = json.loads(resp.read().decode())
             self.assertEqual(data.get("rc"), 0)
             self.assertIn("agent-ok", data.get("out", ""))
+
+    def test_default_agent_blocks_shells_and_path_traversal(self):
+        srv = ratholeagent.create_agent_server("127.0.0.1", 0, "sec-tok-123", role="node")
+        port = srv.server_address[1]
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            for bad_cmd in [
+                ["bash", "-c", "id"],
+                ["python3", "-c", "print(1)"],
+                [sys.executable, "-c", "print(1)"],
+                ["curl", "http://127.0.0.1"],
+                ["cat", "/etc/passwd"],
+                ["/tmp/evil/ratholectl", "ls"],
+                ["../ratholectl", "ls"],
+            ]:
+                with self.subTest(bad_cmd=bad_cmd):
+                    req = urllib.request.Request(
+                        f"http://127.0.0.1:{port}/api/exec",
+                        data=json.dumps({"cmd": bad_cmd}).encode(),
+                        headers={"Content-Type": "application/json", "Authorization": "Bearer sec-tok-123"},
+                    )
+                    try:
+                        urllib.request.urlopen(req, timeout=5)
+                        self.fail(f"Expected 403 for {bad_cmd}")
+                    except urllib.error.HTTPError as e:
+                        self.assertEqual(e.code, 403)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+            t.join(timeout=5)
+
+    def test_empty_token_rejected(self):
+        with self.assertRaises(ValueError):
+            ratholeagent.create_agent_server("127.0.0.1", 0, "", role="node")
+        with self.assertRaises(ValueError):
+            ratholeagent.create_agent_server("127.0.0.1", 0, "   ", role="node")
+
+        h = object.__new__(ratholeagent.AgentHandler)
+        h.server_token = ""
+        h.headers = {"Authorization": "Bearer "}
+        sent = []
+        h._send_json = lambda code, body: sent.append((code, body))
+        self.assertFalse(h._auth())
+        self.assertGreaterEqual(sent[0][0], 400)
+
+    def test_log_message_logs_4xx_5xx(self):
+        h = object.__new__(ratholeagent.AgentHandler)
+        h.address_string = lambda: "127.0.0.1"
+        err = io.StringIO()
+        with patch.object(sys, "stderr", err):
+            h.log_message('"%s" %s %s', "POST /api/exec HTTP/1.1", "403", "-")
+            h.log_message('"%s" %s %s', "GET /api/ping HTTP/1.1", "200", "-")
+        self.assertIn("403", err.getvalue())
+        self.assertNotIn("200", err.getvalue())
 
 if __name__ == "__main__":
     unittest.main()

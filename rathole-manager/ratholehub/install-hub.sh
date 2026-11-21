@@ -24,14 +24,15 @@ install -m755 "$SCRIPT_DIR/hub.py" "$APP_DIR/hub.py"
 # hubcmds.py (naghshe-ye action→argv، bakhsh-e amniati) va asset-haye UI joda hastand
 # va HATMAN bayad kenar-e hub.py nasb shavand، vagarna hub bala nemiayad / UI khali ast.
 install -m644 "$SCRIPT_DIR/hubcmds.py" "$APP_DIR/hubcmds.py"
+[ -f "$SCRIPT_DIR/ssh_proxy.py" ] && install -m644 "$SCRIPT_DIR/ssh_proxy.py" "$APP_DIR/ssh_proxy.py"
 mkdir -p "$APP_DIR/ui"
-for f in index.html app.css app.js i18n.js; do
+for f in index.html app.css app.js i18n.js vazirmatn.woff2; do
   [ -f "$SCRIPT_DIR/ui/$f" ] || die "file-e UI peyda nashod: ui/$f (baste naghes ast)."
   install -m644 "$SCRIPT_DIR/ui/$f" "$APP_DIR/ui/$f"
 done
 # asset-haye ghadimi ke digar dar baste nistand ra pak kon (apdit az noskhe-ye ghadimi)
 find "$APP_DIR/ui" -maxdepth 1 -type f ! -name 'index.html' ! -name 'app.css' \
-     ! -name 'app.js' ! -name 'i18n.js' -delete 2>/dev/null || true
+     ! -name 'app.js' ! -name 'i18n.js' ! -name 'vazirmatn.woff2' -delete 2>/dev/null || true
 log "hub.py + hubcmds.py + ui/ nasb shod: $APP_DIR"
 
 # astij kardan bainriha baraye ghablit deploy (apdit az rah dvr nodeha)
@@ -54,7 +55,9 @@ if [ ! -f "$CONF_DIR/config.json" ]; then
   fi
   [ -n "$PW" ] || die "ramz khali nemishavad (bedoon tty؟ dasti ejra kon: sudo bash install-hub.sh)."
   PWHASH="$(printf '%s' "$PW" | sha256sum | cut -d' ' -f1)"
-  cat > "$CONF_DIR/config.json" <<EOF
+  (
+    umask 077
+    cat > "$CONF_DIR/config.json" <<EOF
 {
   "api_token": "$API_TOKEN",
   "admin_password_sha256": "$PWHASH",
@@ -65,13 +68,14 @@ if [ ! -f "$CONF_DIR/config.json" ]; then
   "bundle_dir": "$BUNDLE_DIR"
 }
 EOF
+  )
   chmod 600 "$CONF_DIR/config.json"
   log "config sakhte shod: $CONF_DIR/config.json"
   echo "  $(c_y 'API TOKEN:') $API_TOKEN   (baraye atsal abzarhaye digar nghdar)"
 else
   warn "config mojood ast; dst nkhvrd."
 fi
-[ -f "$CONF_DIR/inventory.json" ] || { echo "[]" > "$CONF_DIR/inventory.json"; chmod 600 "$CONF_DIR/inventory.json"; }
+[ -f "$CONF_DIR/inventory.json" ] || ( umask 077 && echo "[]" > "$CONF_DIR/inventory.json" && chmod 600 "$CONF_DIR/inventory.json" )
 
 cat > /etc/systemd/system/ratholehub.service <<UNIT
 [Unit]

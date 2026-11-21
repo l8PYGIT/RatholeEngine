@@ -19,7 +19,7 @@ sudo bash install-hub.sh          # رمز مدیریت می‌پرسد، API TO
 sudo ratholectl hub on 8088       # → https://<domain>/hub/
 ```
 
-نصاب کل درخت را کپی می‌کند: `hub.py` (روتر/وضعیت/SSH/Agent)، **`hubcmds.py`** (نقشه‌ی امنیتی action→argv — بدون این فایل هاب بالا نمی‌آید) و پوشه‌ی **`ui/`** (`index.html`، `app.css`، `app.js`، `i18n.js`). `update.sh` هم هنگام آپدیت نقش هاب همه را به‌روز می‌کند.
+نصاب کل درخت را کپی می‌کند: `hub.py` (روتر/وضعیت/SSH/Agent)، **`hubcmds.py`** (نقشه‌ی امنیتی action→argv — بدون این فایل هاب بالا نمی‌آید) و پوشه‌ی **`ui/`** (`index.html`، `app.css`، `app.js`، `i18n.js`، `vazirmatn.woff2`). `update.sh` هم هنگام آپدیت نقش هاب همه را به‌روز می‌کند.
 پیش‌نیاز SSH (اگر از حالت Agent استفاده نمی‌کنید): از سرور پنل به بقیه سرورها SSH با کلید ست باشد:
 ```bash
 ssh-copy-id root@<node_ip>
@@ -33,16 +33,17 @@ ssh -L 8088:127.0.0.1:8088 root@<rp01_ip>
 # مرورگر:  http://localhost:8088
 ```
 
-## رابط کاربری (v2.0.2)
-- **صفحه‌ها**: `#/dashboard` (کارت/فهرست سرورها، Provision، آپدیت همه، وضعیت هاب)، `#/server/<name>` (ایران: ۴ تب نودها/حامل‌ها/شبکه/نگهداری + دامنه، Ports، ingress؛ نود: تونل اصلی، جدول یکپارچهٔ سرویس‌ها، upstream)، `#/routing` (**فقط‌خواندنی**: گراف SVG قابل جابه‌جایی، جدول، کنسول)، `#/audit`، `#/settings`.
-- **سلکتور حامل در ردیف هر نود (صفحه‌ی ایران، v2.0.4)**: انتخاب حامل همان نود از داخل جدول — یک تأیید، اعمال **دوطرفه (ایران + نود)** با پارامترهای خودکار و بازگشت سلکتور در صورت شکست سمت نود. برای `frp`/`gre`/`frp_gre` مودال کامل باز می‌شود.
+## رابط کاربری (v2.1.0)
+- **طراحی شیشه‌ای Apple Glass (آفلاین و بدون CDN):** باندل فونت متغیر **`vazirmatn.woff2`**، تم سه‌حالتهٔ **روشن / تاریک / هماهنگ با سیستم**، مودال‌های native `<dialog>`، **۴ کارت KPI** در داشبورد، **نوار جستجو و فیلتر زنده**، **پالت فرمان `⌘K / Ctrl+K`** و بارگذاری موازی سریع‌تر وضعیت سرورها (همراه با کش کوتاه‌مدت TTL).
+- **صفحه‌ها**: `#/dashboard` (۴ کارت KPI، نوار وضعیت هاب، فیلتر/کارت/فهرست سرورها، Provision، آپدیت همه)، `#/server/<name>` (ایران: ۴ تب نودها/حامل‌ها/شبکه/نگهداری + جستجوی زنده، دامنه، Ports، ingress؛ نود: تونل اصلی، جدول یکپارچهٔ سرویس‌ها، upstream)، `#/routing` (**فقط‌خواندنی**: گراف SVG قابل جابه‌جایی، جدول، کنسول)، `#/audit` (با جستجوی زنده)، `#/settings` (انتخابگر سه‌حالتهٔ تم، زبان، پروکسی، چرخش توکن و رمز).
+- **سلکتور حامل در ردیف هر نود (صفحه‌ی ایران، v2.0.4+)**: انتخاب حامل همان نود از داخل جدول — یک تأیید، اعمال **دوطرفه (ایران + نود)** با پارامترهای خودکار، پیام صریح نتیجهٔ همگام‌سازی و بازگشت سلکتور در صورت شکست سمت نود. برای `frp`/`gre`/`frp_gre` مودال کامل باز می‌شود.
 - **کنترل سرویس‌ها (منوی ⋯ هر ردیف)**: در ردیف هر سرویس — هم ایران و هم نود — دکمه‌ی **⋯** این پنج اکشن را باز می‌کند: «حامل و پروتکل» (فرم کامل)، «تست سلامت» (`doctor` روی ایران)، «ساخت کانفیگ VLESS» (با UUID واقعی کاربر Xray + دامنه/IP عمومی ایران)، «مدیریت سمت مقابل» و «حذف از دو سمت». لینک قدیمی `#/wiring` به داشبورد برمی‌گردد.
 - **برچسب حامل + پروتکل واقعی**: مثل `FRP / QUIC`، `FRP / TCP`، `Backhaul / WSMUX`، `KCP / UDP · balanced`؛ `?` یعنی پروتکل از سرور گزارش نشده. برچسب به‌تنهایی تضمین اتصال نیست؛ تست سلامت ملاک است.
-- **تغییر حامل**: پورت اینباند موجود حفظ می‌شود؛ Backhaul رجیستری جدا (`bh-services.conf`) دارد؛ حامل اصلی بین سرویس‌های Rathole یک نود مشترک است. بازگشت خودکار کامل برای همه‌ی ترکیب‌های حامل تضمین نشده است.
+- **تغییر حامل**: پورت اینباند موجود حفظ می‌شود؛ Backhaul رجیستری جدا (`bh-services.conf`) دارد؛ **ترانسپورت انتخابی FRP (`tcp|kcp|quic|websocket`) پس از `frp off` حفظ می‌شود** تا بازگشت به FRP همان مد قبلی را بالا بیاورد؛ حامل اصلی بین سرویس‌های Rathole یک نود مشترک است.
 - **دو registry سرویس** — `services.conf` برای lane رتهول و `bh-services.conf` برای Backhaul؛ جدول و actionهای جدا، بدون خاموش‌کردن `rathole-client` هنگام روشن‌شدن Backhaul.
 - **routing فقط‌خواندنی** — چیدمان گراف در مرورگر ذخیره می‌شود؛ تغییر مسیر از صفحه‌ی سرور/نود.
 - **لاگ قابل دریافت** — خروجی بلند در modal قابل کپی باز می‌شود و logها به فایل متنی دانلود می‌شوند.
-- **دکمهٔ «آپدیت همه»** + **badge نسخه** (سبز = هم‌سان با `latest_version` هاب، زرد = قدیمی).
+- **دکمهٔ «آپدیت همه»** + **badge نسخه** (سبز = هم‌سان با `latest_version` هاب، قرمز/زرد = قدیمی).
 - **«افزودن به نود»** (token/inbound از `nodeconnect` → `add_svc`/`upstream_add_svc`) و **«تنظیم تانل اصلی»** (`set_server`/`set_main`).
 
 ## REST Agent (بدون SSH)
@@ -54,10 +55,10 @@ sudo ratholectl agent on 8089 [TOKEN]
 sudo ratholenode agent on 8089 [TOKEN]
 sudo ratholectl agent status|token|show|restart|off
 ```
-`install-panel.sh`/`install-node.sh` از قبل `ratholeagent.py` و `install-agent.sh` را در `/usr/local/share/rathole/` می‌گذارند و `install-agent.sh` را در `/usr/local/bin/` سیم‌لینک می‌کنند؛ `update.sh` هر دو را به‌روز می‌کند و توکن را حفظ می‌کند. unit روی هر دو نقش `rathole-agent.service` است.
+`install-panel.sh`/`install-node.sh` از قبل `ratholeagent.py` و `install-agent.sh` را در `/usr/local/share/rathole/` می‌گذارند و `install-agent.sh` را در `/usr/local/bin/` سیم‌لینک می‌کنند؛ `update.sh` هر دو را به‌روز می‌کند و توکن را حفظ می‌کند (در ری‌استارت از داخل agent هم `update.sh` آن را خارج از cgroup زمان‌بندی می‌کند). unit روی هر دو نقش `rathole-agent.service` است.
 - `GET /api/ping` → `{ok, role, version, hostname}` (بدون احراز هویت).
 - `POST /api/exec` با `Authorization: Bearer <token>` و بدنه `{"cmd":["ratholectl","status","--json"],"timeout":120}` → `{ok, rc, out, err}`.
-- توکن در `/etc/rathole-agent/token` (chmod 600)؛ احراز هویت با compare ثابت‌زمان (401/403)؛ بدنه ۱ بایت تا ۱ مگابایت؛ `cmd` لیست غیرخالی رشته‌ها؛ timeout ۱–۳۶۰۰ ثانیه؛ **لیست‌سفید باینری** (ratholectl، ratholenode، bash، python3، python، systemctl، journalctl، curl، jq، cat، tail، ls) — اجرا مستقیم argv، بدون شل.
+- توکن در `/etc/rathole-agent/token` (chmod 600؛ اجرای agent بدون توکن ممکن نیست)؛ احراز هویت با compare ثابت‌زمان (401/403)؛ بدنه ۱ بایت تا ۱ مگابایت؛ `cmd` لیست غیرخالی رشته‌ها؛ timeout ۱–۳۶۰۰ ثانیه؛ **لیست‌سفید محدود باینری** (`ratholectl`، `ratholenode`، `systemctl`، `journalctl`، `jq`، `tail`؛ مسیرهای دارای `/` مسدوداند) — اجرا مستقیم argv، بدون شل.
 - HTTPS با `--tls-cert`/`--tls-key` (یا `/etc/rathole-agent/cert.pem` + `key.pem`)؛ برای گواهی self-signed در رکورد هاب `insecure_ssl: true` یا روی هاب `RATHOLE_AGENT_INSECURE_SSL=1`.
 - رکورد هاب: `{"name","role","transport":"api","api_url","api_token","insecure_ssl"?,"proxy"?}`. `api_url` فقط `http(s)://host[:port]`. همه‌ی actionها همچنان از allow-list `hubcmds.py` عبور می‌کنند و نوشتن‌ها در audit ثبت می‌شوند. Agent پیش‌فرض روی `0.0.0.0` گوش می‌دهد؛ پورت `8089` و توکن را محدود کنید.
 

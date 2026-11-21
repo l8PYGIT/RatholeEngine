@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """test_hub.py — task 8: barresi build_node_cmd adaptive allow-list + input validation"""
-import sys, os, unittest, importlib.util, types
+import sys, os, json, unittest, importlib.util, types
 from unittest import mock
 
 # ---- hub.py ra load mikonim bedoon ajra-ye main ----
@@ -409,6 +409,68 @@ class TestIranPublicHostAndLs(unittest.TestCase):
         self.assertEqual(nodes[0]["name"], "trknetlen")
         self.assertEqual(nodes[0]["inbound"], "1001")
         self.assertEqual(nodes[0]["inbound_port"], "1001")
+
+
+class TestFastOverview(unittest.TestCase):
+    def test_iran_overview_skips_slow_doctor_and_uses_status_json(self):
+        calls = []
+        status_payload = {
+            "domain": "iran.example.com",
+            "public_ip": "45.234.54.9",
+            "ports": {"control": 2333, "fake": 8080, "frp": 7000},
+            "services": {
+                "rathole_server": "yes",
+                "nginx": "yes",
+                "nginx_config_ok": "yes",
+                "frp": "yes",
+                "noise": "off",
+                "backhaul": "off",
+            },
+            "features": {
+                "plain": {"configured": False, "active": False, "port": None},
+                "direct": {"configured": False, "active": False, "port": None},
+                "noise": {"configured": False, "active": False, "port": None},
+                "backhaul": {"configured": False, "active": False, "port": None, "mode": "nginx_tls", "transport": "wsmux"},
+                "frp": {"configured": True, "active": True, "port": 7000, "transport": "quic"},
+                "gre": {"configured": False, "active": False, "name": None, "remote_ip": "", "tunnel_ip": ""},
+            },
+            "nodes": [
+                {"name": "de1", "port": 21001, "inbound_port": 8080, "api_local_port": None, "sni": None, "transport": "frp"}
+            ],
+        }
+
+        def fake_run(server, args, timeout=120):
+            calls.append(list(args))
+            if args == ["ratholectl", "status", "--json"]:
+                return {"rc": 0, "out": json.dumps(status_payload), "err": ""}
+            if args == ["ratholectl", "kcp", "status"]:
+                return {"rc": 0, "out": "KCP: khamoosh\n", "err": ""}
+            if args == ["ratholectl", "version"]:
+                return {"rc": 0, "out": "rathole-manager v2.0.4\n", "err": ""}
+            return {"rc": 0, "out": "", "err": ""}
+
+        sent = {}
+        handler = object.__new__(hub.Handler)
+        handler._find = lambda name: {"name": "iranhub", "role": "iran", "transport": "api", "api_url": "http://127.0.0.1:8089"}
+        handler._send = lambda code, body: sent.update({"code": code, "body": body})
+
+        with mock.patch.object(hub, "run_on_server", side_effect=fake_run):
+            handler._overview("iranhub")
+
+        self.assertEqual(sent["code"], 200)
+        ov = sent["body"]
+        self.assertTrue(ov["reachable"])
+        self.assertEqual(ov["domain"], "iran.example.com")
+        self.assertEqual(len(ov["nodes"]), 1)
+        self.assertEqual(ov["nodes"][0]["transport"], "frp")
+        self.assertEqual(ov["frp"]["transport"], "quic")
+        self.assertTrue(ov["frp"]["enabled"])
+        self.assertEqual(ov["health"]["fail"], 0)
+        self.assertGreaterEqual(ov["health"]["ok"], 3)
+        # Must NOT invoke slow `doctor` (which hangs 6-9s on WS curl probes)
+        self.assertFalse(any("doctor" in c for c in calls), f"unexpected doctor call: {calls}")
+        # Must keep remote command count minimal (<= 3)
+        self.assertLessEqual(len(calls), 3, f"too many remote calls: {calls}")
 
 
 if __name__ == "__main__":

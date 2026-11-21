@@ -9,17 +9,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 AGENT_VERSION = "1.0.0"
 ALLOWED_BINARIES = {
-    "ratholectl", "ratholenode", "bash", "python3", "python",
-    "systemctl", "journalctl", "curl", "jq", "cat", "tail", "ls"
+    "ratholectl", "ratholenode", "systemctl", "journalctl", "jq", "tail"
 }
 
 class AgentHandler(BaseHTTPRequestHandler):
     server_token = ""
     server_role = "node"
+    allow_test_python = False
+    timeout = 30
 
     def log_message(self, format, *args):
         # Mute verbose access logs to stdout; write only errors
-        if args and str(args[0]).startswith(('4', '5')):
+        if len(args) >= 2 and str(args[1]).startswith(('4', '5')):
             sys.stderr.write(f"[agent] {self.address_string()} - {format % args}\n")
 
     def _send_json(self, status, payload):
@@ -31,6 +32,9 @@ class AgentHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _auth(self):
+        if not self.server_token:
+            self._send_json(503, {"ok": False, "error": "Agent token not configured"})
+            return False
         auth_hdr = self.headers.get("Authorization", "")
         if not auth_hdr:
             self._send_json(401, {"ok": False, "error": "Missing Authorization header"})
@@ -98,12 +102,11 @@ class AgentHandler(BaseHTTPRequestHandler):
                 return
             timeout = min(timeout, int(cmd[1]))
             cmd = cmd[2:]
-        bin_name = os.path.basename(cmd[0])
-        # Allow testing with current python executable
-        is_cur_py = (cmd[0] == sys.executable)
-        if not is_cur_py and bin_name not in ALLOWED_BINARIES:
-            self._send_json(403, {"ok": False, "error": f"Binary '{bin_name}' is not permitted"})
-            return
+        is_cur_py = bool(self.allow_test_python and cmd[0] == sys.executable)
+        if not is_cur_py:
+            if "/" in cmd[0] or "\\" in cmd[0] or cmd[0] not in ALLOWED_BINARIES:
+                self._send_json(403, {"ok": False, "error": f"Binary '{os.path.basename(cmd[0])}' is not permitted"})
+                return
 
         try:
             # session-e joda: timeout bayad bache-process-ha va pipe-haye anha ra ham bebndad.
@@ -132,17 +135,37 @@ class AgentHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json(500, {"ok": False, "rc": 1, "out": "", "err": str(e)})
 
-def create_agent_server(host, port, token, role="node", tls_cert="", tls_key=""):
+class _AgentHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    tls_ctx = None
+
+    def finish_request(self, request, client_address):
+        try:
+            request.settimeout(30)
+            if self.tls_ctx is not None:
+                request = self.tls_ctx.wrap_socket(request, server_side=True)
+        except OSError:
+            try:
+                request.close()
+            except OSError:
+                pass
+            return
+        super().finish_request(request, client_address)
+
+def create_agent_server(host, port, token, role="node", tls_cert="", tls_key="", allow_test_python=False):
+    if not isinstance(token, str) or not token.strip():
+        raise ValueError("Agent authentication token must be non-empty")
     class CustomHandler(AgentHandler):
         pass
-    CustomHandler.server_token = token
+    CustomHandler.server_token = token.strip()
     CustomHandler.server_role = role
-    server = ThreadingHTTPServer((host, port), CustomHandler)
+    CustomHandler.allow_test_python = bool(allow_test_python)
+    server = _AgentHTTPServer((host, port), CustomHandler)
     if tls_cert and tls_key and os.path.exists(tls_cert) and os.path.exists(tls_key):
         import ssl
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(certfile=tls_cert, keyfile=tls_key)
-        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        server.tls_ctx = ctx
         sys.stderr.write(f"[agent] TLS/HTTPS enabled using cert={tls_cert}\n")
     return server
 
@@ -156,19 +179,24 @@ def main():
     parser.add_argument("--tls-key", default="", help="Path to TLS private key for HTTPS")
     args = parser.parse_args()
 
-    token = args.token or os.environ.get("RATHOLE_AGENT_TOKEN", "")
+    token = (args.token or os.environ.get("RATHOLE_AGENT_TOKEN", "")).strip()
     if not token:
         # Check /etc/rathole-agent/token
         token_path = "/etc/rathole-agent/token"
         if os.path.exists(token_path):
             with open(token_path, "r", encoding="utf-8") as f:
                 token = f.read().strip()
+            if not token:
+                sys.stderr.write("[agent] ERROR: Authentication token file is empty\n")
+                sys.exit(1)
         else:
             token = hashlib.sha256(os.urandom(32)).hexdigest()
             try:
                 os.makedirs(os.path.dirname(token_path), exist_ok=True)
-                with open(token_path, "w", encoding="utf-8") as f:
+                fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(token)
+                os.chmod(token_path, 0o600)
             except Exception:
                 pass
         sys.stderr.write("[agent] Authentication token loaded from protected local storage\n")

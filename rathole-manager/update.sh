@@ -31,6 +31,9 @@ BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/rathole-manager}"
 RETENTION="${RATHOLE_BACKUP_RETENTION:-7}"     # tedad snapshot-e negahdari-shode
 AUTO_ROLLBACK=1                                 # ba --no-rollback khamoosh mishavad
 ALLOW_DOWNGRADE="${RATHOLE_ALLOW_DOWNGRADE:-0}" # ba --allow-downgrade (ya env) gard-e zed-e downgrade khamoosh mishavad
+AGENT_RESTART_FLAG="$(mktemp /tmp/rathole-agent-restart.XXXXXX 2>/dev/null || echo "/tmp/rathole-agent-restart.$$")"
+rm -f "$AGENT_RESTART_FLAG"
+trap 'rm -f "${AGENT_RESTART_FLAG:-}"' EXIT
 
 # ---------- pars-e argvman (flag-haye ma jda az flag-haye init) ----------
 DO_ROLLBACK=0; ROLLBACK_TS=""; DO_LIST=0
@@ -49,6 +52,9 @@ done
 set -- "${PASS_ARGS[@]:-}"
 # agar hich PASS_ARG naboode, "$@" yek reshte-ye khali darad; paksazi
 [ "$#" -eq 1 ] && [ -z "${1:-}" ] && shift || true
+if [ -n "$ROLLBACK_TS" ]; then
+  [[ "$ROLLBACK_TS" =~ ^[0-9]{8}-[0-9]{6}$ ]] || die "timestamp-e rollback namotabar ast."
+fi
 
 # ---------- tashkhis-e naghsh(-ha) ----------
 detect_roles(){
@@ -190,7 +196,9 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
         hub)
           echo /opt/ratholehub
           echo /etc/ratholehub
-          _units_glob 'ratholehub.service'
+          echo /usr/local/share/rathole
+          echo /etc/rathole-agent
+          _units_glob 'ratholehub.service' 'rathole-agent.service'
           ;;
       esac
     done
@@ -226,7 +234,7 @@ snapshot_now(){ # $@ = naghsh-ha ; khorooji: masir-e snapshot dir (rooye stdout 
   local rels=(); local p
   for p in "${paths[@]}"; do rels+=("${p#/}"); done
   tar -czf "$dir/backup.tar.gz" -C / "${rels[@]}" 2>/dev/null || {
-    rm -f "$dir/backup.tar.gz"
+    rm -rf "$dir"
     err "sakht-e tar-e backup shekast khord; update motevaghef shod."
     return 1
   }
@@ -244,7 +252,13 @@ prune_snapshots(){
   for d in "${olds[@]:-}"; do [ -n "$d" ] && [ -d "$d" ] && { rm -rf "$d"; log "snapshot-e ghadimi hazf shod: $(basename "$d")" >&2; }; done
 }
 
-latest_snapshot(){ ls -1dt "$BACKUP_ROOT"/pre-update-* 2>/dev/null | head -n1; }
+latest_snapshot(){
+  local d
+  for d in $(ls -1dt "$BACKUP_ROOT"/pre-update-* 2>/dev/null); do
+    [ -d "$d" ] && [ -f "$d/backup.tar.gz" ] && { printf '%s\n' "$d"; return 0; }
+  done
+  return 0
+}
 
 # ---------- list-e backup-ha ----------
 list_backups(){
@@ -278,8 +292,17 @@ node_primary_service(){
 }
 
 # ---------- health-check baraye har naghsh ----------
+_check_aux_unit(){
+  local aux="$1"
+  if systemctl is-enabled --quiet "$aux" 2>/dev/null; then
+    systemctl is-active --quiet "$aux" || { err "health: $aux faal nist."; return 1; }
+  fi
+  return 0
+}
 health_check(){ # $@ = naghsh-ha ; return 0 = salem, 1 = kharab
-  local role bad=0
+  local settle="${RATHOLE_HEALTH_SETTLE:-1}"
+  [ "$settle" -gt 0 ] 2>/dev/null && sleep "$settle" || true
+  local role aux bad=0
   for role in "$@"; do
     case "$role" in
       panel)
@@ -287,7 +310,10 @@ health_check(){ # $@ = naghsh-ha ; return 0 = salem, 1 = kharab
         if command -v nginx >/dev/null 2>&1; then
           nginx -t >/dev/null 2>&1 || { err "health: nginx -t khata dad."; bad=1; }
           systemctl is-active --quiet nginx || { err "health: nginx faal nist."; bad=1; }
-        fi ;;
+        fi
+        for aux in rathole-noise rathole-backhaul-server frps rathole-agent; do
+          _check_aux_unit "$aux" || bad=1
+        done ;;
       node)
         local client_svc; client_svc="$(node_primary_service)"
         local has_svc=0
@@ -302,9 +328,13 @@ health_check(){ # $@ = naghsh-ha ; return 0 = salem, 1 = kharab
           systemctl is-active --quiet "$client_svc" || { err "health: $client_svc faal nist."; bad=1; }
         else
           log "node hanooz service-i nadarad (services.conf khali)؛ barresi-ye $client_svc rad shod."
-        fi ;;
+        fi
+        for aux in rathole-backhaul-client frpc rathole-agent; do
+          _check_aux_unit "$aux" || bad=1
+        done ;;
       hub)
-        systemctl is-active --quiet ratholehub || { err "health: ratholehub faal nist."; bad=1; } ;;
+        systemctl is-active --quiet ratholehub || { err "health: ratholehub faal nist."; bad=1; }
+        _check_aux_unit rathole-agent || bad=1 ;;
     esac
   done
   return "$bad"
@@ -495,10 +525,22 @@ UNIT
 
   if [ -f /etc/systemd/system/rathole-agent.service ]; then
     # token faghat dar file-e root-only bemanad, na unit-e ghabel-e-khandan baraye hame.
+    if [ ! -s /etc/rathole-agent/token ]; then
+      _rth_migrated_tok="$(sed -nE 's/^[[:space:]]*Environment=["\x27]?RATHOLE_AGENT_TOKEN=([^"\x27[:space:]]+)["\x27]?$/\1/p' /etc/systemd/system/rathole-agent.service | head -n1 || true)"
+      if [ -n "$_rth_migrated_tok" ]; then
+        ( umask 077; mkdir -p /etc/rathole-agent; printf '%s\n' "$_rth_migrated_tok" > /etc/rathole-agent/token; chmod 600 /etc/rathole-agent/token )
+      fi
+      unset _rth_migrated_tok
+    fi
     sed -i '/^[[:space:]]*Environment=["\x27]*RATHOLE_AGENT_TOKEN=/d' /etc/systemd/system/rathole-agent.service
+    grep -q '^[[:space:]]*KillMode=' /etc/systemd/system/rathole-agent.service || sed -i '/^\[Service\]/a KillMode=process' /etc/systemd/system/rathole-agent.service
     [ ! -f /etc/rathole-agent/token ] || chmod 600 /etc/rathole-agent/token
     systemctl daemon-reload
-    systemctl restart rathole-agent || return 1
+    # dar update az tarigh-e REST API, khode update.sh dar cgroup-e rathole-agent ast؛
+    # restart-e agent bayad baad az health_check va kharej az cgroup anjam shavad.
+    if systemctl is-active --quiet rathole-agent 2>/dev/null; then
+      [ -n "${AGENT_RESTART_FLAG:-}" ] && printf '1\n' > "$AGENT_RESTART_FLAG"
+    fi
   fi
 
   # --- samt hub ---
@@ -523,7 +565,7 @@ UNIT
       if [ -d "$HUB_DIR/ui" ]; then
         mkdir -p /opt/ratholehub/ui
         local u
-        for u in index.html app.css app.js i18n.js; do
+        for u in index.html app.css app.js i18n.js vazirmatn.woff2; do
           [ -f "$HUB_DIR/ui/$u" ] && install -m 644 "$HUB_DIR/ui/$u" "/opt/ratholehub/ui/$u"
         done
         log "asset-haye UI beroozresani shodand: /opt/ratholehub/ui/"
@@ -538,6 +580,17 @@ UNIT
         warn "restart ratholehub nshd; journalctl -u ratholehub ra bebin."
     else
       warn "hub.py dar baste peyda nashod (ratholehub/hub.py); update hub rad shod."
+    fi
+  fi
+}
+
+finish_agent_restart(){
+  if [ -n "${AGENT_RESTART_FLAG:-}" ] && [ -s "$AGENT_RESTART_FLAG" ]; then
+    rm -f "$AGENT_RESTART_FLAG"
+    if command -v systemd-run >/dev/null 2>&1; then
+      systemd-run --no-block --on-active=2 systemctl restart rathole-agent >/dev/null 2>&1 || systemctl restart rathole-agent || true
+    else
+      systemctl restart rathole-agent || true
     fi
   fi
 }
@@ -578,6 +631,7 @@ if [ "${#ROLES[@]}" -eq 0 ]; then
   downgrade_guard
   # ham-chenan CLI ra beroozresani mikonim (bدون snapshot chون chizi nist)
   apply_update "$@"
+  finish_agent_restart
   exit 0
 fi
 
@@ -599,6 +653,7 @@ set -e
 echo
 if [ "$APPLY_RC" -eq 0 ] && health_check "${ROLES[@]}"; then
   log "health-check pas shod؛ update salem ast."
+  finish_agent_restart
 else
   err "health-check baad az update SHEKAST khord."
   if [ "$AUTO_ROLLBACK" -eq 1 ] && [ -n "$SNAP_DIR" ]; then

@@ -1,181 +1,114 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 1426" font-family="Segoe UI, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 740" width="1200" height="740" font-family="Segoe UI, system-ui, -apple-system, Arial, sans-serif">
   <defs>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#060b16"/>
+      <stop offset="52%" stop-color="#0d1528"/>
+      <stop offset="100%" stop-color="#121c36"/>
+    </linearGradient>
+    <radialGradient id="orbA" cx="20%" cy="15%" r="55%">
+      <stop offset="0%" stop-color="rgba(124,58,237,0.22)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="orbB" cx="85%" cy="85%" r="55%">
+      <stop offset="0%" stop-color="rgba(10,132,255,0.20)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.15" fill="rgba(148,163,184,0.13)"/>
+    </pattern>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#38bdf8"/>
     </marker>
-    <marker id="arrU" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#9333ea"/>
+    <marker id="arrV" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#a78bfa"/>
     </marker>
-    <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/>
+    <marker id="arrG" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#34d399"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#fb7185"/>
+    </marker>
+    <marker id="arrN" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#64748b"/>
     </marker>
   </defs>
-  <rect x="0" y="0" width="1160" height="1426" fill="#ffffff"/>
-  <rect x="20" y="16" width="1120" height="60" rx="8" fill="#0f172a"/>
-  <text x="580" y="39" text-anchor="middle" fill="#ffffff" font-size="19" font-weight="bold">Transport &amp; ingress modes — 8 carriers, 3 ingress modes</text>
-  <text x="580" y="59" text-anchor="middle" fill="#cbd5e1" font-size="12.5">Services, tokens and user paths never change — only the lane that carries the tunnel does.</text>
-  <text x="150" y="96" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">FOREIGN NODE (client side)</text>
-  <text x="580" y="96" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">IRAN ENTRY / CORE</text>
-  <text x="1000" y="96" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">TLS TERMINATION</text>
-  <rect x="20" y="110" width="1120" height="118" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
-  <rect x="34" y="120" width="190" height="30" rx="6" fill="#0f172a"/>
-  <text x="129.0" y="139.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">1 · websocket + TLS</text>
-  <text x="236" y="140" text-anchor="start" font-size="11.5" fill="#065f46">DEFAULT · rathole lane</text>
-  <rect x="42" y="158" width="216" height="70" rx="8" fill="#ffffff" stroke="#059669" stroke-width="1.5"/>
-  <text x="150.0" y="180" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#065f46">rathole client (node)</text>
-  <text x="150.0" y="199" text-anchor="middle" font-size="11" fill="#059669">wss://domain:443</text>
-  <text x="150.0" y="216" text-anchor="middle" font-size="11" fill="#059669">tls = true → nginx</text>
-  <rect x="470" y="158" width="240" height="70" rx="8" fill="#ffffff" stroke="#059669" stroke-width="1.5"/>
-  <text x="590.0" y="180" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#065f46">nginx :443 (TCP)</text>
-  <text x="590.0" y="199" text-anchor="middle" font-size="11" fill="#059669">$http_upgrade on /</text>
-  <text x="590.0" y="216" text-anchor="middle" font-size="11" fill="#059669">→ rathole control :2333</text>
-  <rect x="900" y="158" width="220" height="53" rx="8" fill="#ffffff" stroke="#059669" stroke-width="1.5"/>
-  <text x="1010.0" y="180" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#065f46">nginx (Iran)</text>
-  <text x="1010.0" y="199" text-anchor="middle" font-size="11" fill="#059669">Let's Encrypt cert</text>
-  <line x1="260" y1="192" x2="466" y2="192" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <line x1="712" y1="192" x2="896" y2="192" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="20" y="242" width="1120" height="118" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
-  <rect x="34" y="252" width="190" height="30" rx="6" fill="#0f172a"/>
-  <text x="129.0" y="271.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">2 · kcp (UDP + FEC)</text>
-  <text x="236" y="272" text-anchor="start" font-size="11.5" fill="#1e3a8a">parallel · lossy links</text>
-  <rect x="42" y="290" width="216" height="70" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="150.0" y="312" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#1e3a8a">kcptun client (node)</text>
-  <text x="150.0" y="331" text-anchor="middle" font-size="11" fill="#2563eb">local :29901.. → UDP</text>
-  <text x="150.0" y="348" text-anchor="middle" font-size="11" fill="#2563eb">profile: balanced…</text>
-  <rect x="470" y="290" width="240" height="70" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="590.0" y="312" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#1e3a8a">kcptun server (Iran)</text>
-  <text x="590.0" y="331" text-anchor="middle" font-size="11" fill="#2563eb">UDP :443 (QUIC-like)</text>
-  <text x="590.0" y="348" text-anchor="middle" font-size="11" fill="#2563eb">→ control :2333</text>
-  <rect x="900" y="290" width="220" height="70" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="1010.0" y="312" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#1e3a8a">none on carrier</text>
-  <text x="1010.0" y="331" text-anchor="middle" font-size="11" fill="#2563eb">FEC only; rathole ws</text>
-  <text x="1010.0" y="348" text-anchor="middle" font-size="11" fill="#2563eb">still inside</text>
-  <line x1="260" y1="324" x2="466" y2="324" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <line x1="712" y1="324" x2="896" y2="324" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="20" y="374" width="1120" height="118" rx="12" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
-  <rect x="34" y="384" width="190" height="30" rx="6" fill="#0f172a"/>
-  <text x="129.0" y="403.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">3 · plain (no TLS)</text>
-  <text x="236" y="404" text-anchor="start" font-size="11.5" fill="#713f12">lighter · unencrypted</text>
-  <rect x="42" y="422" width="216" height="70" rx="8" fill="#ffffff" stroke="#ca8a04" stroke-width="1.5"/>
-  <text x="150.0" y="444" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#713f12">rathole client (node)</text>
-  <text x="150.0" y="463" text-anchor="middle" font-size="11" fill="#ca8a04">http://domain:8880</text>
-  <text x="150.0" y="480" text-anchor="middle" font-size="11" fill="#ca8a04">tls = false</text>
-  <rect x="470" y="422" width="240" height="70" rx="8" fill="#ffffff" stroke="#ca8a04" stroke-width="1.5"/>
-  <text x="590.0" y="444" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#713f12">nginx :8880 (http)</text>
-  <text x="590.0" y="463" text-anchor="middle" font-size="11" fill="#ca8a04">separate listener</text>
-  <text x="590.0" y="480" text-anchor="middle" font-size="11" fill="#ca8a04">→ control :2333</text>
-  <rect x="900" y="422" width="220" height="70" rx="8" fill="#ffffff" stroke="#ca8a04" stroke-width="1.5"/>
-  <text x="1010.0" y="444" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#713f12">none</text>
-  <text x="1010.0" y="463" text-anchor="middle" font-size="11" fill="#ca8a04">explicit opt-in</text>
-  <text x="1010.0" y="480" text-anchor="middle" font-size="11" fill="#ca8a04">ALLOW_INSECURE</text>
-  <line x1="260" y1="456" x2="466" y2="456" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <line x1="712" y1="456" x2="896" y2="456" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="20" y="506" width="1120" height="118" rx="12" fill="#fdf4ff" stroke="#a21caf" stroke-width="1.5"/>
-  <rect x="34" y="516" width="190" height="30" rx="6" fill="#0f172a"/>
-  <text x="129.0" y="535.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">4 · noise (encrypted)</text>
-  <text x="236" y="536" text-anchor="start" font-size="11.5" fill="#701a75">no TLS / no cert</text>
-  <rect x="42" y="554" width="216" height="70" rx="8" fill="#ffffff" stroke="#a21caf" stroke-width="1.5"/>
-  <text x="150.0" y="576" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#701a75">rathole client #2 (node)</text>
-  <text x="150.0" y="595" text-anchor="middle" font-size="11" fill="#a21caf">transport = noise</text>
-  <text x="150.0" y="612" text-anchor="middle" font-size="11" fill="#a21caf">X25519 pubkey</text>
-  <rect x="470" y="554" width="240" height="70" rx="8" fill="#ffffff" stroke="#a21caf" stroke-width="1.5"/>
-  <text x="590.0" y="576" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#701a75">rathole-noise (Iran)</text>
-  <text x="590.0" y="595" text-anchor="middle" font-size="11" fill="#a21caf">separate instance</text>
-  <text x="590.0" y="612" text-anchor="middle" font-size="11" fill="#a21caf">public port :2334</text>
-  <rect x="900" y="554" width="220" height="70" rx="8" fill="#ffffff" stroke="#a21caf" stroke-width="1.5"/>
-  <text x="1010.0" y="576" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#701a75">noise itself</text>
-  <text x="1010.0" y="595" text-anchor="middle" font-size="11" fill="#a21caf">own crypto</text>
-  <text x="1010.0" y="612" text-anchor="middle" font-size="11" fill="#a21caf">no nginx in path</text>
-  <line x1="260" y1="588" x2="466" y2="588" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <line x1="712" y1="588" x2="896" y2="588" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="20" y="638" width="1120" height="118" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <rect x="34" y="648" width="190" height="30" rx="6" fill="#0f172a"/>
-  <text x="129.0" y="667.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">5 · Backhaul (SMUX)</text>
-  <text x="236" y="668" text-anchor="start" font-size="11.5" fill="#14532d">separate Go core</text>
-  <rect x="42" y="686" width="216" height="70" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="150.0" y="708" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#14532d">backhaul-client (node)</text>
-  <text x="150.0" y="727" text-anchor="middle" font-size="11" fill="#16a34a">wss / wssmux</text>
-  <text x="150.0" y="744" text-anchor="middle" font-size="11" fill="#16a34a">one muxed stream</text>
-  <rect x="470" y="686" width="240" height="70" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="590.0" y="708" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#14532d">backhaul-server (Iran)</text>
-  <text x="590.0" y="727" text-anchor="middle" font-size="11" fill="#16a34a">127.0.0.1:3080</text>
-  <text x="590.0" y="744" text-anchor="middle" font-size="11" fill="#16a34a">hardcoded /channel + /tunnel</text>
-  <rect x="900" y="686" width="220" height="70" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="1010.0" y="708" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#14532d">nginx (Iran)</text>
-  <text x="1010.0" y="727" text-anchor="middle" font-size="11" fill="#16a34a">terminates TLS</text>
-  <text x="1010.0" y="744" text-anchor="middle" font-size="11" fill="#16a34a">server side stays ws</text>
-  <line x1="260" y1="720" x2="466" y2="720" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <line x1="712" y1="720" x2="896" y2="720" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="20" y="770" width="1120" height="118" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
-  <rect x="34" y="780" width="190" height="30" rx="6" fill="#0f172a"/>
-  <text x="129.0" y="799.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">6 · FRP</text>
-  <text x="236" y="800" text-anchor="start" font-size="11.5" fill="#7c2d12">fatedier/frp core</text>
-  <rect x="42" y="818" width="216" height="70" rx="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
-  <text x="150.0" y="840" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#7c2d12">frpc (node)</text>
-  <text x="150.0" y="859" text-anchor="middle" font-size="11" fill="#ea580c">transport tcp|kcp|quic|ws</text>
-  <text x="150.0" y="876" text-anchor="middle" font-size="11" fill="#ea580c">shared token</text>
-  <rect x="470" y="818" width="240" height="70" rx="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
-  <text x="590.0" y="840" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#7c2d12">frps (Iran)</text>
-  <text x="590.0" y="859" text-anchor="middle" font-size="11" fill="#ea580c">public port :7000</text>
-  <text x="590.0" y="876" text-anchor="middle" font-size="11" fill="#ea580c">proxy → 127.0.0.1</text>
-  <rect x="900" y="818" width="220" height="70" rx="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
-  <text x="1010.0" y="840" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#7c2d12">tcp / quic layer</text>
-  <text x="1010.0" y="859" text-anchor="middle" font-size="11" fill="#ea580c">tls only if websocket</text>
-  <text x="1010.0" y="876" text-anchor="middle" font-size="11" fill="#ea580c">+ nginx</text>
-  <line x1="260" y1="852" x2="466" y2="852" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <line x1="712" y1="852" x2="896" y2="852" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="20" y="902" width="1120" height="118" rx="12" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
-  <rect x="34" y="912" width="190" height="30" rx="6" fill="#0f172a"/>
-  <text x="129.0" y="931.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">7 · GRE (L3)</text>
-  <text x="236" y="932" text-anchor="start" font-size="11.5" fill="#4c1d95">kernel ip tunnel</text>
-  <rect x="42" y="950" width="216" height="70" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
-  <text x="150.0" y="972" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#4c1d95">node tunnel end</text>
-  <text x="150.0" y="991" text-anchor="middle" font-size="11" fill="#7c3aed">10.10.10.2/30</text>
-  <text x="150.0" y="1008" text-anchor="middle" font-size="11" fill="#7c3aed">MTU 1476 · TCPMSS clamp</text>
-  <rect x="470" y="950" width="240" height="70" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
-  <text x="590.0" y="972" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#4c1d95">Iran tunnel end</text>
-  <text x="590.0" y="991" text-anchor="middle" font-size="11" fill="#7c3aed">10.10.10.1/30</text>
-  <text x="590.0" y="1008" text-anchor="middle" font-size="11" fill="#7c3aed">proto 47 (gre)</text>
-  <rect x="900" y="950" width="220" height="70" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="1.5"/>
-  <text x="1010.0" y="972" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#4c1d95">none</text>
-  <text x="1010.0" y="991" text-anchor="middle" font-size="11" fill="#7c3aed">raw L3 underlay</text>
-  <text x="1010.0" y="1008" text-anchor="middle" font-size="11" fill="#7c3aed">carries other lanes</text>
-  <line x1="260" y1="984" x2="466" y2="984" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <line x1="712" y1="984" x2="896" y2="984" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="20" y="1034" width="1120" height="118" rx="12" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
-  <rect x="34" y="1044" width="190" height="30" rx="6" fill="#0f172a"/>
-  <text x="129.0" y="1063.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">8 · FRP + GRE</text>
-  <text x="236" y="1064" text-anchor="start" font-size="11.5" fill="#7f1d1d">hybrid</text>
-  <rect x="42" y="1082" width="216" height="70" rx="8" fill="#ffffff" stroke="#dc2626" stroke-width="1.5"/>
-  <text x="150.0" y="1104" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#7f1d1d">frpc over GRE IP</text>
-  <text x="150.0" y="1123" text-anchor="middle" font-size="11" fill="#dc2626">FRP stream inside GRE</text>
-  <text x="150.0" y="1140" text-anchor="middle" font-size="11" fill="#dc2626">tcp|kcp|quic|ws</text>
-  <rect x="470" y="1082" width="240" height="70" rx="8" fill="#ffffff" stroke="#dc2626" stroke-width="1.5"/>
-  <text x="590.0" y="1104" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#7f1d1d">frps over GRE IP</text>
-  <text x="590.0" y="1123" text-anchor="middle" font-size="11" fill="#dc2626">no public FRP port</text>
-  <text x="590.0" y="1140" text-anchor="middle" font-size="11" fill="#dc2626">L3 link first</text>
-  <rect x="900" y="1082" width="220" height="53" rx="8" fill="#ffffff" stroke="#dc2626" stroke-width="1.5"/>
-  <text x="1010.0" y="1104" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#7f1d1d">tcp / quic layer</text>
-  <text x="1010.0" y="1123" text-anchor="middle" font-size="11" fill="#dc2626">verify with gre probe</text>
-  <line x1="260" y1="1116" x2="466" y2="1116" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <line x1="712" y1="1116" x2="896" y2="1116" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="20" y="1172" width="1120" height="168" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
-  <rect x="34" y="1184" width="300" height="30" rx="6" fill="#64748b"/>
-  <text x="184.0" y="1203.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#ffffff">INGRESS MODES (not carriers)</text>
-  <rect x="42" y="1224" width="340" height="87" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
-  <text x="212.0" y="1246" text-anchor="middle" font-size="12" font-weight="bold" fill="#334155">game / SNI</text>
-  <text x="212.0" y="1265" text-anchor="middle" font-size="11" fill="#475569">443 switches to nginx stream</text>
-  <text x="212.0" y="1282" text-anchor="middle" font-size="11" fill="#475569">TLS terminates on the node</text>
-  <text x="212.0" y="1299" text-anchor="middle" font-size="11" fill="#475569">VLESS + TLS + Vision</text>
-  <rect x="402" y="1224" width="340" height="87" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
-  <text x="572.0" y="1246" text-anchor="middle" font-size="12" font-weight="bold" fill="#334155">direct-IP</text>
-  <text x="572.0" y="1265" text-anchor="middle" font-size="11" fill="#475569">node chosen by header</text>
-  <text x="572.0" y="1282" text-anchor="middle" font-size="11" fill="#475569">X-Cdn-Id: &lt;node&gt;</text>
-  <text x="572.0" y="1299" text-anchor="middle" font-size="11" fill="#475569">plain HTTP listener</text>
-  <rect x="762" y="1224" width="340" height="87" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
-  <text x="932.0" y="1246" text-anchor="middle" font-size="12" font-weight="bold" fill="#334155">proxy / fakeweb</text>
-  <text x="932.0" y="1265" text-anchor="middle" font-size="11" fill="#475569">non-tunnel reverse proxy</text>
-  <text x="932.0" y="1282" text-anchor="middle" font-size="11" fill="#475569">/&lt;name&gt;/ → any upstream</text>
-  <text x="932.0" y="1299" text-anchor="middle" font-size="11" fill="#475569">decoy site on :8080</text>
-  <text x="580" y="1372" text-anchor="middle" font-size="11.5" fill="#64748b">Each Iran path belongs to exactly one lane — switching lanes keeps the public path and the Iran-side port.</text>
+  <rect x="0" y="0" width="1200" height="740" rx="18" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1200" height="740" rx="18" fill="url(#orbA)"/>
+  <rect x="0" y="0" width="1200" height="740" rx="18" fill="url(#orbB)"/>
+  <rect x="0" y="0" width="1200" height="740" rx="18" fill="url(#dotGrid)"/>
+  <rect x="20" y="16" width="1160" height="66" rx="14" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.13)" stroke-width="1.2"/>
+  <text x="600.0" y="41" text-anchor="middle" fill="#f8fafc" font-size="18.5" font-weight="700">Transport &amp; Ingress Modes — 8 Carriers, 3 Ingress Modes</text>
+  <text x="600.0" y="62" text-anchor="middle" fill="#94a3b8" font-size="12.5">User URL paths and node inbound ports never change when switching tunnel carriers.</text>
+  <rect x="1108" y="27" width="56" height="22" rx="11" fill="rgba(10,132,255,0.20)" stroke="rgba(56,189,248,0.45)" stroke-width="1"/>
+  <text x="1136" y="42" text-anchor="middle" fill="#7dd3fc" font-size="11" font-weight="700">v2.1.0</text>
+  <rect x="24" y="100" width="568" height="104" rx="12" fill="#0f192e" stroke="#34d399" stroke-opacity="0.52" stroke-width="1.2"/>
+  <rect x="36.0" y="112.0" width="168" height="24" rx="12.0" fill="#0b1324" stroke="#34d399" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="36.0" y="112.0" width="168" height="24" rx="12.0" fill="rgba(16,185,129,0.12)"/>
+  <text x="120" y="127.5" text-anchor="middle" font-size="11" font-weight="700" fill="#d1fae5">1 · WebSocket + TLS</text>
+  <text x="576" y="128" text-anchor="end" font-size="10" font-weight="700" fill="#86efac">DEFAULT · RATHOLE</text>
+  <text x="42" y="158" text-anchor="start" font-size="11.5" font-weight="600" fill="#f1f5f9">wss://domain:443 -&gt; Nginx TLS -&gt; control /_rh/&lt;hex&gt; :2333</text>
+  <text x="42" y="182" text-anchor="start" font-size="10.5" font-weight="500" fill="#94a3b8">Server stays tls = false; traffic blends with HTTPS on :443.</text>
+  <rect x="608" y="100" width="568" height="104" rx="12" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.52" stroke-width="1.2"/>
+  <rect x="620.0" y="112.0" width="168" height="24" rx="12.0" fill="#0b1324" stroke="#38bdf8" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="620.0" y="112.0" width="168" height="24" rx="12.0" fill="rgba(10,132,255,0.12)"/>
+  <text x="704" y="127.5" text-anchor="middle" font-size="11" font-weight="700" fill="#e0f2fe">2 · KCP (UDP + FEC)</text>
+  <text x="1160" y="128" text-anchor="end" font-size="10" font-weight="700" fill="#93c5fd">LOSSY LINKS · QUIC-LIKE</text>
+  <text x="626" y="158" text-anchor="start" font-size="11.5" font-weight="600" fill="#f1f5f9">kcptun client :29901.. -&gt; UDP :443 -&gt; rathole :2333</text>
+  <text x="626" y="182" text-anchor="start" font-size="10.5" font-weight="500" fill="#94a3b8">Profiles balanced/lossy/aggressive; immune to TCP-over-TCP.</text>
+  <rect x="24" y="216" width="568" height="104" rx="12" fill="#0f192e" stroke="#fbbf24" stroke-opacity="0.52" stroke-width="1.2"/>
+  <rect x="36.0" y="228.0" width="168" height="24" rx="12.0" fill="#0b1324" stroke="#fbbf24" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="36.0" y="228.0" width="168" height="24" rx="12.0" fill="rgba(245,158,11,0.12)"/>
+  <text x="120" y="243.5" text-anchor="middle" font-size="11" font-weight="700" fill="#fef3c7">3 · Plain WebSocket</text>
+  <text x="576" y="244" text-anchor="end" font-size="10" font-weight="700" fill="#fcd34d">NO-TLS HTTP · OPT-IN</text>
+  <text x="42" y="274" text-anchor="start" font-size="11.5" font-weight="600" fill="#f1f5f9">http://domain:8880 -&gt; Nginx HTTP -&gt; control /_rh/&lt;hex&gt;</text>
+  <text x="42" y="298" text-anchor="start" font-size="10.5" font-weight="500" fill="#94a3b8">Lighter transport without TLS overhead (explicit opt-in).</text>
+  <rect x="608" y="216" width="568" height="104" rx="12" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.52" stroke-width="1.2"/>
+  <rect x="620.0" y="228.0" width="168" height="24" rx="12.0" fill="#0b1324" stroke="#a78bfa" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="620.0" y="228.0" width="168" height="24" rx="12.0" fill="rgba(124,58,237,0.14)"/>
+  <text x="704" y="243.5" text-anchor="middle" font-size="11" font-weight="700" fill="#ede9fe">4 · Noise (X25519)</text>
+  <text x="1160" y="244" text-anchor="end" font-size="10" font-weight="700" fill="#c4b5fd">ENCRYPTED · NO CERT</text>
+  <text x="626" y="274" text-anchor="start" font-size="11.5" font-weight="600" fill="#f1f5f9">rathole-noise client -&gt; TCP :2334 rathole-noise server</text>
+  <text x="626" y="298" text-anchor="start" font-size="10.5" font-weight="500" fill="#94a3b8">Dedicated encrypted instance; bypasses Nginx completely.</text>
+  <rect x="24" y="332" width="568" height="104" rx="12" fill="#0f192e" stroke="#34d399" stroke-opacity="0.52" stroke-width="1.2"/>
+  <rect x="36.0" y="344.0" width="168" height="24" rx="12.0" fill="#0b1324" stroke="#34d399" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="36.0" y="344.0" width="168" height="24" rx="12.0" fill="rgba(16,185,129,0.12)"/>
+  <text x="120" y="359.5" text-anchor="middle" font-size="11" font-weight="700" fill="#d1fae5">5 · Backhaul (SMUX)</text>
+  <text x="576" y="360" text-anchor="end" font-size="10" font-weight="700" fill="#86efac">DUAL-CORE · HIGH CONCURRENCY</text>
+  <text x="42" y="390" text-anchor="start" font-size="11.5" font-weight="600" fill="#f1f5f9">wss/wssmux -&gt; Nginx /channel + /tunnel -&gt; 127.0.0.1:3080</text>
+  <text x="42" y="414" text-anchor="start" font-size="10.5" font-weight="500" fill="#94a3b8">Go core w/ uTLS Chrome fingerprint &amp; separate bh-services.conf.</text>
+  <rect x="608" y="332" width="568" height="104" rx="12" fill="#0f192e" stroke="#fbbf24" stroke-opacity="0.52" stroke-width="1.2"/>
+  <rect x="620.0" y="344.0" width="168" height="24" rx="12.0" fill="#0b1324" stroke="#fbbf24" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="620.0" y="344.0" width="168" height="24" rx="12.0" fill="rgba(245,158,11,0.12)"/>
+  <text x="704" y="359.5" text-anchor="middle" font-size="11" font-weight="700" fill="#fef3c7">6 · FRP Core (fatedier/frp)</text>
+  <text x="1160" y="360" text-anchor="end" font-size="10" font-weight="700" fill="#fcd34d">TCP · KCP · QUIC · WS</text>
+  <text x="626" y="390" text-anchor="start" font-size="11.5" font-weight="600" fill="#f1f5f9">frpc -&gt; frps :7000/TCP (tcp/ws) + :7000/UDP (kcp/quic)</text>
+  <text x="626" y="414" text-anchor="start" font-size="10.5" font-weight="500" fill="#94a3b8">v2.0.5 preserves selected frp_transport &amp; auto-opens UFW UDP.</text>
+  <rect x="24" y="448" width="568" height="104" rx="12" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.52" stroke-width="1.2"/>
+  <rect x="36.0" y="460.0" width="168" height="24" rx="12.0" fill="#0b1324" stroke="#a78bfa" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="36.0" y="460.0" width="168" height="24" rx="12.0" fill="rgba(124,58,237,0.14)"/>
+  <text x="120" y="475.5" text-anchor="middle" font-size="11" font-weight="700" fill="#ede9fe">7 · GRE (Kernel L3)</text>
+  <text x="576" y="476" text-anchor="end" font-size="10" font-weight="700" fill="#c4b5fd">IP TUNNEL · PROTO 47</text>
+  <text x="42" y="506" text-anchor="start" font-size="11.5" font-weight="600" fill="#f1f5f9">Node 10.10.10.2/30 &lt;-&gt; Iran 10.10.10.1/30 (gre1)</text>
+  <text x="42" y="530" text-anchor="start" font-size="10.5" font-weight="500" fill="#94a3b8">Direct Linux kernel L3 link with MTU 1476 &amp; iptables TCPMSS.</text>
+  <rect x="608" y="448" width="568" height="104" rx="12" fill="#0f192e" stroke="#fb7185" stroke-opacity="0.52" stroke-width="1.2"/>
+  <rect x="620.0" y="460.0" width="168" height="24" rx="12.0" fill="#0b1324" stroke="#fb7185" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="620.0" y="460.0" width="168" height="24" rx="12.0" fill="rgba(244,63,94,0.12)"/>
+  <text x="704" y="475.5" text-anchor="middle" font-size="11" font-weight="700" fill="#ffe4e6">8 · FRP + GRE Hybrid</text>
+  <text x="1160" y="476" text-anchor="end" font-size="10" font-weight="700" fill="#fda4af">RESILIENT L3 + MUX</text>
+  <text x="626" y="506" text-anchor="start" font-size="11.5" font-weight="600" fill="#f1f5f9">frpc over GRE IP -&gt; frps bound inside 10.10.10.0/30</text>
+  <text x="626" y="530" text-anchor="start" font-size="10.5" font-weight="500" fill="#94a3b8">No public FRP port exposed; QUIC/KCP mux inside GRE packets.</text>
+  <rect x="24" y="568" width="1152" height="146" rx="14" fill="rgba(15,23,42,0.58)" stroke="#64748b" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="40" y="590" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#f1f5f9">USER INGRESS MODES (NOT TUNNEL CARRIERS)</text>
+  <rect x="42" y="604" width="360" height="74" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="222.0" y="626" text-anchor="middle" font-size="12" font-weight="700" fill="#e0f2fe">Game / SNI (L4 Passthrough)</text>
+  <text x="222.0" y="645" text-anchor="middle" font-size="11" fill="#93c5fd">Nginx stream on :443 passes TLS raw</text>
+  <text x="222.0" y="662" text-anchor="middle" font-size="11" fill="#93c5fd">Cert + VLESS Vision live on node</text>
+  <rect x="420" y="604" width="360" height="74" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="600.0" y="626" text-anchor="middle" font-size="12" font-weight="700" fill="#e0f2fe">Direct-IP (:8081 HTTP)</text>
+  <text x="600.0" y="645" text-anchor="middle" font-size="11" fill="#93c5fd">Connect directly to Iran IP (no domain)</text>
+  <text x="600.0" y="662" text-anchor="middle" font-size="11" fill="#93c5fd">Hidden header X-Cdn-Id: &lt;node&gt; routes</text>
+  <rect x="798" y="604" width="360" height="74" rx="11" fill="#0f192e" stroke="#64748b" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="978.0" y="626" text-anchor="middle" font-size="12" font-weight="700" fill="#f1f5f9">Proxy &amp; Fakeweb</text>
+  <text x="978.0" y="645" text-anchor="middle" font-size="11" fill="#cbd5e1">/name/ reverse-proxy without rathole</text>
+  <text x="978.0" y="662" text-anchor="middle" font-size="11" fill="#cbd5e1">Decoy site fallback served on :8080</text>
 </svg>

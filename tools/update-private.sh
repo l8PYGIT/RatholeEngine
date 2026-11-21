@@ -42,6 +42,7 @@ if [ "$release" = main ]; then
   done
   [ -n "$src" ] || die 'file-haye bootstrap/package dar archive peyda nashod.'
   unset github_token RATHOLE_GH_TOKEN GH_TOKEN GITHUB_TOKEN
+  umask 022
   bash "$src/package.sh" || die 'sakht bundle az main shekast khord.'
   bundle="$src/rathole-manager.zip"
   [ -f "$bundle" ] || bundle="$src/rathole-manager.tar.gz"
@@ -73,5 +74,6 @@ read -r bootstrap_id bundle_id extension <<< "$metadata"
 fetch "$api/releases/assets/$bootstrap_id" "$tmp/bootstrap.sh" application/octet-stream || die 'download bootstrap shekast khord.'
 fetch "$api/releases/assets/$bundle_id" "$tmp/rathole-manager.$extension" application/octet-stream || die 'download bundle shekast khord.'
 unset github_token RATHOLE_GH_TOKEN GH_TOKEN GITHUB_TOKEN
+umask 022
 printf '[+] Release %s daryaft shod; update ba backup va health-check shoroo mishavad.\n' "$release"
 RATHOLE_GH="$repo" RATHOLE_RELEASE="$release" bash "$tmp/bootstrap.sh" --local "$tmp/rathole-manager.$extension" --update

@@ -16,10 +16,18 @@ cd RatholeEngine
 ## Running tests
 
 ```bash
-# Full sandboxed end-to-end test (stubs root/nginx/systemctl — no real services needed):
+# Python test suite (hub, agent, security, lifecycle, backend):
+python3 -m unittest discover -s tests -p "test_*.py" -v
+
+# Hub UI JavaScript syntax & provisioning tests:
+node --check rathole-manager/ratholehub/ui/app.js
+node --check rathole-manager/ratholehub/ui/i18n.js
+node tests/test_hub_provisioning.js
+
+# Full sandboxed bash end-to-end test (stubs root/nginx/systemctl — no real services needed):
 bash rathole-manager/test-harness.sh
 
-# Individual test scripts (in tests/):
+# Individual bash regression scripts (in tests/):
 bash tests/test_lock_prompt.sh
 bash tests/test_release_pin.sh
 # etc.
@@ -27,30 +35,29 @@ bash tests/test_release_pin.sh
 
 The test harness requires a `jq-linux` binary beside the scripts and hardcodes `BASE=/mnt/d/...` (WSL path). On a real Linux box, set `BASE` to a temp dir you own.
 
-## CI checks (run before opening a PR)
+## CI & local checks (run before opening a PR)
 
 ```bash
 # Shell syntax check:
-bash -n rathole-manager/ratholectl
-bash -n rathole-manager/ratholenode
-bash -n rathole-manager/common.sh
+bash -n rathole-manager/ratholectl rathole-manager/ratholenode rathole-manager/common.sh
 
 # Shellcheck (install: apt install shellcheck / brew install shellcheck):
-shellcheck -S warning rathole-manager/ratholectl
-shellcheck -S warning rathole-manager/ratholenode
+shellcheck -S warning rathole-manager/ratholectl rathole-manager/ratholenode
 
 # Python syntax:
-python3 -m py_compile rathole-manager/ratholehub/hub.py
-python3 -m py_compile rathole-manager/ratholehub/hubcmds.py
+python3 -m py_compile rathole-manager/ratholehub/hub.py rathole-manager/ratholehub/hubcmds.py rathole-manager/ratholehub/ssh_proxy.py rathole-manager/ratholeagent.py
+
+# Regenerate documentation architecture SVGs if topology/carriers changed:
+python3 tools/gen_diagrams.py
 ```
 
-CI runs all of the above on every push and PR.
+CI runs lint/syntax checks on every push and PR.
 
 ## Code conventions
 
 **Bash:**
 - Scripts use `set -uo pipefail` (intentionally **not** `-e`) — the `jq | while read` pattern returns nonzero and would abort under `-e`; errors are handled explicitly with `die`.
-- Config writes must preserve the inode (`cat > tmpfile && mv tmpfile dest`, never `> dest` directly) so rathole's `config_watcher` hot-reloads without dropping active tunnels.
+- Config writes must preserve the inode using `rth_commit_config` (which acquires a lock and writes in place with `cat "$src" > "$dst"`, **never** `mv` over `$dst`, since `mv` replaces the inode) so rathole's `config_watcher` hot-reloads without dropping active tunnels.
 - Temp files go through `rth_mktemp`/`rth_mktempd` (auto-cleaned via trap).
 - Comments: default to none. Add one only when the **why** is non-obvious.
 - Log strings and variable names follow **Finglish** (Persian transliterated to Latin, e.g. `tvlid khodkar` = auto-generate). Match the surrounding style when editing.

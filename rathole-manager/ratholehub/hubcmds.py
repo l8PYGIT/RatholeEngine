@@ -16,20 +16,20 @@ import re
 # ---------- aatbarsnji vrvdi (zd tzrigh) ----------
 # nokte: anchor ba \Z (na $) chvn dar Python `$` yek newline-e entehai ra ham
 # ghabool mikonad (masalan "trk01\n") — ke mitavanad be command-e SSH/audit tzrigh shavad.
-RE_NAME    = re.compile(r"^[A-Za-z0-9_-]{1,40}\Z")
-RE_HOST    = re.compile(r"^[A-Za-z0-9_.-]{1,255}\Z")
+RE_NAME    = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}\Z")
+RE_HOST    = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}\Z")
 # port-e motabar: 1..65535; vorodi ghabl az SSH/API rad mishavad.
 _PORT = r"(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])"
 RE_PORT    = re.compile(r"^" + _PORT + r"\Z")
 RE_PROFILE = re.compile(r"^(balanced|lossy|aggressive)\Z")
-RE_IPPORT  = re.compile(r"^[A-Za-z0-9_.-]{1,255}:" + _PORT + r"\Z")
+RE_IPPORT  = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}:" + _PORT + r"\Z")
 RE_KEY     = re.compile(r"^[A-Fa-f0-9]{8,64}\Z")
 RE_B64     = re.compile(r"^[A-Za-z0-9+/]{40,64}={0,2}\Z")   # kelid-e omomi-ye noise (base64)
-RE_ID      = re.compile(r"^[A-Za-z0-9_-]{1,40}\Z")
+RE_ID      = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}\Z")
 RE_PW      = re.compile(r"^.{6,128}\Z")   # hdaghl 6 karaktr baraye ramz
 RE_EMAIL   = re.compile(r"^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,20}\Z")
-RE_CONTROL_PATH = re.compile(r"^/[A-Za-z0-9_./-]{0,120}\Z")
-RE_PATH    = re.compile(r"^/[A-Za-z0-9_./-]{1,255}\Z")   # masir file gvahi (mtlgh)
+RE_CONTROL_PATH = re.compile(r"^(?!.*\.\.)/[A-Za-z0-9_./-]{0,120}\Z")
+RE_PATH    = re.compile(r"^(?!.*\.\.)/[A-Za-z0-9_./-]{1,255}\Z")   # masir file gvahi (mtlgh)
 RE_SLUG    = re.compile(r"^[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,64}\Z")   # owner/repo-ye GitHub
 RE_CHAN    = re.compile(r"^(stable|beta)\Z")                                # kanal-e apdit-e hub
 RE_HEADER  = re.compile(r"^[A-Za-z0-9-]{1,40}\Z")   # naam-e header-e masiryabi-ye direct
@@ -40,10 +40,30 @@ RE_BH_MODE = re.compile(r"^(nginx_tls|direct_ip)\Z")
 RE_BH_TOK  = re.compile(r"^[A-Fa-f0-9]{16,64}\Z")   # token-e moshtarak-e backhaul (openssl rand -hex)
 # upstream-e reverse-proxy: DAGHIGHAN scheme://host:port — bedoon masir/query/metachar.
 # in meghdar mostaghim be conf-e nginx miravad، pas har chiz-e digar rad mishavad.
-RE_UPSTREAM = re.compile(r"^https?://[A-Za-z0-9._-]{1,255}:[0-9]{1,5}\Z")
+RE_UPSTREAM = re.compile(r"^https?://[A-Za-z0-9][A-Za-z0-9._-]{0,254}:" + _PORT + r"\Z")
 RE_LINES    = re.compile(r"^[0-9]{1,4}\Z")   # tedad-e khat-e log (hadaksar 9999)
 RE_FRP_TR   = re.compile(r"^(tcp|kcp|quic|websocket)\Z")
-RE_IP       = re.compile(r"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\Z")
+_OCT        = r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
+RE_IP       = re.compile(r"^" + _OCT + r"\." + _OCT + r"\." + _OCT + r"\." + _OCT + r"\Z")
+
+
+_INT_OK_KEYS = frozenset({
+    "port", "inbound", "api_port", "remote_port", "lines",
+    "interval", "failures", "recoveries", "value",
+})
+
+class _SafeArgs(dict):
+    # wrapper baraye dict: vorodi-haye gheyre-string (list/dict/bool/int baraye esm) be '\x00'
+    # tabdil mishavand ta regex-ha bedoon-e TypeError anha ra rad konand.
+    def get(self, key, default=""):
+        v = super().get(key, default)
+        if v is None or v == "":
+            return default
+        if isinstance(v, str):
+            return v
+        if key in _INT_OK_KEYS and type(v) is int:
+            return str(v)
+        return "\x00"
 
 
 # ---------- defense-in-depth: har dastoor-e tashkhisi ba `timeout` pichide mishavad ----------
@@ -58,6 +78,8 @@ def _diag(argv, secs=90):
 # ---------- whitelist dstvrha (bedoon shl dlkhvah) ----------
 # har action → sazndhi argumenthaye amn. brmigrdand list arg baraye CLI.
 def build_iran_cmd(action, a):
+    if not isinstance(a, dict): return None
+    a = _SafeArgs(a)
     if action == "ls":         return ["ratholectl", "ls"]
     if action == "doctor":     return _diag(["ratholectl", "doctor"], 60)
     if action == "logs":
@@ -337,6 +359,8 @@ def build_iran_cmd(action, a):
     return None
 
 def build_node_cmd(action, a):
+    if not isinstance(a, dict): return None
+    a = _SafeArgs(a)
     if action == "control_path_clear": return ["ratholenode", "control-path", "clear"]
     if action == "control_path_set":
         path = a.get("path", "")
@@ -566,11 +590,11 @@ def build_node_cmd(action, a):
     if action == "adaptive_test":   return ["ratholenode", "adaptive", "test", "--json"]
     if action == "adaptive_run":    return ["ratholenode", "adaptive", "run"]
     if action == "adaptive_on":
-        iv = str(a.get("interval", "30") or "30")
-        fa = str(a.get("failures",  "3")  or "3")
-        re = str(a.get("recoveries","5")  or "5")
-        if not RE_PORT.match(iv) or not RE_PORT.match(fa) or not RE_PORT.match(re): return None
-        return ["ratholenode", "adaptive", "on", "--interval", iv, "--failures", fa, "--recoveries", re]
+        iv  = str(a.get("interval", "30") or "30")
+        fa  = str(a.get("failures", "3") or "3")
+        rec = str(a.get("recoveries", "5") or "5")
+        if not RE_PORT.match(iv) or not RE_PORT.match(fa) or not RE_PORT.match(rec): return None
+        return ["ratholenode", "adaptive", "on", "--interval", iv, "--failures", fa, "--recoveries", rec]
     return None
 
 

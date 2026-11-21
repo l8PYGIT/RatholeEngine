@@ -1,6 +1,6 @@
 # راهنمای شروع سریع (Getting Started)
 
-این راهنما روش‌های نصب و راه‌اندازی **RatholeEngine** (نسخه‌ی **v2.0.2**) را به همراه معماری لایه‌ای، نمای حامل‌ها و قدم‌های بعدی توضیح می‌دهد.
+این راهنما روش‌های نصب و راه‌اندازی **RatholeEngine** (نسخه‌ی **v2.1.0**) را به همراه معماری لایه‌ای، نمای حامل‌ها و قدم‌های بعدی توضیح می‌دهد.
 
 !!! tip "می‌خواهی سریع تمام شود؟"
     نسخهٔ **مرحله‌به‌مرحله و تعاملی** (یک دستور + توضیح همهٔ سؤال‌ها + جدول عیب‌یابی) اینجاست:
@@ -106,7 +106,7 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 
 برای pin کردن نسخه‌ی مشخص:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.0.2 --update
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.1.0 --update
 ```
 
 ### 🔒 نصب/آپدیت از مخزن خصوصی
@@ -116,7 +116,7 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 ```bash
 curl -fsSL -H "Authorization: Bearer <GITHUB_PAT>" \
   https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh -o /tmp/install.sh
-sudo RATHOLE_GH=owner/repo bash /tmp/install.sh --token <GITHUB_PAT> --release v2.0.2 --update
+sudo RATHOLE_GH=owner/repo bash /tmp/install.sh --token <GITHUB_PAT> --release v2.1.0 --update
 ```
 
 توکن از طریق متغیرهای `RATHOLE_GH_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` هم پذیرفته می‌شود و به‌صورت `RATHOLE_GH_TOKEN` به `bootstrap.sh` پاس داده می‌شود. برای آپدیت سروری که از قبل نصب شده، `tools/update-private.sh` همین مسیر را (از release assets یا سورس `main`) انجام می‌دهد:

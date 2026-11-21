@@ -9,6 +9,27 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-21
+
+### Added
+- **ربات سرورلس اعلان آپدیت‌های گیتهاب در تلگرام:** اسکریپت [`tools/telegram_notify.py`](tools/telegram_notify.py) (stdlib خالص پایتون) + ورک‌فلوی قابل‌استفاده‌ی مجدد [`.github/workflows/telegram-notify.yml`](.github/workflows/telegram-notify.yml) (اجرای خودکار بعد از `release.yml` و قابل فراخوانی در هر مخزن دیگر) + **Cloudflare Worker Webhook** در [`tools/telegram-bot-worker/`](tools/telegram-bot-worker/) با امضای HMAC-SHA256، بنر تصویری، فرمت HTML و دکمه‌های Inline.
+- **بازطراحی رابط وب RatholeHub (سبک شیشه‌ای Apple Glass):** تم **روشن / تاریک / هماهنگ با سیستم**، باندل آفلاین فونت متغیر **`vazirmatn.woff2`** (بدون نیاز به اینترنت یا CDN)، مودال‌های native Top-Layer (`<dialog>`)، **۴ کارت KPI** در بالای داشبورد، **نوار جستجو و فیلتر زنده** در داشبورد، جداول سرویس‌ها و گزارش فعالیت‌ها.
+- **جستجوی سریع و اجرای فرمان (`⌘K / Ctrl+K` Command Palette):** پرش فوری بین سرورها، صفحه‌ها، تغییر تم/زبان و افزودن سرور فقط با صفحه‌کلید (`#cmdk`).
+- **بنرهای جدید گیتهاب، Social Preview و نمودارهای دو-تمه:** دو بنر شیشه‌ای تطبیق‌پذیر تاریک/روشن (`banner-dark.png` و `banner-light.png`)، تصویر Open Graph استاندارد (`social-preview.png` با ابعاد `1280×640`) و بازنویسی کامل موتور [`tools/gen_diagrams.py`](tools/gen_diagrams.py) برای تولید ۱۶ نمودار SVG تاریک و روشن (شامل `traffic-steps` و نمودارهای ترافیک جایگزین Mermaid).
+- **اسکرین‌شات‌های بازسازی‌شده‌ی پنل v2.1.0:** جایگزینی هر ۶ تصویر مستندات + افزودن `dashboard-dark.png` و `command-palette.png` با ابعاد `1440×900`.
+- **تکمیل فایل‌های جامعه‌ی گیتهاب:** افزودن `.github/ISSUE_TEMPLATE/config.yml` (لینک مستقیم تلگرام، مستندات و ویکی)، `CODE_OF_CONDUCT.md`، خلاصه‌سازی و بهینه‌سازی [README.md](README.md) و به‌روزرسانی قالب باگ/PR و `CONTRIBUTING.md`.
+
+### Changed
+- **بارگذاری موازی و سریع‌تر داشبورد هاب:** دریافت موازی وضعیت سرورها همراه با کش کوتاه‌مدت (TTL) برای رفع کندی بازشدن اولیه و همگام‌سازی خودکار وضعیت هاب.
+- **پیام شفاف همگام‌سازی دوطرفه و برچسب دقیق حامل‌ها:** هنگام تغییر حامل یا پروتکل سرویس بین ایران و نود، وضعیت همگام‌سازی دو سمت صریحاً گزارش می‌شود و برچسب‌های داشبورد/جدول وضعیت گزارش‌شده را دقیق‌تر منعکس می‌کنند.
+- **همگام‌سازی کامل مستندات با v2.1.0:** README (شامل جدول مقایسه‌ی ۸ حامل و گالری اسکرین‌شات‌ها)، سایت مستندات (`docs/index.md`، `hub.md`/`hub.en.md`، `transport-modes.md`/`en.md`) و ویکی؛ به‌روزرسانی مرجع باینری‌های مجاز `ratholeagent.py` و مستندسازی پورت `7000/TCP + 7000/UDP` در FRP (`kcpBindPort`/`quicBindPort`).
+
+### Fixed
+- **سخت‌گیری امنیتی (Security Hardening):** اعتبارسنجی دقیق `proxy`/`ssh_opts`/`ssh_key_path` در هاب، محدودشدن لیست‌سفید `ratholeagent.py` به `ratholectl|ratholenode|systemctl|journalctl|jq|tail` به همراه رد مسیرهای دارای `/`، جلوگیری از احراز هویت با توکن خالی و مجوز `0600` برای فایل توکن، حذف handlerهای inline برای رفع XSS با delegated `data-*`، پوشش کامل اسرار (`noise_privkey`، `frp_token`، `kcp.key`، `auth.token`) در `rth_redact`، رفع باگ نادیده‌گرفتن `--dry-run` در `control-path rotate`، پشتیبانی `control_path` در حالت `plain` و خواندن امن `adaptive.env`.
+- **پایداری بک‌اند و چرخه‌ی عمر Bash:** غیرهمگام‌سازی (non-blocking) TLS handshake در `ratholeagent.py`، سانسور اسرار در پاسخ `/api/servers` و audit log، بازشدن خودکار پورت `ufw allow <port>/udp` برای FRP روی KCP/QUIC، انتقال و ری‌استارت امن `rathole-agent` خارج از cgroup در `update.sh`، اتمیک‌شدن تغییر `state.json` با `state_jq` و جلوگیری از برهم‌خوردن وضعیت هنگام شکست `nginx -t` در `regenerate`.
+
+## [2.0.5] - 2026-11-20
+
 ### Fixed
 - **فراموش‌شدن ترانسپورت FRP هنگام برگشت به FRP:** با `frp off` (که هنگام سوییچ حامل به `ws` اجرا می‌شود) مقدار `frp_transport` از state پاک می‌شد و «تنظیم مجدد FRP» با پیش‌فرض `tcp` بالا می‌آمد، حتی اگر قبلاً `kcp` گذاشته بودی. حالا `frp off` مقدار ترانسپورت را نگه می‌دارد، `frp status` در حالت خاموش آخرین ترانسپورت را گزارش می‌کند و `frp on` بدون آرگومان از همان استفاده می‌کند (سمت نود هم از `FRP_TRANSPORT` در `node.env`).
 

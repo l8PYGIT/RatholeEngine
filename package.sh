@@ -51,10 +51,10 @@ PACK=("$SRC")
 for L in LICENSE NOTICE; do [ -f "$L" ] && PACK+=("$L"); done
 
 echo "[+] normal-sazi khate-payan (LF) rooye askriptha va mstndat..."
-find "${PACK[@]}" -type f \( -name '*.sh' -o -name '*.md' -o -name 'common.sh' -o -name 'ratholectl' -o -name 'ratholenode' \) \
+find "${PACK[@]}" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.md' -o -name 'common.sh' -o -name 'ratholectl' -o -name 'ratholenode' \) \
   -exec sed -i 's/\r$//' {} +
 # ghabele-ejra kardan askriptha
-for s in "$SRC"/*.sh "$SRC/ratholectl" "$SRC/ratholenode"; do [ -f "$s" ] && chmod +x "$s"; done
+for s in "$SRC"/*.sh "$SRC/ratholectl" "$SRC/ratholenode" "$SRC/ratholeagent.py" "$SRC/ratholehub/hub.py" "$SRC/ratholehub/install-hub.sh"; do [ -f "$s" ] && chmod +x "$s"; done
 
 rm -f "$OUT"
 if command -v zip >/dev/null 2>&1; then

@@ -102,19 +102,31 @@ install_prereqs(){
   else warn "pkijmnijr shnakhth nshd; motmaen shv curl/unzip/tar nasb-and."; fi
 }
 
-fetch1(){ # $1=url $2=out ; ba curl ya wget (yek talash)
-  local url="$1" out="$2"
-  local h=()
-  if [ -n "$GH_TOKEN" ] && echo "$url" | grep -qE 'github\.com|githubusercontent\.com'; then
-    h=(-H "Authorization: Bearer $GH_TOKEN")
-  fi
+fetch1(){ # $1=url $2=out [$3=accept] ; ba curl ya wget (yek talash, bedoon afshay-e token dar argv)
+  local url="$1" out="$2" acc="${3:-}"
+  local hdr=() is_gh=0
+  echo "$url" | grep -qE '(github\.com|githubusercontent\.com)' && is_gh=1
+  [ -n "$acc" ] && hdr=(-H "Accept: $acc")
   # gard-e transfer-e raked: bedoon-e --speed-limit dar surate ekhtelal/filtering-e Iran curl ta abad hang mikonad.
   if command -v curl >/dev/null 2>&1; then
-    curl -fSL "${h[@]}" --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 2 "$url" -o "$out"
+    if [ -n "$GH_TOKEN" ] && [ "$is_gh" -eq 1 ]; then
+      printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" | \
+        curl --config - -fSL "${hdr[@]}" --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 2 "$url" -o "$out"
+    else
+      curl -fSL "${hdr[@]}" --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 2 "$url" -o "$out"
+    fi
   elif command -v wget >/dev/null 2>&1; then
-    local wh=()
-    [ -n "$GH_TOKEN" ] && echo "$url" | grep -qE 'github\.com|githubusercontent\.com' && wh=(--header="Authorization: Bearer $GH_TOKEN")
-    wget -q "${wh[@]}" --timeout=20 --tries=2 -O "$out" "$url"
+    if [ -n "$GH_TOKEN" ] && [ "$is_gh" -eq 1 ]; then
+      local wcfg; wcfg="$(umask 077 && mktemp)"
+      printf 'header = Authorization: Bearer %s\n' "$GH_TOKEN" > "$wcfg"
+      [ -n "$acc" ] && printf 'header = Accept: %s\n' "$acc" >> "$wcfg"
+      wget -q --config="$wcfg" --timeout=20 --tries=2 -O "$out" "$url"
+      local wrc=$?; rm -f "$wcfg"; return "$wrc"
+    else
+      local wh=()
+      [ -n "$acc" ] && wh=(--header="Accept: $acc")
+      wget -q "${wh[@]}" --timeout=20 --tries=2 -O "$out" "$url"
+    fi
   else return 1; fi
 }
 
@@ -193,53 +205,108 @@ main(){
 
   resolve_dl
   log "download az GitHub release: $(c_y "$GH ($REL)")"
-  # 1) bootstrap.sh (mantegh-e amade-sazi va nasb)
-  if ! fetch "$DL/bootstrap.sh" "$tmp/bootstrap.sh"; then
-    if [ -n "$GH_TOKEN" ]; then
-      local raw_ref="${REL}"
-      [ "$raw_ref" = "latest" ] && raw_ref="main"
-      log "talash-e daryaft bootstrap.sh az private raw content (${raw_ref})..."
-      fetch "https://raw.githubusercontent.com/${GH}/${raw_ref}/bootstrap.sh" "$tmp/bootstrap.sh" || {
-        err "download bootstrap.sh az repo-ye private shekast khord."
-        exit 1
-      }
-    else
-      err "download bootstrap.sh az release shekast khord: $DL/bootstrap.sh"
-      err "elal-e ehtemali: release hanooz montasher nashode (tag v* push kon)، slug eshtebah، ya filtering."
-      err "rah-e jaygozin: baste ra dasti begir va bootstrap.sh ra ba --local ejra kon (docs/README.fa.md)."
-      exit 1
+  local bundle="" sha_file="" priv_ok=0
+
+  # dar repo-ye private ba token, GitHub URL-haye mastaghim-e browser 404 midahand; aval release API ra check kon.
+  if [ -n "$GH_TOKEN" ] && command -v python3 >/dev/null 2>&1; then
+    local api="https://api.github.com/repos/${GH}"
+    local ep="$api/releases/latest"
+    [ "$REL" = "latest" ] || ep="$api/releases/tags/$REL"
+    if fetch1 "$ep" "$tmp/release.json" "application/vnd.github+json" 2>/dev/null; then
+      local meta=""
+      meta="$(python3 - "$tmp/release.json" <<'PY' 2>/dev/null || true
+import json, sys
+assets = json.load(open(sys.argv[1], encoding='utf-8')).get('assets', [])
+def aid(name):
+    for a in assets:
+        if a.get('name') == name and isinstance(a.get('id'), int) and a['id'] > 0:
+            return str(a['id'])
+    return ''
+bs = aid('bootstrap.sh')
+bd = aid('rathole-manager.zip'); ext = 'zip'
+if not bd:
+    bd = aid('rathole-manager.tar.gz'); ext = 'tar.gz'
+sh = aid('SHA256SUMS')
+if bs and bd:
+    print(bs, bd, ext, sh or '-')
+PY
+)"
+      if [ -n "$meta" ]; then
+        local bs_id bd_id bd_ext sh_id
+        read -r bs_id bd_id bd_ext sh_id <<<"$meta"
+        if fetch1 "$api/releases/assets/$bs_id" "$tmp/bootstrap.sh" "application/octet-stream" && \
+           fetch1 "$api/releases/assets/$bd_id" "$tmp/rathole-manager.$bd_ext" "application/octet-stream"; then
+          bundle="$tmp/rathole-manager.$bd_ext"
+          if [ "$sh_id" != "-" ]; then
+            fetch1 "$api/releases/assets/$sh_id" "$tmp/SHA256SUMS" "application/octet-stream" 2>/dev/null && sha_file="$tmp/SHA256SUMS" || true
+          fi
+          priv_ok=1
+        fi
+      fi
     fi
   fi
-  # 2) baste-ye asli
-  local bundle=""
-  if fetch "$DL/rathole-manager.zip" "$tmp/rathole-manager.zip"; then
-    bundle="$tmp/rathole-manager.zip"
-  elif fetch "$DL/rathole-manager.tar.gz" "$tmp/rathole-manager.tar.gz"; then
-    bundle="$tmp/rathole-manager.tar.gz"
-  elif [ -n "$GH_TOKEN" ]; then
-    log "download archive az API-ye private repository..."
-    local api_ref="${REL}"
-    [ "$api_ref" = "latest" ] && api_ref="main"
-    if fetch "https://api.github.com/repos/${GH}/tarball/${api_ref}" "$tmp/bundle.tar.gz"; then
-      bundle="$tmp/bundle.tar.gz"
-    else
-      die "download archive az API-ye private repository shekast khord."
+
+  if [ "$priv_ok" -eq 0 ]; then
+    # 1) bootstrap.sh (mantegh-e amade-sazi va nasb)
+    if ! fetch "$DL/bootstrap.sh" "$tmp/bootstrap.sh"; then
+      if [ -n "$GH_TOKEN" ]; then
+        local raw_ref="${REL}"
+        [ "$raw_ref" = "latest" ] && raw_ref="main"
+        log "talash-e daryaft bootstrap.sh az private raw content (${raw_ref})..."
+        fetch "https://raw.githubusercontent.com/${GH}/${raw_ref}/bootstrap.sh" "$tmp/bootstrap.sh" || {
+          err "download bootstrap.sh az repo-ye private shekast khord."
+          exit 1
+        }
+      else
+        err "download bootstrap.sh az release shekast khord: $DL/bootstrap.sh"
+        err "elal-e ehtemali: release hanooz montasher nashode (tag v* push kon)، slug eshtebah، ya filtering."
+        err "rah-e jaygozin: baste ra dasti begir va bootstrap.sh ra ba --local ejra kon (docs/README.fa.md)."
+        exit 1
+      fi
     fi
-  else
-    die "download baste (rathole-manager.zip/.tar.gz) az release shekast khord: $DL"
+    # 2) baste-ye asli
+    if fetch "$DL/rathole-manager.zip" "$tmp/rathole-manager.zip"; then
+      bundle="$tmp/rathole-manager.zip"
+    elif fetch "$DL/rathole-manager.tar.gz" "$tmp/rathole-manager.tar.gz"; then
+      bundle="$tmp/rathole-manager.tar.gz"
+    elif [ -n "$GH_TOKEN" ]; then
+      log "download archive az API-ye private repository..."
+      local api_ref="${REL}"
+      [ "$api_ref" = "latest" ] && api_ref="main"
+      if fetch "https://api.github.com/repos/${GH}/tarball/${api_ref}" "$tmp/bundle.tar.gz"; then
+        bundle="$tmp/bundle.tar.gz"
+      else
+        die "download archive az API-ye private repository shekast khord."
+      fi
+    else
+      die "download baste (rathole-manager.zip/.tar.gz) az release shekast khord: $DL"
+    fi
+    fetch "$DL/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null && sha_file="$tmp/SHA256SUMS" || rm -f "$tmp/SHA256SUMS"
+  fi
+
+  if [ -n "$sha_file" ] && [ -s "$sha_file" ] && command -v sha256sum >/dev/null 2>&1; then
+    local bbase; bbase="$(basename "$bundle")"
+    if grep -qE "[[:space:]](\./)?${bbase}$" "$sha_file" 2>/dev/null; then
+      ( cd "$tmp" && grep -E "[[:space:]](\./)?${bbase}$" "$sha_file" | sha256sum -c - --quiet ) \
+        || die "checksum SHA256 baste ($bbase) motabeghat nadarad!"
+      log "checksum SHA256 baste tayid shod ($bbase)."
+    fi
   fi
   log "baste daryaft shod: $(basename "$bundle")  ($(du -h "$bundle" 2>/dev/null | cut -f1))"
 
   # 3) tahvil be bootstrap.sh (hameye argvman-haye passed be bootstrap miravand)
-  # RATHOLE_RELEASE-e halshode ra export mikonim: masir-e `--update` be update.sh miresad va
-  # nabayad dobare be `latest` bargardad (vagarna noskhe-ye pin-shode bi-seda avaz mishavad).
+  # token-haye GitHub ra ghabl az ejra-ye bootstrap pak mikonim ta dar env-e child baghi namanad.
+  # az `exec` estefade NEMIKONIM ta EXIT trap file-haye movaghat dar $tmp ra pak konad.
   log "ejra-ye bootstrap..."
-  export RATHOLE_GH="$GH" RATHOLE_RELEASE="$REL" RATHOLE_GH_TOKEN="$GH_TOKEN"
+  unset GH_TOKEN RATHOLE_GH_TOKEN GITHUB_TOKEN
+  export RATHOLE_GH="$GH" RATHOLE_RELEASE="$REL"
+  local rc=0
   if [ ! -t 0 ] && [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
-    exec bash "$tmp/bootstrap.sh" --local "$bundle" "$@" < /dev/tty
+    bash "$tmp/bootstrap.sh" --local "$bundle" "$@" < /dev/tty || rc=$?
   else
-    exec bash "$tmp/bootstrap.sh" --local "$bundle" "$@"
+    bash "$tmp/bootstrap.sh" --local "$bundle" "$@" || rc=$?
   fi
+  exit "$rc"
 }
 
 main "$@"

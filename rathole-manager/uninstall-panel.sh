@@ -96,6 +96,9 @@ if [ -f /etc/nginx/conf.d/rathole-upgrade-map.conf ]; then
   fi
 fi
 
+# config-e stream/SNI (game mode) ghabl az nginx -t hazf mishavad
+rm -f /etc/nginx/stream.d/rathole-stream.conf 2>/dev/null || true
+
 # tst va reload nginx
 if command -v nginx >/dev/null 2>&1; then
   if nginx -t 2>/dev/null; then
@@ -124,13 +127,13 @@ if [ -f /usr/local/share/rathole/common.sh ] \
   rmdir /usr/local/share/rathole 2>/dev/null || true
   log "common.sh hazf shod."
 fi
-# config-e stream/SNI (game mode) agar sakhte shode bood
-rm -f /etc/nginx/stream.d/rathole-stream.conf 2>/dev/null || true
-
-# ---------- purge ekhtiari ----------
 if [ "$PURGE" -eq 1 ]; then
   warn "purge faal ast."
-  if ask_yn "bainri /usr/local/bin/rathole hazf shvd?"; then rm -f /usr/local/bin/rathole; fi
+  if [ -f /etc/systemd/system/rathole-client.service ]; then
+    warn "rathole-client.service hanooz nasb ast؛ /usr/local/bin/rathole pak nashod."
+  elif ask_yn "bainri /usr/local/bin/rathole hazf shvd?"; then
+    rm -f /usr/local/bin/rathole
+  fi
   if [ -d /etc/rathole ] && [ -z "$(ls -A /etc/rathole 2>/dev/null)" ]; then rmdir /etc/rathole; fi
   warn "bsthhai nginx/jq/certbot amdan hazf nshdnd (mmkn ast servicehaye digar estefade knnd)."
 fi

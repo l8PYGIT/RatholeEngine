@@ -18,16 +18,16 @@ die(){ err "$*"; exit 1; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --server)            SERVER="$2"; shift 2;;
-    --tls-hostname)      TLS_HOSTNAME="$2"; shift 2;;
-    --tls-trusted-root)  TLS_TRUSTED_ROOT="$2"; shift 2;;
-    --name)              NAME="$2"; shift 2;;
-    --token)             TOKEN="$2"; shift 2;;
-    --inbound-port)      INBOUND="$2"; shift 2;;
-    --api-token)         API_TOKEN="$2"; shift 2;;
-    --api-inbound-port)  API_INBOUND="$2"; shift 2;;
-    --restore)           RESTORE="$2"; shift 2;;
-    --version)           RATHOLE_VERSION="$2"; shift 2;;
+    --server)            [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; SERVER="$2"; shift 2;;
+    --tls-hostname)      [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; TLS_HOSTNAME="$2"; shift 2;;
+    --tls-trusted-root)  [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; TLS_TRUSTED_ROOT="$2"; shift 2;;
+    --name)              [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; NAME="$2"; shift 2;;
+    --token)             [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; TOKEN="$2"; shift 2;;
+    --inbound-port)      [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; INBOUND="$2"; shift 2;;
+    --api-token)         [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; API_TOKEN="$2"; shift 2;;
+    --api-inbound-port)  [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; API_INBOUND="$2"; shift 2;;
+    --restore)           [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; RESTORE="$2"; shift 2;;
+    --version)           [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; RATHOLE_VERSION="$2"; shift 2;;
     *) die "argument nashenakhte: $1";;
   esac
 done
@@ -146,35 +146,42 @@ fi
 
 # ---------- nasb tazh ----------
 log "neveshtan /etc/rathole/node.env va services.conf..."
-{
-  echo "SERVER=${SERVER}"
-  [ -n "$TLS_HOSTNAME" ] && echo "TLS_HOSTNAME=${TLS_HOSTNAME}"
-  [ -n "$TLS_TRUSTED_ROOT" ] && echo "TLS_TRUSTED_ROOT=${TLS_TRUSTED_ROOT}"
-  echo "RATHOLE_VERSION=${RATHOLE_VERSION}"
-} > /etc/rathole/node.env
-chmod 600 /etc/rathole/node.env
-{
-  echo "${NAME}|${TOKEN}|${INBOUND}"
-  [ -n "$API_TOKEN" ] && [ -n "$API_INBOUND" ] && echo "${NAME}_api|${API_TOKEN}|${API_INBOUND}"
-} > /etc/rathole/services.conf
-chmod 600 /etc/rathole/services.conf
+(
+  umask 077
+  {
+    echo "SERVER=${SERVER}"
+    [ -n "$TLS_HOSTNAME" ] && echo "TLS_HOSTNAME=${TLS_HOSTNAME}"
+    [ -n "$TLS_TRUSTED_ROOT" ] && echo "TLS_TRUSTED_ROOT=${TLS_TRUSTED_ROOT}"
+    echo "RATHOLE_VERSION=${RATHOLE_VERSION}"
+  } > /etc/rathole/node.env
+  chmod 600 /etc/rathole/node.env
+  {
+    echo "${NAME}|${TOKEN}|${INBOUND}"
+    [ -n "$API_TOKEN" ] && [ -n "$API_INBOUND" ] && echo "${NAME}_api|${API_TOKEN}|${API_INBOUND}"
+  } > /etc/rathole/services.conf
+  chmod 600 /etc/rathole/services.conf
+)
 
 if command -v ratholenode >/dev/null 2>&1; then
   ratholenode apply
 else
   HOST="${TLS_HOSTNAME:-${SERVER%%:*}}"
   [ -z "$TLS_TRUSTED_ROOT" ] || [ -f "$TLS_TRUSTED_ROOT" ] || die "TLS trusted root peyda nashod: $TLS_TRUSTED_ROOT"
-  {
-    echo "[client]"; echo "remote_addr = \"${SERVER}\""; echo "retry_interval = 1"; echo "heartbeat_timeout = 40"; echo
-    echo "[client.transport]"; echo "type = \"websocket\""; echo "[client.transport.websocket]"; echo "tls = true"
-    echo "[client.transport.tls]"; echo "hostname = \"${HOST}\""
-    [ -n "$TLS_TRUSTED_ROOT" ] && echo "trusted_root = \"${TLS_TRUSTED_ROOT}\""
-    echo
-    echo "[client.services.${NAME}]"; echo "token = \"${TOKEN}\""; echo "local_addr = \"127.0.0.1:${INBOUND}\""; echo "type = \"tcp\""
-    if [ -n "$API_TOKEN" ] && [ -n "$API_INBOUND" ]; then
-      echo; echo "[client.services.${NAME}_api]"; echo "token = \"${API_TOKEN}\""; echo "local_addr = \"127.0.0.1:${API_INBOUND}\""; echo "type = \"tcp\""
-    fi
-  } > /etc/rathole/client.toml
+  (
+    umask 077
+    {
+      echo "[client]"; echo "remote_addr = \"${SERVER}\""; echo "retry_interval = 1"; echo "heartbeat_timeout = 40"; echo
+      echo "[client.transport]"; echo "type = \"websocket\""; echo "[client.transport.websocket]"; echo "tls = true"
+      echo "[client.transport.tls]"; echo "hostname = \"${HOST}\""
+      [ -n "$TLS_TRUSTED_ROOT" ] && echo "trusted_root = \"${TLS_TRUSTED_ROOT}\""
+      echo
+      echo "[client.services.${NAME}]"; echo "token = \"${TOKEN}\""; echo "local_addr = \"127.0.0.1:${INBOUND}\""; echo "type = \"tcp\""
+      if [ -n "$API_TOKEN" ] && [ -n "$API_INBOUND" ]; then
+        echo; echo "[client.services.${NAME}_api]"; echo "token = \"${API_TOKEN}\""; echo "local_addr = \"127.0.0.1:${API_INBOUND}\""; echo "type = \"tcp\""
+      fi
+    } > /etc/rathole/client.toml
+  )
+  chmod 600 /etc/rathole/client.toml
   systemctl enable --now rathole-client
 fi
 

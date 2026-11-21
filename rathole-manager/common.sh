@@ -3,7 +3,7 @@
 
 # noskhe-ye rathole-manager (panel/node/hub). moqe-e release in adad ba tag hamahang mishavad.
 # package.sh/CI mitavanad in ra be tag-e vaghei stamp konad; agar dast taghir dadi، bedoon 'v' bezar.
-MANAGER_VERSION="2.0.5"
+MANAGER_VERSION="2.1.0"
 
 c_g(){ printf '\033[1;32m%s\033[0m' "$*"; }
 c_r(){ printf '\033[1;31m%s\033[0m' "$*"; }
@@ -301,9 +301,26 @@ TUNE
   log "BBR=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)  conntrack_max=$(sysctl -n net.netfilter.nf_conntrack_max 2>/dev/null || echo n/a)"
 }
 
+rth_valid_port(){
+  [[ "${1:-}" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 ))
+}
+rth_valid_path(){
+  [[ "${1:-}" =~ ^/[A-Za-z0-9_./-]{1,255}$ ]] && [[ "$1" != *..* ]]
+}
+rth_valid_hostport(){
+  [[ "${1:-}" =~ ^[A-Za-z0-9_.-]+:([0-9]{1,5})$ ]] && rth_valid_port "${BASH_REMATCH[1]}"
+}
+rth_valid_kcp_key(){
+  [[ "${1:-}" =~ ^[A-Za-z0-9._=+/-]{1,256}$ ]]
+}
+rth_valid_noise_pattern(){
+  [[ "${1:-}" =~ ^[A-Za-z0-9_]{1,80}$ ]]
+}
+
 # service systemd fakeweb (web fik sadh ba python3)
 fakeweb_service(){
   local svc="$1" port="${2:-8081}" action="${3:-start}"
+  rth_valid_port "$port" || die "port namotabar."
   command -v python3 >/dev/null 2>&1 || die "python3 nasb nist (apt install -y python3)."
   mkdir -p /var/www/rathole-fake
   [ -f /var/www/rathole-fake/index.html ] || cat > /var/www/rathole-fake/index.html <<'HTML'
@@ -339,9 +356,10 @@ UNIT
 # darvaze-ye khorooj ast — har file-e jadidi ke ezafe mikoni HATMAN az an rad kon.
 rth_redact(){
   sed -E \
-    -e 's/("(token|api_token|bh_token|backhaul_token|admin_password_sha256|password|secret|private_key|local_private_key|remote_public_key|noise_private_key)"[[:space:]]*:[[:space:]]*")[^"]*"/\1***REDACTED***"/g' \
-    -e 's/^([[:space:]]*(token|default_token|password|secret|private_key|local_private_key|remote_public_key)[[:space:]]*=[[:space:]]*")[^"]*"/\1***REDACTED***"/' \
-    -e 's/^([[:space:]]*(TOKEN|BH_TOKEN|NOISE_KEY|PASSWORD|API_TOKEN)=).*/\1***REDACTED***/' \
+    -e 's/("(token|api_token|bh_token|backhaul_token|frp_token|admin_password_sha256|password|secret|key|private_key|local_private_key|remote_public_key|noise_private_key|noise_privkey)"[[:space:]]*:[[:space:]]*")[^"]*"/\1***REDACTED***"/g' \
+    -e 's/^([[:space:]]*(auth\.token|token|default_token|password|secret|private_key|local_private_key|remote_public_key)[[:space:]]*=[[:space:]]*")[^"]*"/\1***REDACTED***"/' \
+    -e 's/^([[:space:]]*(TOKEN|BH_TOKEN|FRP_TOKEN|NOISE_KEY|PASSWORD|API_TOKEN)=).*/\1***REDACTED***/' \
+    -e 's/(-key[[:space:]]+)[^[:space:]]+/\1***REDACTED***/g' \
     -e 's/^([^|[:space:]]+\|)[^|]*/\1***REDACTED***/' \
     -e 's#(/_rh/)[A-Fa-f0-9]{8,}#\1***REDACTED***#g' \
     -e 's/([?&](token|password|secret)=)[^&"[:space:]]*/\1***REDACTED***/g'

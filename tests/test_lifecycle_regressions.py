@@ -367,6 +367,50 @@ PANEL=0; NODE=1; HUB=0
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('APPLY_OK', result.stdout)
 
+    def test_update_migrates_legacy_agent_token_and_defers_restart(self):
+        source = update_source()
+        start = source.index('  if [ -f /etc/systemd/system/rathole-agent.service ]; then')
+        end = source.index('  # --- samt hub ---', start)
+        script = '''set -euo pipefail
+task_dir="$(mktemp -d)"
+trap 'command rm -rf "$task_dir"' EXIT
+mkdir -p "$task_dir/etc/systemd/system"
+printf '[Service]\\nEnvironment=RATHOLE_AGENT_TOKEN=legacy_secret_98765\\nExecStart=/usr/bin/python3 agent.py\\n' > "$task_dir/etc/systemd/system/rathole-agent.service"
+AGENT_RESTART_FLAG="$task_dir/agent.restart"
+systemctl(){
+  case "$1" in
+    is-active) return 0 ;;
+    restart) echo "BAD_EARLY_RESTART $*"; return 1 ;;
+    *) return 0 ;;
+  esac
+}
+run_agent_block(){
+''' + source[start:end].replace('/etc/', '$task_dir/etc/') + '''
+}
+run_agent_block
+echo UNIT_AFTER
+cat "$task_dir/etc/systemd/system/rathole-agent.service"
+echo MIGRATED_TOKEN
+cat "$task_dir/etc/rathole-agent/token"
+echo FLAG_CONTENT
+cat "$AGENT_RESTART_FLAG"
+'''
+        result = run_bash(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('BAD_EARLY_RESTART', result.stdout)
+        self.assertNotIn('legacy_secret_98765', result.stdout.split('MIGRATED_TOKEN')[0])
+        self.assertIn('KillMode=process', result.stdout.split('MIGRATED_TOKEN')[0])
+        self.assertIn('legacy_secret_98765', result.stdout.split('MIGRATED_TOKEN')[1].split('FLAG_CONTENT')[0])
+        self.assertEqual(result.stdout.split('FLAG_CONTENT\n')[1].strip(), '1')
+
+    def test_install_agent_sets_killmode_process(self):
+        for filename in ['install-agent.sh', 'ratholectl', 'ratholenode']:
+            with self.subTest(installer=filename):
+                text = (ROOT / 'rathole-manager' / filename).read_text(encoding='utf-8')
+                self.assertIn('KillMode=process', text)
+        agent_installer = (ROOT / 'rathole-manager/install-agent.sh').read_text(encoding='utf-8')
+        self.assertIn('chmod 644 /etc/systemd/system/rathole-agent.service', agent_installer)
+
 
 if __name__ == '__main__':
     unittest.main()

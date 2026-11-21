@@ -6,6 +6,27 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-21
+
+### Added
+- **Serverless Telegram Release & Update Announcer:** Zero-dependency Python script [`tools/telegram_notify.py`](tools/telegram_notify.py) + reusable [`.github/workflows/telegram-notify.yml`](.github/workflows/telegram-notify.yml) (chained from `release.yml` and reusable across any repository) + standalone **Cloudflare Worker Webhook** in [`tools/telegram-bot-worker/`](tools/telegram-bot-worker/) with HMAC-SHA256 verification, banner image posts, sanitized Telegram HTML, and inline buttons.
+- **RatholeHub Apple Glass UI redesign:** **Light / Dark / System** themes, locally bundled offline variable font **`vazirmatn.woff2`** (zero CDN requests), native top-layer `<dialog>` modals, **4-card KPI overview strip**, and live inline **search & filtering** across dashboard server cards, service tables, and the audit log.
+- **`⌘K / Ctrl+K` Command Palette (`#cmdk`):** Instant keyboard-driven switching between servers, pages, themes, language, and quick actions.
+- **GitHub Hero Banners, Social Preview & Dual-Theme Diagrams:** Adaptive light/dark `<picture>` hero banners (`banner-dark.png` & `banner-light.png`), `1280×640` Open Graph card (`social-preview.png`), and rewritten [`tools/gen_diagrams.py`](tools/gen_diagrams.py) generating all 16 Apple Glass Dark & Light SVGs (including packet flow diagrams replacing old Mermaid exports).
+- **Refreshed v2.1.0 Screenshots:** Updated all 6 documentation screenshots and added `dashboard-dark.png` + `command-palette.png` at `1440×900`.
+- **Streamlined README & Community Profile polish:** Trimmed `README.md` with collapsible galleries/flags and 8-carrier comparison matrix; added `.github/ISSUE_TEMPLATE/config.yml` and `CODE_OF_CONDUCT.md`; updated bug/PR templates and `CONTRIBUTING.md`.
+
+### Changed
+- **Faster parallel Hub status loading:** Dashboard overview/status fetches execute in parallel with short-TTL caching so large inventories settle rapidly.
+- **Explicit two-sided carrier sync feedback & accurate badges:** Two-sided carrier changes report explicit Iran + node sync results and preserve accurate server-reported carrier protocol badges.
+- **Full v2.1.0 documentation & wiki sync:** Updated `README.md`, `docs/index.md`, `hub.md`/`hub.en.md`, `transport-modes.md`/`transport-modes.en.md`, and wiki pages; documented the tightened `ratholeagent.py` binary allow-list and FRP dual `7000/TCP` + `7000/UDP` (`kcpBindPort`/`quicBindPort`) firewall behavior.
+
+### Fixed
+- **Security hardening:** Strict `proxy` / `ssh_opts` / `ssh_key_path` validation in Hub; strict `ratholeagent.py` binary allow-list (`ratholectl`, `ratholenode`, `systemctl`, `journalctl`, `jq`, `tail` with slash-path rejection), non-empty token enforcement and `0600` token file creation; removed inline JS event handlers in Hub UI in favor of delegated `data-*` attributes; expanded `rth_redact` (`noise_privkey`, `frp_token`, `kcp.key`, `auth.token`); fixed ignored `--dry-run` in `control-path rotate`; fixed `plain` mode when `control_path` is active; safe `adaptive.env` parsing.
+- **Backend & Bash lifecycle stability:** Non-blocking TLS handshake handling in `ratholeagent.py`, secret redaction in Hub `/api/servers` and audit logs, automatic `ufw allow <port>/udp` when FRP runs KCP/QUIC, cgroup-safe deferred `rathole-agent` restart in `update.sh`, atomic `state_jq` commits, and safer `nginx -t` rollback ordering in `regenerate`.
+
+## [2.0.5] - 2026-11-20
+
 ### Fixed
 - **FRP transport was forgotten when re-enabling FRP:** `frp off` (executed when switching the carrier to `ws`) deleted `frp_transport` from state, so re-configuring FRP came up with the default `tcp` even if you had chosen `kcp`. `frp off` now keeps the transport, `frp status` reports the last transport while disabled, and `frp on` without an argument reuses it (the node side falls back to `FRP_TRANSPORT` in `node.env`).
 

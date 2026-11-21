@@ -340,13 +340,13 @@ test('both service pages expose all migrated controls and no board route',()=>{
  vm.runInContext(definition('serviceButtons'),c);
  for(const side of ['iran','node']){
   const html=c.serviceButtons(side,'server','svc');
-  for(const action of ['configure','health','copy','manage','remove'])assert.ok(html.includes("'"+action+"'"));
+  for(const action of ['configure','health','copy','manage','remove'])assert.ok(html.includes('data-action="'+action+'"'));
  }
  // radif-haye jadval compact shode-and: hamn 5 akshan az menu-ye '⋯' (serviceMenu) ersal mishavand
  vm.runInContext(definition('serviceMenu'),c);
  for(const side of ['iran','node']){
   const html=c.serviceMenu(side,'server','svc');
-  for(const action of ['configure','health','copy','manage','remove'])assert.ok(html.includes("'"+action+"'"));
+  for(const action of ['configure','health','copy','manage','remove'])assert.ok(html.includes('data-action="'+action+'"'));
   assert.ok(html.includes('details class="more"'));
  }
  assert.ok(definition('renderIran').includes("serviceMenu('iran'"));
@@ -391,4 +391,239 @@ test('SNI services cannot accidentally open a default FRP carrier form',()=>{
  vm.runInContext(definition('quickCarrierModal'),c);
  c.quickCarrierModal('iran','node','game');
  assert.equal(c.messages[0],'service_game_hint');
+});
+test('configureServiceCarrier emits a sticky syncing toast before finishing',async()=>{
+ const toasts=[];
+ const c=context();
+ c.toast=(msg,ms)=>{c.messages.push(msg);toasts.push({msg,ms});};
+ await c.configureServiceCarrier('iran','node','frp',8080,{});
+ assert.ok(toasts.length>=2,'expected syncing toast + completion toast');
+ assert.equal(toasts[0].ms,0,'syncing toast must be sticky (ms=0)');
+ assert.match(toasts[0].msg,/همگام|sync/i);
+});
+test('Iran headBadges shows FRP carrier instead of ws/443 when nodes use FRP',()=>{
+ const c=context();
+ Object.assign(c,{
+  fnd:n=>c.SERVERS.find(s=>s.name===n)||{},
+  t:k=>k,
+  h:s=>String(s==null?'':s),
+  HUBST:{latest_version:'2.0.4'}
+ });
+ for(const fn of ['iranNodeMode','carrierLabel','latestVer','verBadge','headBadges']){
+  vm.runInContext(definition(fn),c);
+ }
+ const ov={
+  reachable:true,
+  health:{ok:3,fail:0},
+  nodes:[{name:'node',port:21001,inbound_port:8080,transport:'frp'}],
+  kcp:{enabled:false},
+  noise:{enabled:false},
+  frp:{enabled:true,active:true,port:7000,transport:'quic'},
+  status:{features:{frp:{configured:true,active:true,port:7000,transport:'quic'}}},
+  version:{manager:'2.0.4'}
+ };
+ const html=c.headBadges('iran',ov);
+ assert.ok(html.includes('FRP / QUIC'), 'expected FRP / QUIC badge, got: '+html);
+ assert.ok(!html.includes('ws/443'), 'must not show ws/443 when only node is FRP, got: '+html);
+});
+test('Iran FRP carrier card shows UDP port for quic/kcp and live port',()=>{
+ const renderIranSrc=definition('renderIran');
+ assert.ok(!renderIranSrc.includes('<span>پورت: TCP :7000</span>'),'FRP card must not hardcode TCP :7000');
+ assert.ok(renderIranSrc.includes("frpTr === 'quic' || frpTr === 'kcp'") || renderIranSrc.includes('UDP'),
+  'FRP card must compute UDP vs TCP from live transport');
+});
+test('remote names with quotes cannot inject JS into serviceMenu or iranNodeCarrierSel',()=>{
+ const c=context();
+ const escHtml=s=>(''+(s==null?'':s)).replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+ Object.assign(c,{
+  h:escHtml,
+  t:k=>k,
+  IRAN_NODE_CARRIERS:['ws','kcp','plain','noise','backhaul','frp','gre','frp_gre'],
+  iranNodeMode:()=>'ws'
+ });
+ vm.runInContext('var IRAN_NODE_CARRIERS='+JSON.stringify(c.IRAN_NODE_CARRIERS)+';',c);
+ vm.runInContext(definition('serviceButtons'),c);
+ vm.runInContext(definition('serviceMenu'),c);
+ vm.runInContext(definition('iranNodeCarrierSel'),c);
+ const payload="n1');alert(1)//";
+ for(const html of [
+  c.serviceButtons('iran','srv',payload),
+  c.serviceMenu('node','srv',payload),
+  c.iranNodeCarrierSel('iran',{},payload)
+ ]){
+  assert.doesNotMatch(html, /\bon(click|change)=/i);
+  assert.ok(html.includes('&#39;);alert(1)//'));
+ }
+});
+test('Phase 3 UI fixes: no undefined CSS vars, frp_gre support, carrier rendering, error handling',()=>{
+ assert.doesNotMatch(source, /var\(--(?:tx|ac|rd|gr|yl)\)/);
+ assert.ok(!source.includes("'Finglish'"), 'language label should not say Finglish');
+ const smSrc=definition('statusModal');
+ assert.ok(!smSrc.includes("'+j.cmd+'\\\\n") && smSrc.includes("j.cmd+'\\n'"), 'statusModal must use real newline escape');
+
+ const c=context();
+ const carriersDecl=source.match(/const CARRIERS=\[[^\]]+\];/);
+ assert.ok(carriersDecl,'CARRIERS declaration missing');
+ vm.runInContext(carriersDecl[0].replace(/^const /,'var ')+'\n'+definition('nodeCarrier'),c);
+ assert.equal(c.nodeCarrier({main_tunnel:'frp_gre'}),'frp_gre');
+
+ const cfgSrc=definition('configureServiceCarrier');
+ assert.ok(cfgSrc.includes("oldLane === 'frp_gre'") || cfgSrc.includes("oldIranLane"), 'configureServiceCarrier must map frp_gre to frp_node_off on Iran');
+
+ const riSrc=definition('renderIran');
+ for(const stale of ['<span>پورت: UDP :443</span>','<span>پروفایل: Balanced</span>','<span>پورت: TCP :2334</span>','<span>پورت: HTTP :8880</span>','<span>کارت شبکه: gre1</span>']){
+  assert.ok(!riSrc.includes(stale), 'stale hardcoded card metadata remains: '+stale);
+ }
+
+ assert.match(definition('frpOnIran')+definition('quickCarrierModal'), /KCP.*QUIC|QUIC.*KCP/i);
+
+ for(const fn of ['drawConsole','drawRouteTable','drawGraph']){
+  const body=definition(fn);
+  for(const car of ['backhaul','frp','gre','frp_gre']){
+   assert.ok(body.includes(car), fn+' must handle '+car);
+  }
+ }
+
+ assert.match(definition('api'), /try\s*\{[\s\S]*fetch[\s\S]*\}\s*catch/);
+ assert.match(definition('bindGraphDrag'), /pointercancel/);
+ const dtSrc=definition('dtLoadDomains');
+ assert.doesNotMatch(dtSrc, /onclick="dt(MakePrimary|RmDomain)/);
+});
+test('Phase 3 & 4 assets cleanup: i18n duplicates/wb_*, app.css, index.html, dead UI functions',()=>{
+ const i18nSrc=fs.readFileSync(path.join(__dirname,'..','rathole-manager','ratholehub','ui','i18n.js'),'utf8');
+ for(const lang of ['fa','en']){
+  const m=i18nSrc.match(new RegExp(lang+':\\s*\\{([\\s\\S]*?)\\n\\s*\\}'));
+  assert.ok(m, 'missing lang block '+lang);
+  const stripped=m[1].replace(/(["'])(?:\\.|(?!\1).)*\1/g,"''");
+  const re=/(?:^|[,{\s])([A-Za-z0-9_]+)\s*:(?=\s*['"])/gm;
+  const seen=new Set(), dups=[]; let x;
+  while((x=re.exec(stripped))!==null){if(seen.has(x[1]))dups.push(x[1]); seen.add(x[1]);}
+  assert.deepEqual(dups,[],'duplicate i18n keys in '+lang+': '+dups.join(','));
+ }
+ assert.doesNotMatch(i18nSrc, /\bwb_[a-z_]+\s*:/);
+
+ const cssSrc=fs.readFileSync(path.join(__dirname,'..','rathole-manager','ratholehub','ui','app.css'),'utf8');
+ assert.ok(!cssSrc.includes('repeat(5, 1fr)'), 'mobile nav should use 4 columns');
+ assert.ok(cssSrc.includes('repeat(4, 1fr)'));
+ assert.ok(!cssSrc.includes('.cable-flow'));
+ assert.ok(cssSrc.includes('border-inline-start'));
+ for(const cls of ['.e-backhaul','.e-frp','.e-gre','.e-frp_gre','.lw-backhaul','.lw-frp','.lw-gre','.lw-frp_gre']){
+  assert.ok(cssSrc.includes(cls), 'missing css class '+cls);
+ }
+
+ const htmlSrc=fs.readFileSync(path.join(__dirname,'..','rathole-manager','ratholehub','ui','index.html'),'utf8');
+ assert.ok(!htmlSrc.includes('id="i-cable"') && !htmlSrc.includes('id="i-plus"'));
+ assert.ok(htmlSrc.includes('Content-Security-Policy'));
+
+ for(const dead of ['addSvc','addBhSvc','plainOnNode','noiseOnNode','bhOnNode','bhAutofill','bhNodeFields','frpAutofill','greOnNode','kcpOnNode','carrierOffAction']){
+  assert.doesNotMatch(source, new RegExp('\\bfunction\\s+'+dead+'\\b'));
+ }
+});
+test('Apple/Raycast UI redesign: offline Vazirmatn font, native <dialog>, top-layer CSS, theme & filter logic',()=>{
+ const fontPath=path.join(__dirname,'..','rathole-manager','ratholehub','ui','vazirmatn.woff2');
+ const fontBuf=fs.readFileSync(fontPath);
+ assert.ok(fontBuf.length>100000,'vazirmatn.woff2 too small');
+ assert.equal(fontBuf.subarray(0,4).toString('ascii'),'wOF2');
+
+ const hubPy=fs.readFileSync(path.join(__dirname,'..','rathole-manager','ratholehub','hub.py'),'utf8');
+ assert.ok(hubPy.includes('"vazirmatn.woff2"'));
+ const ihub=fs.readFileSync(path.join(__dirname,'..','rathole-manager','ratholehub','install-hub.sh'),'utf8');
+ assert.ok(ihub.includes('vazirmatn.woff2'));
+ const upd=fs.readFileSync(path.join(__dirname,'..','rathole-manager','update.sh'),'utf8');
+ assert.ok(upd.includes('vazirmatn.woff2'));
+
+ const htmlSrc=fs.readFileSync(path.join(__dirname,'..','rathole-manager','ratholehub','ui','index.html'),'utf8');
+ assert.ok(htmlSrc.includes('<meta name="color-scheme" content="light dark">'));
+ assert.ok(htmlSrc.includes("font-src 'self'"));
+ assert.ok(htmlSrc.includes('href="ui/vazirmatn.woff2"'));
+
+ const cssSrc=fs.readFileSync(path.join(__dirname,'..','rathole-manager','ratholehub','ui','app.css'),'utf8');
+ assert.ok(cssSrc.includes('font-family: "Vazirmatn"'));
+ assert.ok(cssSrc.includes('overscroll-behavior: contain'));
+ assert.ok(cssSrc.includes('@starting-style'));
+ assert.ok(cssSrc.includes('transition-behavior: allow-discrete'));
+ assert.ok(cssSrc.includes('&:has(> head > meta[name="color-scheme"][content="dark"])'));
+ assert.doesNotMatch(cssSrc,/^\s*\*\s*\{/m);
+
+ const i18nSrc=fs.readFileSync(path.join(__dirname,'..','rathole-manager','ratholehub','ui','i18n.js'),'utf8');
+ const extractKeys=lang=>{
+  const m=i18nSrc.match(new RegExp(lang+':\\s*\\{([\\s\\S]*?)\\n\\s*\\}'));
+  const stripped=m[1].replace(/(["'])(?:\\.|(?!\1).)*\1/g,"''");
+  const re=/(?:^|[,{\s])([A-Za-z0-9_]+)\s*:(?=\s*['"])/gm;
+  const s=new Set(); let x; while((x=re.exec(stripped))!==null)s.add(x[1]); return s;
+ };
+ const faKeys=extractKeys('fa'), enKeys=extractKeys('en');
+ assert.deepEqual([...faKeys].filter(k=>!enKeys.has(k)),[],'missing en keys');
+ assert.deepEqual([...enKeys].filter(k=>!faKeys.has(k)),[],'missing fa keys');
+
+ // Exercise native <dialog>, Command Palette, filteredServers, toggleTheme, toggleSidebar
+ assert.ok(source.includes("createElement('dialog')") && source.includes('showModal()'));
+ assert.ok(!source.includes("setAttribute('inert'") && !source.includes('role="dialog"'));
+ const store={};
+ const metaEl={content:'light dark'};
+ const clsSet=new Set();
+ const docEl={dataset:{},lang:'',dir:'',classList:{toggle:(k,f)=>{if(f)clsSet.add(k);else clsSet.delete(k);}}};
+ const c=context();
+ Object.assign(c,{
+  LANG:'fa', THEME_PREF:'', TOKEN:'tok', ROUTE:{page:'dashboard'},
+  localStorage:{getItem:k=>store[k]??null,setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}},
+  matchMedia:q=>({matches:q.includes('light')?false:true}),
+  document:{documentElement:docEl,querySelector:sel=>sel.includes('color-scheme')?metaEl:null,querySelectorAll:()=>[]},
+  $:()=>null, t:k=>k, applyStatic:()=>{}, renderSettingsPage:()=>{}, nav:()=>{}, editHubProxy:()=>{},
+  updateAll:()=>{}, refreshPage:()=>{}, toggleLang:()=>{}, ovDotCls:()=>'d-ok',
+ });
+ vm.runInContext('var DASH_FILTER={q:"",role:"all",status:"all"};\nvar LANG="fa",THEME_PREF="",TOKEN="tok",ROUTE={page:"dashboard"};\n'+
+  ['systemTheme','resolvedTheme','applyStatic','toggleTheme','setThemeMode','toggleSidebar','filteredServers','cmdkEntries'].map(fn=>definition(fn)).join('\n'),c);
+
+ assert.equal(c.SERVERS.length,2);
+ c.DASH_FILTER.role='iran';
+ assert.deepEqual(Array.from(c.filteredServers(),s=>s.name),['iran']);
+ c.DASH_FILTER.role='all'; c.DASH_FILTER.q='192.0.2.2';
+ assert.deepEqual(Array.from(c.filteredServers(),s=>s.name),['node']);
+ c.DASH_FILTER.q='';
+
+ c.toggleTheme(); // dark OS -> toggle overrides to light
+ assert.equal(store.rh_theme,'light');
+ assert.equal(metaEl.content,'light');
+ c.toggleTheme(); // toggles back to dark == OS -> clears override
+ assert.equal(store.rh_theme,undefined);
+ assert.equal(metaEl.content,'light dark');
+
+ c.toggleSidebar();
+ assert.equal(store.rh_sb_collapsed,'1');
+ assert.equal(clsSet.has('sb-collapsed'),true);
+ c.toggleSidebar();
+ assert.equal(store.rh_sb_collapsed,undefined);
+ assert.equal(clsSet.has('sb-collapsed'),false);
+
+ const items=c.cmdkEntries('iran');
+ assert.ok(items.some(it=>it.sec==='servers'&&it.label==='iran'));
+
+ // Regression assertions for cascade order, empty HUBST KPI, menu offset, and t()
+ assert.match(source, /function t\(k\)\{/);
+ const baseLayerStart=cssSrc.indexOf('@layer base {');
+ const layoutLayerStart=cssSrc.indexOf('@layer layout {');
+ const btnBaseIdx=cssSrc.indexOf('  button {\n');
+ assert.ok(baseLayerStart>=0&&layoutLayerStart>baseLayerStart&&btnBaseIdx>baseLayerStart&&btnBaseIdx<layoutLayerStart,
+  'base button rule must live inside @layer base before @layer layout');
+ const pmSrc=definition('positionMoreMenu');
+ assert.ok(pmSrc.includes('origin.top')&&pmSrc.includes('origin.left'),
+  'positionMoreMenu must compensate for backdrop-filter containing block offset');
+ const kpiBox={innerHTML:''};
+ const kc={
+  $:id=>id==='kpi_grid'?kpiBox:null,
+  SERVERS:[{name:'iran',role:'iran'}],
+  OVS:{iran:{reachable:true,nodes:[{name:'n1'}]}},
+  HUBST:{services:{},hub_uptime:75},
+  t:k=>({st_ok:'OK_STATUS',loading:'LOADING_STATUS',kpi_servers:'S',kpi_online:'O',kpi_services:'V',kpi_hub:'H',flt_iran:'I',flt_node:'N',flt_online:'ON',flt_offline:'OFF',n_nodes:'NN',n_svcs:'NS',hs_up:'UP',hub_box:'HUB'}[k]||k),
+  h:x=>String(x??''),
+  icon:()=>'',
+  fmtDur:s=>s+'s'
+ };
+ vm.createContext(kc);
+ vm.runInContext(definition('updateDashboardKpis'),kc);
+ kc.updateDashboardKpis();
+ assert.ok(kpiBox.innerHTML.includes('OK_STATUS')&&!kpiBox.innerHTML.includes('LOADING_STATUS'),
+  'empty HUBST.services must render healthy instead of loading');
+ assert.ok(kpiBox.innerHTML.includes('75s'), 'expected hub_uptime fallback in KPI card');
 });

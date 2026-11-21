@@ -193,3 +193,20 @@ jobs:
             dist/install.sh
           fail_on_unmatched_files: false
           generate_release_notes: ${{ steps.notes.outputs.found != '1' }}
+
+  # Releases published using GITHUB_TOKEN do not re-trigger `on: release`,
+  # so call our reusable Telegram announcer directly after publishing.
+  notify-telegram:
+    name: notify telegram channel
+    needs: [build-release]
+    uses: ./.github/workflows/telegram-notify.yml
+    with:
+      tag: ${{ github.ref_name }}
+      title: RatholeEngine ${{ github.ref_name }}
+      release_url: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+      prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') }}
+      banner_path: docs/assets/social-preview.png
+      docs_url: https://l8pygit.github.io/RatholeEngine/
+      install_cmd: curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+      channel: "@l8PY4NET"
+    secrets: inherit

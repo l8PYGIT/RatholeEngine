@@ -1,100 +1,116 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 740" font-family="Segoe UI, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" width="1200" height="680" font-family="Segoe UI, system-ui, -apple-system, Arial, sans-serif">
   <defs>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#060b16"/>
+      <stop offset="52%" stop-color="#0d1528"/>
+      <stop offset="100%" stop-color="#121c36"/>
+    </linearGradient>
+    <radialGradient id="orbA" cx="20%" cy="15%" r="55%">
+      <stop offset="0%" stop-color="rgba(124,58,237,0.22)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="orbB" cx="85%" cy="85%" r="55%">
+      <stop offset="0%" stop-color="rgba(10,132,255,0.20)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.15" fill="rgba(148,163,184,0.13)"/>
+    </pattern>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#38bdf8"/>
     </marker>
-    <marker id="arrU" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#9333ea"/>
+    <marker id="arrV" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#a78bfa"/>
     </marker>
-    <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/>
+    <marker id="arrG" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#34d399"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#fb7185"/>
+    </marker>
+    <marker id="arrN" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#64748b"/>
     </marker>
   </defs>
-  <rect x="0" y="0" width="1160" height="740" fill="#ffffff"/>
-  <rect x="20" y="16" width="1120" height="60" rx="8" fill="#0f172a"/>
-  <text x="580" y="39" text-anchor="middle" fill="#ffffff" font-size="19" font-weight="bold">Detailed reference — nginx rules, lanes and port ownership</text>
-  <text x="580" y="59" text-anchor="middle" fill="#cbd5e1" font-size="12.5">Everything on the Iran side is 127.0.0.1 except :443 (and the optional lane ports you enable).</text>
-  <rect x="20" y="96" width="360" height="352" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="200" y="120" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">NGINX :443 — L7 (default)</text>
-  <rect x="36" y="136" width="328" height="53" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="200.0" y="158" text-anchor="middle" font-size="11" font-weight="bold" fill="#1e3a8a">location = /</text>
-  <text x="200.0" y="177" text-anchor="middle" font-size="11" fill="#1d4ed8">websocket → control backend, else fake site</text>
-  <rect x="36" y="197" width="328" height="53" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="200.0" y="219" text-anchor="middle" font-size="11" font-weight="bold" fill="#1e3a8a">location /&lt;node&gt;</text>
-  <text x="200.0" y="238" text-anchor="middle" font-size="11" fill="#1d4ed8">map $uri → 127.0.0.1:&lt;data port&gt;</text>
-  <rect x="36" y="258" width="328" height="53" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="200.0" y="280" text-anchor="middle" font-size="11" font-weight="bold" fill="#1e3a8a">location /_rh/&lt;hex&gt;</text>
-  <text x="200.0" y="299" text-anchor="middle" font-size="11" fill="#1d4ed8">secret rathole control path</text>
-  <rect x="36" y="319" width="328" height="53" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="200.0" y="341" text-anchor="middle" font-size="11" font-weight="bold" fill="#1e3a8a">location /channel|/tunnel</text>
-  <text x="200.0" y="360" text-anchor="middle" font-size="11" fill="#1d4ed8">→ backhaul-server 127.0.0.1:3080</text>
-  <rect x="36" y="380" width="328" height="53" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="200.0" y="402" text-anchor="middle" font-size="11" font-weight="bold" fill="#1e3a8a">location /sub/</text>
-  <text x="200.0" y="421" text-anchor="middle" font-size="11" fill="#1d4ed8">→ Pasargad subscriptions :2096</text>
-  <rect x="400" y="96" width="340" height="352" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="570" y="120" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">RATHOLE LANE</text>
-  <rect x="416" y="136" width="308" height="53" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="570.0" y="158" text-anchor="middle" font-size="11" font-weight="bold" fill="#14532d">control :2333</text>
-  <text x="570.0" y="177" text-anchor="middle" font-size="11" fill="#166534">ws / kcp / plain / noise</text>
-  <rect x="416" y="197" width="308" height="53" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="570.0" y="219" text-anchor="middle" font-size="11" font-weight="bold" fill="#14532d">data :1001..</text>
-  <text x="570.0" y="238" text-anchor="middle" font-size="11" fill="#166534">one listener per node</text>
-  <rect x="416" y="258" width="308" height="53" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="570.0" y="280" text-anchor="middle" font-size="11" font-weight="bold" fill="#14532d">*_api services</text>
-  <text x="570.0" y="299" text-anchor="middle" font-size="11" fill="#166534">panel ↔ node, loopback only</text>
-  <rect x="416" y="319" width="308" height="53" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="570.0" y="341" text-anchor="middle" font-size="11" font-weight="bold" fill="#14532d">server.toml</text>
-  <text x="570.0" y="360" text-anchor="middle" font-size="11" fill="#166534">transport tls = false</text>
-  <text x="570" y="432" text-anchor="middle" font-size="11" font-weight="bold" fill="#166534">config_watcher hot-reloads in place</text>
-  <rect x="760" y="96" width="380" height="352" rx="12" fill="#fdf4ff" stroke="#a21caf" stroke-width="1.5"/>
-  <text x="950" y="120" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">INDEPENDENT LANES</text>
-  <rect x="776" y="136" width="348" height="53" rx="8" fill="#ffffff" stroke="#a21caf" stroke-width="1.5"/>
-  <text x="950.0" y="158" text-anchor="middle" font-size="11" font-weight="bold" fill="#701a75">Backhaul (SMUX)</text>
-  <text x="950.0" y="177" text-anchor="middle" font-size="11" fill="#86198f">127.0.0.1:3080 · /channel + /tunnel</text>
-  <rect x="776" y="197" width="348" height="53" rx="8" fill="#ffffff" stroke="#a21caf" stroke-width="1.5"/>
-  <text x="950.0" y="219" text-anchor="middle" font-size="11" font-weight="bold" fill="#701a75">FRP</text>
-  <text x="950.0" y="238" text-anchor="middle" font-size="11" fill="#86198f">frps :7000 · tcp|kcp|quic|websocket</text>
-  <rect x="776" y="258" width="348" height="53" rx="8" fill="#ffffff" stroke="#a21caf" stroke-width="1.5"/>
-  <text x="950.0" y="280" text-anchor="middle" font-size="11" font-weight="bold" fill="#701a75">GRE</text>
-  <text x="950.0" y="299" text-anchor="middle" font-size="11" fill="#86198f">gre1 · 10.10.10.0/30 · MTU 1476</text>
-  <rect x="776" y="319" width="348" height="53" rx="8" fill="#ffffff" stroke="#a21caf" stroke-width="1.5"/>
-  <text x="950.0" y="341" text-anchor="middle" font-size="11" font-weight="bold" fill="#701a75">REST Agent</text>
-  <text x="950.0" y="360" text-anchor="middle" font-size="11" fill="#86198f">rathole-agent.service :8089</text>
-  <text x="950" y="432" text-anchor="middle" font-size="11" font-weight="bold" fill="#86198f">start/stop independently of the rathole lane</text>
-  <rect x="20" y="472" width="1120" height="196" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
-  <text x="580" y="498" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#475569">PORT MAP — who listens where on the Iran server</text>
-  <rect x="36" y="512" width="132" height="70" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
-  <text x="102.0" y="534" text-anchor="middle" font-size="11" font-weight="bold" fill="#065f46">443/tcp</text>
-  <text x="102.0" y="553" text-anchor="middle" font-size="11" fill="#047857">nginx</text>
-  <text x="102.0" y="570" text-anchor="middle" font-size="11" fill="#047857">public · TLS</text>
-  <rect x="176" y="512" width="132" height="70" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="242.0" y="534" text-anchor="middle" font-size="11" font-weight="bold" fill="#334155">443/udp</text>
-  <text x="242.0" y="553" text-anchor="middle" font-size="11" fill="#475569">kcptun</text>
-  <text x="242.0" y="570" text-anchor="middle" font-size="11" fill="#475569">only if kcp is on</text>
-  <rect x="316" y="512" width="132" height="70" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="382.0" y="534" text-anchor="middle" font-size="11" font-weight="bold" fill="#334155">8880/tcp</text>
-  <text x="382.0" y="553" text-anchor="middle" font-size="11" fill="#475569">plain ws</text>
-  <text x="382.0" y="570" text-anchor="middle" font-size="11" fill="#475569">optional lane</text>
-  <rect x="456" y="512" width="132" height="70" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="522.0" y="534" text-anchor="middle" font-size="11" font-weight="bold" fill="#334155">2334/tcp</text>
-  <text x="522.0" y="553" text-anchor="middle" font-size="11" fill="#475569">rathole-noise</text>
-  <text x="522.0" y="570" text-anchor="middle" font-size="11" fill="#475569">optional lane</text>
-  <rect x="596" y="512" width="132" height="70" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="662.0" y="534" text-anchor="middle" font-size="11" font-weight="bold" fill="#334155">7000/tcp+udp</text>
-  <text x="662.0" y="553" text-anchor="middle" font-size="11" fill="#475569">frps</text>
-  <text x="662.0" y="570" text-anchor="middle" font-size="11" fill="#475569">optional lane</text>
-  <rect x="736" y="512" width="132" height="70" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="802.0" y="534" text-anchor="middle" font-size="11" font-weight="bold" fill="#334155">8089/tcp</text>
-  <text x="802.0" y="553" text-anchor="middle" font-size="11" fill="#475569">REST agent</text>
-  <text x="802.0" y="570" text-anchor="middle" font-size="11" fill="#475569">optional, token</text>
-  <rect x="876" y="512" width="132" height="70" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="942.0" y="534" text-anchor="middle" font-size="11" font-weight="bold" fill="#334155">127.0.0.1:2333</text>
-  <text x="942.0" y="553" text-anchor="middle" font-size="11" fill="#475569">control</text>
-  <text x="942.0" y="570" text-anchor="middle" font-size="11" fill="#475569">loopback only</text>
-  <rect x="1016" y="512" width="132" height="70" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="1082.0" y="534" text-anchor="middle" font-size="11" font-weight="bold" fill="#334155">127.0.0.1:3080</text>
-  <text x="1082.0" y="553" text-anchor="middle" font-size="11" fill="#475569">backhaul</text>
-  <text x="1082.0" y="570" text-anchor="middle" font-size="11" fill="#475569">loopback only</text>
-  <text x="580" y="626" text-anchor="middle" font-size="11.5" fill="#64748b">green = exposed by default · white = opened only when you enable that lane</text>
-  <text x="20" y="712" text-anchor="start" font-size="11.5" fill="#64748b">User paths never move between lanes: the nginx map target and the node inbound stay the same when you switch carrier.</text>
+  <rect x="0" y="0" width="1200" height="680" rx="18" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1200" height="680" rx="18" fill="url(#orbA)"/>
+  <rect x="0" y="0" width="1200" height="680" rx="18" fill="url(#orbB)"/>
+  <rect x="0" y="0" width="1200" height="680" rx="18" fill="url(#dotGrid)"/>
+  <rect x="20" y="16" width="1160" height="66" rx="14" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.13)" stroke-width="1.2"/>
+  <text x="600.0" y="41" text-anchor="middle" fill="#f8fafc" font-size="18.5" font-weight="700">Detailed Reference — Nginx Rules, Lanes &amp; Port Ownership</text>
+  <text x="600.0" y="62" text-anchor="middle" fill="#94a3b8" font-size="12.5">Everything inside Iran binds 127.0.0.1 except :443 (and optional lanes you explicitly enable).</text>
+  <rect x="1108" y="27" width="56" height="22" rx="11" fill="rgba(10,132,255,0.20)" stroke="rgba(56,189,248,0.45)" stroke-width="1"/>
+  <text x="1136" y="42" text-anchor="middle" fill="#7dd3fc" font-size="11" font-weight="700">v2.1.0</text>
+  <rect x="24" y="100" width="372" height="314" rx="14" fill="rgba(15,23,42,0.58)" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="40" y="122" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#e0f2fe">NGINX :443 — L7 ROUTING</text>
+  <rect x="40" y="134" width="340" height="46" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="54" y="156" text-anchor="start" font-size="11" font-weight="700" fill="#e0f2fe">location = /_rh/&lt;32hex&gt;</text>
+  <text x="54" y="175" text-anchor="start" font-size="11" fill="#93c5fd">Secret rathole control path -&gt; :2333</text>
+  <rect x="40" y="188" width="340" height="46" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="54" y="210" text-anchor="start" font-size="11" font-weight="700" fill="#e0f2fe">location = / (Upgrade)</text>
+  <text x="54" y="229" text-anchor="start" font-size="11" fill="#93c5fd">Fallback WS control -&gt; :2333, else fake</text>
+  <rect x="40" y="242" width="340" height="46" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="54" y="264" text-anchor="start" font-size="11" font-weight="700" fill="#e0f2fe">location /&lt;node&gt;</text>
+  <text x="54" y="283" text-anchor="start" font-size="11" fill="#93c5fd">map $uri -&gt; 127.0.0.1:&lt;data port&gt;</text>
+  <rect x="40" y="296" width="340" height="46" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="54" y="318" text-anchor="start" font-size="11" font-weight="700" fill="#e0f2fe">location /channel|/tunnel</text>
+  <text x="54" y="337" text-anchor="start" font-size="11" fill="#93c5fd">Proxy to Backhaul 127.0.0.1:3080</text>
+  <rect x="40" y="350" width="340" height="46" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="54" y="372" text-anchor="start" font-size="11" font-weight="700" fill="#e0f2fe">location /hub/ &amp; /sub/</text>
+  <text x="54" y="391" text-anchor="start" font-size="11" fill="#93c5fd">Hub web panel :8088 &amp; subscriptions :2096</text>
+  <rect x="414" y="100" width="356" height="314" rx="14" fill="rgba(15,23,42,0.58)" stroke="#34d399" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="430" y="122" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#d1fae5">RATHOLE LANE (LOOPBACK)</text>
+  <rect x="430" y="134" width="324" height="56" rx="11" fill="#0f192e" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="444" y="156" text-anchor="start" font-size="11.5" font-weight="700" fill="#d1fae5">Control :2333</text>
+  <text x="444" y="175" text-anchor="start" font-size="11" fill="#86efac">Serves ws / kcp / plain ingress</text>
+  <rect x="430" y="200" width="324" height="56" rx="11" fill="#0f192e" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="444" y="222" text-anchor="start" font-size="11.5" font-weight="700" fill="#d1fae5">Data Listeners :1001..</text>
+  <text x="444" y="241" text-anchor="start" font-size="11" fill="#86efac">Dedicated loopback port per node</text>
+  <rect x="430" y="266" width="324" height="56" rx="11" fill="#0f192e" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="444" y="288" text-anchor="start" font-size="11.5" font-weight="700" fill="#d1fae5">&lt;name&gt;_api Services</text>
+  <text x="444" y="307" text-anchor="start" font-size="11" fill="#86efac">Loopback panel &lt;-&gt; node mgmt bridge</text>
+  <rect x="430" y="332" width="324" height="56" rx="11" fill="#0f192e" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="444" y="354" text-anchor="start" font-size="11.5" font-weight="700" fill="#d1fae5">server.toml</text>
+  <text x="444" y="373" text-anchor="start" font-size="11" fill="#86efac">tls = false; in-place config_watcher</text>
+  <rect x="788" y="100" width="388" height="314" rx="14" fill="rgba(15,23,42,0.58)" stroke="#a78bfa" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="804" y="122" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#ede9fe">INDEPENDENT LANES &amp; AGENT</text>
+  <rect x="804" y="134" width="356" height="56" rx="11" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="818" y="156" text-anchor="start" font-size="11.5" font-weight="700" fill="#ede9fe">Backhaul (SMUX)</text>
+  <text x="818" y="175" text-anchor="start" font-size="11" fill="#c4b5fd">127.0.0.1:3080 via Nginx /channel + /tunnel</text>
+  <rect x="804" y="200" width="356" height="56" rx="11" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="818" y="222" text-anchor="start" font-size="11.5" font-weight="700" fill="#ede9fe">FRP (fatedier/frp)</text>
+  <text x="818" y="241" text-anchor="start" font-size="11" fill="#c4b5fd">:7000/TCP (tcp/ws) + :7000/UDP (kcp/quic)</text>
+  <rect x="804" y="266" width="356" height="56" rx="11" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="818" y="288" text-anchor="start" font-size="11.5" font-weight="700" fill="#ede9fe">GRE L3 Kernel</text>
+  <text x="818" y="307" text-anchor="start" font-size="11" fill="#c4b5fd">gre1 10.10.10.0/30 · MTU 1476 · proto 47</text>
+  <rect x="804" y="332" width="356" height="56" rx="11" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="818" y="354" text-anchor="start" font-size="11.5" font-weight="700" fill="#ede9fe">REST Agent</text>
+  <text x="818" y="373" text-anchor="start" font-size="11" fill="#c4b5fd">rathole-agent.service :8089 (Bearer TLS)</text>
+  <rect x="24" y="434" width="1152" height="206" rx="14" fill="rgba(15,23,42,0.58)" stroke="#64748b" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="40" y="456" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#f1f5f9">PORT OWNERSHIP MAP — IRAN SERVER</text>
+  <rect x="42" y="470" width="266" height="66" rx="11" fill="rgba(16,185,129,0.12)" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="175.0" y="492" text-anchor="middle" font-size="12" font-weight="700" fill="#d1fae5">443 / TCP</text>
+  <text x="175.0" y="511" text-anchor="middle" font-size="11" fill="#86efac">Nginx TLS / Stream · Public default</text>
+  <rect x="324" y="470" width="266" height="66" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="457.0" y="492" text-anchor="middle" font-size="12" font-weight="700" fill="#e0f2fe">443 / UDP</text>
+  <text x="457.0" y="511" text-anchor="middle" font-size="11" fill="#93c5fd">kcptun server · Only if KCP on</text>
+  <rect x="606" y="470" width="266" height="66" rx="11" fill="#0f192e" stroke="#fbbf24" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="739.0" y="492" text-anchor="middle" font-size="12" font-weight="700" fill="#fef3c7">8880 / TCP</text>
+  <text x="739.0" y="511" text-anchor="middle" font-size="11" fill="#fcd34d">Nginx Plain HTTP · Optional lane</text>
+  <rect x="888" y="470" width="266" height="66" rx="11" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="1021.0" y="492" text-anchor="middle" font-size="12" font-weight="700" fill="#ede9fe">2334 / TCP</text>
+  <text x="1021.0" y="511" text-anchor="middle" font-size="11" fill="#c4b5fd">rathole-noise · Optional lane</text>
+  <rect x="42" y="548" width="266" height="66" rx="11" fill="#0f192e" stroke="#fbbf24" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="175.0" y="570" text-anchor="middle" font-size="12" font-weight="700" fill="#fef3c7">7000 / TCP+UDP</text>
+  <text x="175.0" y="589" text-anchor="middle" font-size="11" fill="#fcd34d">frps Server · Optional FRP lane</text>
+  <rect x="324" y="548" width="266" height="66" rx="11" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="457.0" y="570" text-anchor="middle" font-size="12" font-weight="700" fill="#ede9fe">8089 / TCP</text>
+  <text x="457.0" y="589" text-anchor="middle" font-size="11" fill="#c4b5fd">REST Agent API · Optional HTTP(S)</text>
+  <rect x="606" y="548" width="266" height="66" rx="11" fill="#0f192e" stroke="#64748b" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="739.0" y="570" text-anchor="middle" font-size="12" font-weight="700" fill="#f1f5f9">127.0.0.1:2333</text>
+  <text x="739.0" y="589" text-anchor="middle" font-size="11" fill="#cbd5e1">rathole control · Loopback only</text>
+  <rect x="888" y="548" width="266" height="66" rx="11" fill="#0f192e" stroke="#64748b" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="1021.0" y="570" text-anchor="middle" font-size="12" font-weight="700" fill="#f1f5f9">127.0.0.1:3080</text>
+  <text x="1021.0" y="589" text-anchor="middle" font-size="11" fill="#cbd5e1">backhaul-server · Loopback only</text>
+  <text x="24" y="662" text-anchor="start" font-size="11" font-weight="500" fill="#94a3b8">Green = exposed by default. Other ports open ONLY when that specific carrier or agent is explicitly enabled.</text>
 </svg>

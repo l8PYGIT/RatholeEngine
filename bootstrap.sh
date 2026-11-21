@@ -57,9 +57,9 @@ ask_yn(){ [ "$ASSUME_YES" -eq 1 ] && return 0; local a; rdp "$1 [Y/n]: " a; [[ -
 # ---------- pars argvmanha ----------
 while [ $# -gt 0 ]; do
   case "$1" in
-    --url)     BUNDLE_URL="$2"; shift 2;;
-    --local)   LOCAL="$2"; shift 2;;
-    --dir)     INSTALL_DIR="$2"; shift 2;;
+    --url)     [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; BUNDLE_URL="$2"; shift 2;;
+    --local)   [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; LOCAL="$2"; shift 2;;
+    --dir)     [ $# -ge 2 ] || die "$1 be meghdar niaz darad."; INSTALL_DIR="$2"; shift 2;;
     --panel)   MODE="panel"; shift;;
     --node)    MODE="node"; shift;;
     --update)  MODE="update"; shift;;
@@ -359,9 +359,11 @@ main(){
   mkdir -p "$INSTALL_DIR"; cp -rf "$src/." "$INSTALL_DIR/"
 
   log "normal-sazi khate-payan va mojavez ejra..."
+  find "$INSTALL_DIR" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' -o -name '*.css' -o -name '*.html' -o -name 'common.sh' -o -name 'ratholectl' -o -name 'ratholenode' \) \
+    -exec sed -i 's/\r$//' {} + 2>/dev/null || true
   local s
-  for s in "$INSTALL_DIR"/*.sh "$INSTALL_DIR/ratholectl" "$INSTALL_DIR/ratholenode" "$INSTALL_DIR/ratholeagent.py"; do
-    [ -f "$s" ] || continue; sed -i 's/\r$//' "$s"; chmod +x "$s"
+  for s in "$INSTALL_DIR"/*.sh "$INSTALL_DIR/ratholectl" "$INSTALL_DIR/ratholenode" "$INSTALL_DIR/ratholeagent.py" "$INSTALL_DIR/ratholehub/hub.py" "$INSTALL_DIR/ratholehub/install-hub.sh"; do
+    [ -f "$s" ] || continue; chmod +x "$s"
   done
   rm -rf "$tmp"
   log "baste amade shod dar: $INSTALL_DIR"

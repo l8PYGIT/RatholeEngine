@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 690" width="1200" height="690" font-family="Segoe UI, system-ui, -apple-system, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f6f8fc"/>
+      <stop offset="52%" stop-color="#eef2ff"/>
+      <stop offset="100%" stop-color="#e8f1ff"/>
+    </linearGradient>
+    <radialGradient id="orbA" cx="20%" cy="15%" r="55%">
+      <stop offset="0%" stop-color="rgba(124,58,237,0.11)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="orbB" cx="85%" cy="85%" r="55%">
+      <stop offset="0%" stop-color="rgba(0,122,255,0.10)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.15" fill="rgba(71,85,105,0.10)"/>
+    </pattern>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#0284c7"/>
+    </marker>
+    <marker id="arrV" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrG" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#059669"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrN" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1200" height="690" rx="18" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1200" height="690" rx="18" fill="url(#orbA)"/>
+  <rect x="0" y="0" width="1200" height="690" rx="18" fill="url(#orbB)"/>
+  <rect x="0" y="0" width="1200" height="690" rx="18" fill="url(#dotGrid)"/>
+  <rect x="20" y="16" width="1160" height="66" rx="14" fill="rgba(255,255,255,0.86)" stroke="rgba(15,23,42,0.11)" stroke-width="1.2"/>
+  <text x="600.0" y="41" text-anchor="middle" fill="#0f172a" font-size="18.5" font-weight="700">RatholeHub — Control Plane Architecture (SSH + REST Agent)</text>
+  <text x="600.0" y="62" text-anchor="middle" fill="#475569" font-size="12.5">Pure Python stdlib backend + offline Apple Glass UI · Never runs raw shell strings.</text>
+  <rect x="1108" y="27" width="56" height="22" rx="11" fill="rgba(0,122,255,0.11)" stroke="rgba(0,122,255,0.30)" stroke-width="1"/>
+  <text x="1136" y="42" text-anchor="middle" fill="#0369a1" font-size="11" font-weight="700">v2.1.0</text>
+  <rect x="24" y="100" width="240" height="326" rx="14" fill="rgba(255,255,255,0.72)" stroke="#007aff" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="40" y="122" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#0c4a6e">ADMIN</text>
+  <rect x="40" y="138" width="208" height="91" rx="11" fill="#ffffff" stroke="#007aff" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="144.0" y="160" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0c4a6e">Browser UI (v2.1.0)</text>
+  <text x="144.0" y="179" text-anchor="middle" font-size="11" fill="#1d4ed8">Apple Glass Light/Dark</text>
+  <text x="144.0" y="196" text-anchor="middle" font-size="11" fill="#1d4ed8">Offline Vazirmatn · ⌘K</text>
+  <text x="144.0" y="213" text-anchor="middle" font-size="11" fill="#1d4ed8">KPI + Live Filters</text>
+  <rect x="40" y="260" width="208" height="91" rx="11" fill="#ffffff" stroke="#007aff" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="144.0" y="282" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0c4a6e">Nginx /hub/</text>
+  <text x="144.0" y="301" text-anchor="middle" font-size="11" fill="#1d4ed8">Terminates TLS on :443</text>
+  <text x="144.0" y="318" text-anchor="middle" font-size="11" fill="#1d4ed8">-&gt; 127.0.0.1:8088</text>
+  <text x="144.0" y="335" text-anchor="middle" font-size="11" fill="#1d4ed8">Or SSH local forward</text>
+  <text x="144" y="404" text-anchor="middle" font-size="10.5" font-weight="500" fill="#64748b">HMAC cookie or Bearer token</text>
+  <rect x="316" y="100" width="444" height="536" rx="14" fill="rgba(255,255,255,0.72)" stroke="#7c3aed" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="332" y="122" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#4c1d95">RATHOLEHUB (hub.py — stdlib only)</text>
+  <rect x="336" y="136" width="404" height="57" rx="11" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="538.0" y="158" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4c1d95">ThreadingHTTPServer Handler</text>
+  <text x="538.0" y="177" text-anchor="middle" font-size="11" fill="#6d28d9">Rate-limited auth (5/5m) · parallel fetch + TTL cache</text>
+  <rect x="336" y="212" width="404" height="57" rx="11" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="538.0" y="234" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4c1d95">hubcmds.py — Security Allow-List</text>
+  <text x="538.0" y="253" text-anchor="middle" font-size="11" fill="#6d28d9">Maps action + RE_* validated args -&gt; exact argv list</text>
+  <rect x="336" y="290" width="194" height="74" rx="11" fill="#ffffff" stroke="#059669" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="433.0" y="312" text-anchor="middle" font-size="11.5" font-weight="700" fill="#064e3b">SSH Transport</text>
+  <text x="433.0" y="331" text-anchor="middle" font-size="11" fill="#047857">_ssh_base + shlex</text>
+  <text x="433.0" y="348" text-anchor="middle" font-size="11" fill="#047857">Optional proxy bridge</text>
+  <rect x="546" y="290" width="194" height="74" rx="11" fill="#ffffff" stroke="#007aff" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="643.0" y="312" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0c4a6e">REST Agent Client</text>
+  <text x="643.0" y="331" text-anchor="middle" font-size="11" fill="#1d4ed8">POST /api/exec JSON</text>
+  <text x="643.0" y="348" text-anchor="middle" font-size="11" fill="#1d4ed8">TLS or insecure_ssl opt</text>
+  <rect x="336" y="386" width="404" height="57" rx="11" fill="#ffffff" stroke="#64748b" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="538.0" y="408" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1e293b">Locked State &amp; Redacted Audit Log</text>
+  <text x="538.0" y="427" text-anchor="middle" font-size="11" fill="#475569">inventory.json · config.json · audit.log (masked secrets)</text>
+  <rect x="336" y="464" width="404" height="74" rx="11" fill="rgba(0,122,255,0.08)" stroke="#007aff" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="538.0" y="486" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0c4a6e">Per-Node &amp; Service Controls (v2.1.0)</text>
+  <text x="538.0" y="505" text-anchor="middle" font-size="11" fill="#1d4ed8">Inline carrier selector w/ auto-revert on node sync failure</text>
+  <text x="538.0" y="522" text-anchor="middle" font-size="11" fill="#1d4ed8">⋯ menu: carrier/proto · doctor · VLESS · peer · remove pair</text>
+  <rect x="816" y="100" width="360" height="536" rx="14" fill="rgba(255,255,255,0.72)" stroke="#059669" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="832" y="122" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#064e3b">MANAGED FLEET (inventory.json)</text>
+  <rect x="834" y="136" width="324" height="57" rx="11" fill="#ffffff" stroke="#059669" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="996.0" y="158" text-anchor="middle" font-size="11.5" font-weight="700" fill="#064e3b">Iran Panels (role: iran)</text>
+  <text x="996.0" y="177" text-anchor="middle" font-size="11" fill="#047857">ratholectl — nginx + server lanes + status JSON</text>
+  <rect x="834" y="216" width="324" height="57" rx="11" fill="#ffffff" stroke="#059669" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="996.0" y="238" text-anchor="middle" font-size="11.5" font-weight="700" fill="#064e3b">Foreign Nodes (role: node)</text>
+  <text x="996.0" y="257" text-anchor="middle" font-size="11" fill="#047857">ratholenode — services.conf + bh-services.conf</text>
+  <rect x="834" y="298" width="324" height="74" rx="11" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="996.0" y="320" text-anchor="middle" font-size="11.5" font-weight="700" fill="#4c1d95">REST Agent (ratholeagent.py :8089)</text>
+  <text x="996.0" y="339" text-anchor="middle" font-size="11" fill="#6d28d9">Strict allow-list: ratholectl/node, systemctl,</text>
+  <text x="996.0" y="356" text-anchor="middle" font-size="11" fill="#6d28d9">journalctl, jq, tail · 0600 token · no slash path</text>
+  <rect x="834" y="412" width="324" height="91" rx="11" fill="rgba(5,150,105,0.08)" stroke="#059669" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="996.0" y="434" text-anchor="middle" font-size="11.5" font-weight="700" fill="#064e3b">Lifecycle &amp; Safe Rollback (update.sh)</text>
+  <text x="996.0" y="453" text-anchor="middle" font-size="11" fill="#047857">deploy -&gt; install.sh --update on target</text>
+  <text x="996.0" y="470" text-anchor="middle" font-size="11" fill="#047857">Snapshot -&gt; health check -&gt; cgroup-safe</text>
+  <text x="996.0" y="487" text-anchor="middle" font-size="11" fill="#047857">deferred agent restart -&gt; auto-rollback on fail</text>
+  <line x1="248" y1="178" x2="332" y2="178" stroke="#0284c7" stroke-width="2.0" marker-end="url(#arr)"/>
+  <line x1="248" y1="296" x2="332" y2="188" stroke="#0284c7" stroke-width="2.0" marker-end="url(#arr)"/>
+  <path d="M 760 288 L 788 288 L 788 172 L 830 172" fill="none" stroke="#059669" stroke-width="2.1" marker-end="url(#arrG)"/>
+  <rect x="765.0" y="219.0" width="46" height="22" rx="11.0" fill="#ffffff" stroke="#059669" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="765.0" y="219.0" width="46" height="22" rx="11.0" fill="rgba(5,150,105,0.08)"/>
+  <text x="788" y="233.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="#064e3b">SSH</text>
+  <line x1="740" y1="338" x2="830" y2="338" stroke="#0284c7" stroke-width="2.1" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+  <rect x="761.0" y="355.0" width="54" height="22" rx="11.0" fill="#ffffff" stroke="#007aff" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="761.0" y="355.0" width="54" height="22" rx="11.0" fill="rgba(0,122,255,0.08)"/>
+  <text x="788" y="369.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="#0c4a6e">HTTPS</text>
+  <text x="24" y="666" text-anchor="start" font-size="11" font-weight="500" fill="#64748b">Strict argv execution only: zero shell interpolation on hub or REST Agent; every mutation is recorded in audit.log.</text>
+</svg>

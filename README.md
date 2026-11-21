@@ -1,302 +1,178 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" alt="RatholeEngine" width="120" height="120" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/banner-light.png">
+  <img src="docs/assets/banner-dark.png" alt="RatholeEngine — Multi-Location Reverse Tunnel System" width="100%">
+</picture>
 
-# RatholeEngine
+**Multi-location reverse-tunnel engine built on `rathole` + `Nginx`** — _One port · one domain · 8 carriers · central Web Hub_
 
-**Multi-location reverse-tunnel system on rathole + Nginx**
-
-_One port · one domain · one certificate · many foreign nodes routed by URL path._
-_Built for censorship-resistant tunneling into Iran._
-
-<!-- badges -->
 [![CI](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/ci.yml)
 [![Docs](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/docs.yml/badge.svg)](https://l8pygit.github.io/RatholeEngine/)
-[![Release](https://img.shields.io/github/v/release/l8PYGIT/RatholeEngine?sort=semver&color=7c3aed)](https://github.com/l8PYGIT/RatholeEngine/releases/latest)
-[![License](https://img.shields.io/github/license/l8PYGIT/RatholeEngine?color=blue)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/l8PYGIT/RatholeEngine?style=flat&color=16a34a)](https://github.com/l8PYGIT/RatholeEngine/stargazers)
-[![Telegram](https://img.shields.io/badge/Telegram-%40l8PY4NET-26A5E4?logo=telegram&logoColor=white)](https://t.me/l8PY4NET)
-<br/>
-![shell](https://img.shields.io/badge/shell-bash-4EAA25?logo=gnubash&logoColor=white)
-![python](https://img.shields.io/badge/python-stdlib%20only-3776AB?logo=python&logoColor=white)
-![tunnel](https://img.shields.io/badge/tunnel-rathole%20%2B%20nginx-7c3aed)
+[![Release](https://img.shields.io/github/v/release/l8PYGIT/RatholeEngine?style=flat-square&sort=semver&color=7c3aed)](https://github.com/l8PYGIT/RatholeEngine/releases/latest)
+[![License](https://img.shields.io/github/license/l8PYGIT/RatholeEngine?style=flat-square&color=2563eb)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/l8PYGIT/RatholeEngine?style=flat-square&color=16a34a)](https://github.com/l8PYGIT/RatholeEngine/stargazers)
+[![Telegram](https://img.shields.io/badge/Telegram-%40l8PY4NET-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/l8PY4NET)
 
-[**English**](#what-is-this) · [**فارسی**](docs/README.fa.md) · [**Docs site**](https://l8pygit.github.io/RatholeEngine/) · [**Full Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [Quick start](#quick-start) · [Documentation](#documentation) · [**Telegram channel**](https://t.me/l8PY4NET)
+[**Docs Site**](https://l8pygit.github.io/RatholeEngine/) · [**Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [**Quick Start**](#quick-start) · [**Transport Modes**](#transport--ingress-modes) · [**RatholeHub**](#ratholehub-web-panel-v205) · [**فارسی**](docs/README.fa.md) · [**Telegram**](https://t.me/l8PY4NET)
 
 </div>
 
-> The CLI tools live under [`rathole-manager/`](rathole-manager/). For the full Persian reference see [`docs/README.fa.md`](docs/README.fa.md); a Persian summary is at the bottom of this page.
-
 ---
 
-## Contents
+## Architecture
 
-- [What is this](#what-is-this)
-- [Three roles + REST Agent](#three-roles--rest-agent)
-- [Transport modes](#transport-modes)
-- [Quick start](#quick-start)
-- [REST Agent & private repos](#rest-agent--private-repos)
-- [Update & rollback](#update--rollback)
-- [Documentation](#documentation)
-- [Repository layout](#repository-layout)
-- [Community & support](#community--support)
-- [Donate](#donate)
-- [خلاصه‌ی فارسی](#خلاصهی-فارسی)
+One **Iran edge server** behind a single domain, TLS certificate, and public `:443` port fronts many **foreign nodes** connected via outbound reverse tunnels (`map $uri $backend_port` in Nginx). The system spans **four roles**: Iran Panel ([`ratholectl`](rathole-manager/ratholectl)), Foreign Node ([`ratholenode`](rathole-manager/ratholenode)), Central Web Hub ([`hub.py`](rathole-manager/ratholehub/hub.py), stdlib Python), and an optional **REST Agent** ([`ratholeagent.py`](rathole-manager/ratholeagent.py), `:8089`). Every mutation edits state only, regenerates configs in place via `rth_commit_config` (preserving inodes for hot-reload), runs `nginx -t`, and reloads safely with automatic rollback.
 
-## What is this
-
-A single **Iran server** — behind one domain, one Let's Encrypt cert, one public port `443` — fronts many **foreign nodes** that connect back over a reverse tunnel. User traffic is routed to a node **by URL path** (`map $uri $backend_port` in nginx). By default nothing but `:443` is exposed on the Iran server (optional lanes — plain/noise/direct-IP and the REST Agent — open their own ports only when you enable them); the foreign nodes have no public port.
-
-![Architecture](docs/assets/architecture.svg)
-
-## Three roles + REST Agent
-
-| Role | Program | Responsibility |
-|------|---------|----------------|
-| **Iran panel** | [`rathole-manager/ratholectl`](rathole-manager/ratholectl) (bash) | rathole **server** + nginx. Owns node inventory. Generates `server.toml` + `rathole.conf`. |
-| **Foreign node** | [`rathole-manager/ratholenode`](rathole-manager/ratholenode) (bash) | rathole **client**. Generates `client.toml`. |
-| **Hub** | [`rathole-manager/ratholehub/hub.py`](rathole-manager/ratholehub/hub.py) (Python, stdlib only) | Central web panel driving many Iran servers and nodes over **SSH or the REST Agent**: per-node carrier selector, per-service controls (⋯), read-only routing map, multi-core carrier management, audit log. |
-| **REST Agent** *(optional)* | [`rathole-manager/ratholeagent.py`](rathole-manager/ratholeagent.py) (Python, stdlib only) | Token-authenticated HTTP(S) daemon on `:8089` (`rathole-agent.service`) so the hub can manage a server **without SSH**. |
-
-The core design principle everywhere: **change state → regenerate config → validate → hot-reload**. Configs are never hand-edited; they are rewritten in place (inode preserved) so rathole hot-reloads without dropping active tunnels, with automatic rollback if `nginx -t` fails.
-
-## Transport modes
-
-The rathole lane supports **four carriers** (WebSocket/TLS, KCP, plain, and Noise); Backhaul is a separate SMUX lane that can run alongside rathole on the same node. Game/SNI, direct-IP, and proxy are ingress modes, not carriers. Switching a rathole carrier never changes user services, tokens, or paths.
-
-![Transport modes](docs/assets/transport-modes.svg)
-
-- **websocket + TLS** (default) — `wss://domain:443`, TLS terminated by nginx.
-- **kcp** — parallel UDP+FEC path for lossy links (looks like QUIC on UDP/443).
-- **plain** — no-TLS websocket to a separate HTTP listener (lighter, unencrypted).
-- **noise** — encrypted transport (Noise/X25519) on a second rathole instance, no TLS/cert.
-- **backhaul** *(v1.9)* — a separate Go core (`Musixal/Backhaul`, patched with a uTLS Chrome fingerprint) beside rathole that multiplexes user connections via **SMUX**. It uses the separate `bh-services.conf` registry and can run as a dual-core lane alongside `rathole-client`; nginx proxies the hardcoded `/channel` + `/tunnel` paths on the same 443.
-- **game / SNI** — L4 passthrough on 443; TLS terminates on the node (VLESS+TLS+Vision).
-- **direct-IP** *(ingress, not a tunnel carrier)* — a separate HTTP listener where node selection comes from a hidden header (`X-Cdn-Id: <node_name>`) instead of URL path; users connect to the raw server IP, no domain/TLS required.
-- **frp** *(v2.0)* — a standalone reverse-tunnel core (`fatedier/frp`) supporting TCP, KCP, QUIC, and WebSocket multiplexing with shared token authentication.
-- **gre** *(v2.0)* — Linux kernel Layer 3 point-to-point network tunnel (`ip tunnel`) with /30 subnet addressing, MTU 1476, and iptables TCPMSS clamping.
-- **frp + gre** *(v2.0)* — hybrid carrier combining FRP's obfuscated multiplexed stream (QUIC, KCP, WebSocket, TCP) with Linux kernel Layer 3 point-to-point GRE routing for censorship resistance and direct L3 IP connectivity.
-- **adaptive failover** *(v1.5.0)* — timer-driven probes classify each carrier (`healthy / tls_failed / tcp_timeout / …`) and auto-switch between ws and kcp with hysteresis + cooldown; plain requires explicit `ALLOW_INSECURE=1`.
-- **secret control path** *(v1.5.0)* — WebSocket control upgraded from `/` to `/_rh/<32 hex>`; nginx routes that exact path to rathole, while `/` with a WebSocket Upgrade stays a fallback for not-yet-updated nodes and all other paths keep fake-site behaviour.
-
-Details: [`docs/transport-modes.md`](docs/transport-modes.md).
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/architecture-light.svg">
+  <img src="docs/assets/architecture.svg" alt="RatholeEngine Architecture" width="100%">
+</picture>
 
 ## Quick start
 
-**One command, then just answer the prompts.** It asks for the version (Enter = latest), shows a
-role menu (`1` Iran panel · `2` foreign node · `3` update · `7` uninstall), and then asks only the
-few details that role needs:
+Run the one-command interactive installer (`Enter` picks latest release; choose role `1` Iran Panel, `2` Foreign Node, `3` Update, or `7` Uninstall):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
 ```
 
-For the panel that is **the domain and the certificate paths** (everything else: press Enter); for a
-node it is **server address, name, token and inbound port**.
+> [!TIP]
+> **Step-by-step interactive walkthrough** (every prompt, expected answer, and troubleshooting table): [`docs/quickstart.md`](docs/quickstart.md) · [English](docs/quickstart.en.md).
 
-> **Step-by-step walkthrough** (what each prompt means, with expected answers and a
-> troubleshooting table): [`docs/quickstart.md`](docs/quickstart.md) ·
-> [English](docs/quickstart.en.md).
-
-Prefer no questions at all? Pass everything as flags (defaults to `l8PYGIT/RatholeEngine`,
-override with `RATHOLE_GH`):
+<details>
+<summary>⚙️ <b>Non-interactive flags, version pinning &amp; essential panel commands</b></summary>
 
 ```bash
-# Iran server (panel), non-interactive:
+# Iran panel (non-interactive)
 curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --panel \
   --domain panel.example.ir \
   --fullchain /root/cert/panel.example.ir/fullchain.pem \
   --key       /root/cert/panel.example.ir/privkey.pem
 
-# Foreign node, non-interactive:
+# Foreign node (keep node flags after `--`; pass `--release v2.1.0` before `--panel`/`--node` to pin)
 curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --node -- \
   --server panel.example.ir:443 --name trk01 --token <T> --inbound-port 2087
+
+# Essential panel CLI
+ratholectl hub on 8088            # enable Web Hub behind nginx /hub/
+ratholectl add trk01 2087         # add node on /trk01 & print ready node install command
+ratholectl status                 # panel dashboard (--json for Hub)
+ratholectl doctor                 # end-to-end health check
 ```
 
-> `install.sh` fetches `rathole-manager.zip` + `bootstrap.sh` from the latest GitHub Release (published by the release workflow), then hands off to `bootstrap.sh`. Override the source repo with `RATHOLE_GH="you/repo"`.
+</details>
 
-Install a **specific released version** with `--release` (run with no arguments and it asks; Enter = latest):
+## Transport & ingress modes
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.0.3 --panel --domain panel.example.ir --fullchain /path/fullchain.pem --key /path/privkey.pem
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/transport-modes.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/transport-modes-light.svg">
+  <img src="docs/assets/transport-modes.svg" alt="RatholeEngine Transport & Ingress Modes" width="100%">
+</picture>
 
-`--beta` takes the newest pre-release, `--stable` the newest stable. From an installed server: `ratholectl update v2.0.2` / `ratholenode update v2.0.2`. Note `RATHOLE_RELEASE=... curl ... | sudo bash` does **not** work — the variable goes to `curl` and `sudo` strips it; use the flag.
+| Carrier | Core / Layer | Default Port / Proto | Best Used For |
+|---|---|---|---|
+| **WebSocket + TLS** *(default)* | `rathole` (L7) | `:443/TCP` (`/_rh/<hex>` control) | Stealth HTTPS camouflage behind Nginx |
+| **KCP** | `rathole` + `kcptun` | `:443/UDP` (FEC mux) | High packet-loss / congested paths |
+| **Plain** | `rathole` (no TLS) | `:8880/TCP` | Minimal CPU overhead (explicit opt-in) |
+| **Noise** | Second `rathole` | `:2334/TCP` (X25519) | Cert-free encrypted carrier off Nginx |
+| **Backhaul (SMUX)** | `Musixal/Backhaul` | `:443/TCP` (`/channel`+`/tunnel` → `:3080`) | High-concurrency SMUX + uTLS Chrome |
+| **FRP** | `fatedier/frp` | `:7000/TCP` (`tcp`/`ws`) + `:7000/UDP` (`kcp`/`quic`) | Flexible mux carrier off `:443` |
+| **GRE** | Linux kernel `ip_gre` | IP Proto 47 (`/30` · `MTU 1476`) | Direct L3 IP link without proxy |
+| **FRP + GRE** | FRP inside GRE `/30` | Kernel GRE + internal `:7000` | Strict DPI resistance combining L3 + mux |
 
-Offline / local bundle (no download) still works via `bootstrap.sh` directly — see [`docs/README.fa.md`](docs/README.fa.md).
+*Ingress modes (not tunnel carriers):* **Game / SNI** (L4 `:443` passthrough), **Direct-IP** (`:8081` + `X-Cdn-Id`), **Proxy** (`/<name>/` upstream), and **Fakeweb** (`:8080`). Full details: [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [فارسی](docs/transport-modes.md).
 
-> **Re-running the panel installer** is safe: it detects a previous or partial install, prints a ✓/✗ status per component, and offers **resume** (complete missing pieces, keep state — `--repair`, the default) or **fresh** (back up + wipe config/state, reinstall — `--fresh`). Under `curl … | bash` (no TTY) it defaults to the safe resume path.
+## RatholeHub web panel (`v2.1.0`)
 
-Then add nodes from the Iran panel:
+- **Apple Glass UI (100% offline, stdlib Python)** — Light / Dark / System themes, bundled `vazirmatn.woff2`, Persian RTL / English LTR, native `<dialog>` modals, and **`⌘K / Ctrl+K` Command Palette**.
+- **Fast KPI Dashboard & Two-Sided Sync** — 4 KPI cards, live filters, parallel status loading with TTL cache, inline per-node carrier dropdown with auto-revert on node failure, and compact `⋯` service controls (carrier modal, `doctor` check, VLESS link generator, peer jump, dual-side delete).
+- **SSH or REST Agent** — drives servers via strict regex-validated `argv` lists over key-auth SSH or token-protected HTTP(S) REST Agent (`:8089`).
 
-```bash
-ratholectl hub on <port>             # enable hub on port <port>
-ratholectl add trk01 2087            # → path /trk01 routed to that node
-ratholectl proxy add mysvc http://127.0.0.1:9000   # /mysvc/ → any upstream, no rathole involved
-ratholectl ls                        # list nodes + user paths
-ratholectl status                    # full dashboard: domain, ports, cert, services, nodes (--json for the hub)
-ratholectl paths                     # every config/file path with a ✓/✗
-ratholectl version                   # manager_version + rathole_version
-ratholectl doctor                    # health check
-```
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dashboard-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/screenshots/dashboard.png">
+  <img src="docs/assets/screenshots/dashboard.png" alt="RatholeHub v2.1.0 Dashboard" width="100%">
+</picture>
+</div>
 
-`ratholectl add` also prints a ready-to-paste `curl … | sudo bash -s -- --node -- …` one-liner for the foreign node, with the token/inbound already filled in.
+<details>
+<summary>📸 <b>More Hub screenshots (Iran Server, Foreign Node, Carrier Modal, Routing Map, Ctrl+K, Settings)</b></summary>
 
-**From the hub** you can drive all of this without the CLI:
-- **Per-node carrier selector** — on the Iran page every node row has a carrier dropdown (`ws`, `kcp`, `plain`, `noise`, `backhaul`, `frp`, `gre`, `frp_gre`). Picking one is a **single click that syncs both sides**: it confirms, applies the carrier on Iran *and* the node while keeping the existing inbound port, and **reverts the dropdown if the node-side sync fails** so the tunnel is never left half-switched. `frp`/`gre`/`frp_gre` open the full modal instead (they need an explicit public IP/transport).
-- **Service controls (⋯ menu)** — on both the Iran page and the node page, the **⋯** button of each row opens: **Carrier and protocol** (full modal: carrier + peer node + public IPs + GRE address + FRP/Backhaul transport + profile + optional carrier port), **Health test** (runs `doctor` and shows its output), **Create VLESS config** (copies a `vless://…` link; needs the real Xray user UUID + the public Iran domain/IP), **Manage peer** (jump to the other side), and **Remove both ends** (delete from Iran *and* the node in one action).
-- **Carrier labels report the actual protocol** — e.g. `FRP / TCP`, `FRP / QUIC`, `Backhaul / WSMUX`, `KCP / UDP · balanced`; `?` means the protocol was not reported by the server. A label alone does not prove connectivity — use the health test.
-- **Routing map** — `#/routing` is a **read-only** topology of ingress → Iran → nodes (console / graph / table views); carrier switching and config copy live on the service rows, not here.
-- **Update all** rolls the update across every server one-by-one (progress bar + per-server status, with a green/red version badge on each).
-- **Add to node** wires an Iran node (name/token/inbound) onto a foreign node or upstream.
-- **Set main tunnel** links a node to its Iran server with single-click auto-configuration.
+| Iran Server (`#/server/<iran>`) | Foreign Node (`#/server/<node>`) |
+|---|---|
+| ![Iran Server](docs/assets/screenshots/server-iran.png) | ![Foreign Node](docs/assets/screenshots/server-node.png) |
 
-![RatholeHub dashboard](docs/assets/screenshots/dashboard.png)
+| Service Controls Modal | Routing Topology (`#/routing`) |
+|---|---|
+| ![Service Controls](docs/assets/screenshots/service-controls.png) | ![Routing Map](docs/assets/screenshots/routing-map.png) |
 
-*The Hub dashboard (mock-mode screenshot): server cards with version/carrier badges. More screenshots — service controls, routing map, settings — are in [`docs/assets/screenshots/`](docs/assets/screenshots/) and on the [docs site](docs/website.md).*
+| Command Palette (`⌘K / Ctrl+K`) | Settings (`#/settings`) |
+|---|---|
+| ![Command Palette](docs/assets/screenshots/command-palette.png) | ![Settings](docs/assets/screenshots/settings.png) |
 
-## REST Agent & private repos
+</details>
 
-**REST Agent** *(optional; HTTPS since v2.0.1)* — an optional Python-stdlib daemon that lets the hub manage a server over HTTP(S) instead of SSH (the server record then has `transport: "api"`). It listens on `:8089` by default and requires `Authorization: Bearer <token>`; it exposes `GET /api/ping` and `POST /api/exec` with an argv list (`{"cmd": ["ratholectl","status","--json"], "timeout": 120}`), a binary allow-list and a 1 MiB payload cap. HTTPS is optional: pass `--tls-cert`/`--tls-key` (or env `RATHOLE_AGENT_TLS_CERT`/`RATHOLE_AGENT_TLS_KEY`), or drop `cert.pem` + `key.pem` into `/etc/rathole-agent/`. A **self-signed** cert is accepted only when the server record has `"insecure_ssl": true` in `/etc/ratholehub/inventory.json` (or the hub runs with `RATHOLE_AGENT_INSECURE_SSL=1`).
-
-```bash
-sudo install-agent.sh --role iran|node [--port 8089] [--token <T>]   # shipped with the panel/node installers
-ratholectl agent on   /   ratholenode agent on                      # same thing from the CLIs (panel / node)
-```
-
-Then add the server in the hub with **Connection = Agent REST API**, its **API URL** (e.g. `http://1.2.3.4:8089`) and the **token** (printed by the installer, or `ratholectl agent token`). The unit is `rathole-agent.service` and the token lives in `/etc/rathole-agent/token` (mode 600, or `RATHOLE_AGENT_TOKEN`).
-
-**Private GitHub repositories** — `install.sh` accepts `--token <pat>` / `-t` (or the `RATHOLE_GH_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN` env var). With a token it downloads the private `bootstrap.sh` from raw GitHub and gets the bundle from the Release assets first (with the GitHub API tarball as fallback) using `Authorization: Bearer`, and skips the public ghproxy mirrors (which cannot reach a private repo). To update an already-installed server from a private repo, run `sudo bash tools/update-private.sh` from a repo checkout — it prompts for a hidden token (or reads the env), updates from the Release assets or from `main` source via `bootstrap.sh --local --update`, and unsets the token variables on exit.
-
-## Update & rollback
-
-> **⚠️ Updating from v2.0.3 or older?** Those builds still hard-code the *old* repository slug
-> (`loopy-iri/tunnelplus`), which no longer exists, so `ratholectl update` / `ratholenode update`
-> fail with *“download install.sh az hameye mirror-ha shekast khord”*. Run the one-time migration
-> below; it installs v2.0.4 (correct slug) and afterwards plain `ratholectl update` works again:
->
-> ```bash
-> sudo RATHOLE_GH=l8PYGIT/RatholeEngine ratholectl update      # panel
-> sudo RATHOLE_GH=l8PYGIT/RatholeEngine ratholenode update     # node
-> # or, independent of the installed CLI:
-> curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --update
-> ```
-
-Updates take a **full snapshot** (CLI + configs + systemd units) into `/var/backups/rathole-manager/` before touching anything, run a per-role **health check** afterwards, and **auto-roll-back** to the snapshot if the service fails to come up or `nginx -t` breaks.
+## Update, rollback & advanced options
 
 ```bash
-# Update in place (auto-detects panel/node/hub; snapshot + health-check + auto-rollback)
 curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --update
-#   or, from an installed tree:  sudo bash /opt/rathole-manager/update.sh
-
-sudo bash update.sh --list-backups        # list snapshots
-sudo bash update.sh --rollback            # revert to the latest snapshot
-sudo bash update.sh --rollback 20260713-2210   # revert to a specific one
-sudo bash update.sh --no-rollback         # update but never auto-revert (snapshot only)
+# or from an installed host:  sudo ratholectl update  /  sudo ratholenode update
 ```
 
-Full CLI reference and install flows (Persian): [`docs/README.fa.md`](docs/README.fa.md).
+Every update takes a pre-change snapshot (`/var/backups/rathole-manager/`), runs health checks, and auto-rolls back on failure.
 
-## Uninstall
+> [!WARNING]
+> **Updating from v2.0.3 or older?** Run `sudo RATHOLE_GH=l8PYGIT/RatholeEngine ratholectl update` (or `ratholenode update`) once to migrate from the old repository slug.
 
-`bootstrap.sh` auto-detects which roles are installed (panel / node / hub) and runs the matching uninstaller for each:
+<details>
+<summary>🔐 <b>REST Agent setup, private repo updates, manual rollback &amp; uninstall</b></summary>
 
 ```bash
-sudo bash bootstrap.sh --uninstall        # remove installed roles (asks to confirm)
-sudo bash bootstrap.sh --purge --yes      # + rathole binary and hub config, no prompt
-#   or per-role directly:  sudo bash uninstall-panel.sh [--purge] [--yes]
+# Optional SSH-free REST Agent (:8089, Bearer auth, HTTPS supported)
+sudo ratholectl agent on   # or: sudo install-agent.sh --role iran|node --port 8089
+
+# Private GitHub repository install / update
+curl -fsSL -H "Authorization: Bearer <PAT>" https://raw.githubusercontent.com/owner/repo/main/install.sh | sudo bash -s -- --token <PAT> --panel ...
+sudo bash tools/update-private.sh
+
+# Snapshots, manual rollback & uninstall
+sudo bash rathole-manager/update.sh --list-backups
+sudo bash rathole-manager/update.sh --rollback [<timestamp>]
+sudo bash bootstrap.sh --uninstall   # add --purge --yes to remove binaries & hub config
 ```
 
-TLS certs are never removed. The shared `common.sh` is removed only when no other role remains on the host. The same option is item 7 in the interactive `bootstrap.sh` menu.
+</details>
 
 ## Documentation
 
 | Doc | Contents |
-|-----|----------|
-| [**Docs site (Pages)**](https://l8pygit.github.io/RatholeEngine/) | **Online documentation site** — Persian docs + wiki + English, built with MkDocs Material ([build guide](docs/website.md)). |
-| [**Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) | **Complete wiki** (Getting Started, CLI Reference, Adaptive Filtering, Hub, Troubleshooting) — Persian pages served by the docs site. |
-| [`docs/architecture.md`](docs/architecture.md) | Three roles, state→regenerate→reload principle, path==name==map==inbound invariant. |
-| [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [`fa`](docs/transport-modes.md) | All transport and ingress modes with commands (English · فارسی). |
-| [`docs/traffic-flow.md`](docs/traffic-flow.md) | Layer-by-layer packet path incl. direct-IP and proxy (Mermaid + SVG). |
-| [`docs/hub.en.md`](docs/hub.en.md) · [`fa`](docs/hub.md) | Hub web panel: service controls, routing map, REST API + REST Agent, security model (English · فارسی). |
-| [`docs/performance.md`](docs/performance.md) | Tuning beyond the tunnel (BBR, kcp profiles, non-tunnel bottlenecks). |
-| [`docs/amneziawg-reverse.md`](docs/amneziawg-reverse.md) | A separate AmneziaWG reverse-tunnel design (not part of the rathole flow). |
-| [`docs/website.md`](docs/website.md) · [`en`](docs/website.en.md) | How to build/publish the static docs website + platform comparison (MkDocs Material, VitePress — what Marzban uses —, Docusaurus, Docsify). |
-| [`docs/README.fa.md`](docs/README.fa.md) | **Full Persian CLI reference + install/uninstall flows.** |
-| [`docs/quickstart.md`](docs/quickstart.md) · [`en`](docs/quickstart.en.md) | **Quick start (interactive):** one command, every prompt explained, verification, add-node, troubleshooting table. |
-| [`docs/install-manual.md`](docs/install-manual.md) | **Full manual install (English):** Iran panel + Pasargad config + foreign nodes + hub, step by step. |
-| [`docs/install-manual.fa.md`](docs/install-manual.fa.md) | Same manual install guide, **Persian**. |
-| [`CHANGELOG.en.md`](CHANGELOG.en.md) | English changelog (translated from the Finglish source). |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute: tests, shellcheck, conventions, PR process. |
-| [`SECURITY.md`](SECURITY.md) | Vulnerability reporting policy. |
-| [`rathole-multilocation-pasargad.md`](rathole-multilocation-pasargad.md) | Original detailed design & troubleshooting doc (Persian). |
-
-## Repository layout
-
-```
-install.sh                one-command installer from GitHub (curl | sudo bash)
-bootstrap.sh              env prep + unpack + hand-off to installer (local or --url)
-package.sh                build the distributable rathole-manager.zip
-.github/workflows/        release.yml (build+publish on tag v*) · ci.yml (lint)
-rathole-manager/
-  ratholectl              Iran panel CLI (rathole server + nginx)
-  ratholenode             foreign node CLI (rathole client)
-  ratholeagent.py         optional REST Agent daemon (Bearer token, HTTP/HTTPS :8089)
-  common.sh               shared bash helpers
-  ratholehub/hub.py       central web panel (stdlib Python) — router/state/SSH/agent/parsers
-  ratholehub/hubcmds.py   security-critical action→argv allow-list (RE_* regexes)
-  ratholehub/ui/          web UI assets (index.html, app.css, app.js, i18n.js)
-  install-*.sh            per-role installers (panel/node/hub/agent)
-  update.sh               safe update: snapshot + health-check + rollback
-  uninstall-*.sh
-tools/update-private.sh   update an installed server from a private GitHub repo
-docs/                     documentation + assets/ (SVG/PNG diagrams)
-```
-
-## Community & support
-
-| Where | What |
 |---|---|
-| 📢 **[Telegram channel — @l8PY4NET](https://t.me/l8PY4NET)** | Release announcements, setup tips, carrier/tunnel news and the fastest place to ask a question. |
-| 🐙 **[GitHub Issues](https://github.com/l8PYGIT/RatholeEngine/issues)** | Bug reports and feature requests (include `ratholectl doctor` output). |
-| 📚 **[Docs site](https://l8pygit.github.io/RatholeEngine/)** | Quick start, CLI reference, architecture, carriers, hub, troubleshooting. |
+| [**Docs Site & Wiki**](https://l8pygit.github.io/RatholeEngine/) | Complete Persian + English MkDocs Material site & Wiki ([Troubleshooting](https://l8pygit.github.io/RatholeEngine/wiki/Troubleshooting/)) |
+| [`docs/quickstart.md`](docs/quickstart.md) · [`en`](docs/quickstart.en.md) | Interactive install walkthrough & troubleshooting |
+| [`docs/architecture.md`](docs/architecture.md) · [`en`](docs/architecture.en.md) | 4 roles, management plane & `state→regenerate→reload` |
+| [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [`fa`](docs/transport-modes.md) | All 8 carriers, FRP `7000/TCP+UDP`, GRE, Backhaul & ingress modes |
+| [`docs/traffic-flow.md`](docs/traffic-flow.md) · [`en`](docs/traffic-flow.en.md) | Layer-by-layer packet flow & SVG reference |
+| [`docs/hub.en.md`](docs/hub.en.md) · [`fa`](docs/hub.md) | RatholeHub UI, REST Agent & security model |
+| [`docs/performance.md`](docs/performance.md) · [`README.fa.md`](docs/README.fa.md) | BBR/KCP tuning & full Persian CLI reference |
+| [`tools/telegram-bot-worker/`](tools/telegram-bot-worker/README.md) | Serverless Telegram announcer (GitHub Actions reusable workflow + Cloudflare Worker) |
+| [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Release notes (`v2.1.0`), tests, LF & code rules ([CoC](CODE_OF_CONDUCT.md)) |
 
-> Support requests are usually answered fastest on Telegram; use Issues when you have logs to attach
-> or want the outcome tracked publicly.
+## Community & Donate
 
-## <a id="donate"></a>Donate
+📢 **[Telegram Channel — @l8PY4NET](https://t.me/l8PY4NET)** (releases & fastest support) · 🐙 **[GitHub Issues](https://github.com/l8PYGIT/RatholeEngine/issues)** (attach `ratholectl doctor`)
 
-If RatholeEngine helps you, consider supporting continued development:
-
-| Network | Address |
-|---------|---------|
-| **USDT (BEP-20 / BSC)** | `0x2364898407e8A42DA554B909989cd9B28eE61314` |
-| **TON** | `UQCondoXRwQNt0fQvvmYGa_Fn39D9szjQH4eBqIcUd5r1yfH` |
-| **TRX (Tron)** | `TRhnkJFpj9uxA2aqUxapJAFhkzNPbfxKwp` |
+<a id="donate"></a>
+| USDT (BEP-20 / BSC) | TON | TRX (Tron) |
+|---|---|---|
+| `0x2364898407e8A42DA554B909989cd9B28eE61314` | `UQCondoXRwQNt0fQvvmYGa_Fn39D9szjQH4eBqIcUd5r1yfH` | `TRhnkJFpj9uxA2aqUxapJAFhkzNPbfxKwp` |
 
 ---
 
 ## خلاصه‌ی فارسی
 
-`RatholeEngine` یک سیستم تونل معکوس **چند-موقعیتی** روی **rathole + Nginx** است: یک سرور ایران (پشت یک دامنه، یک گواهی، یک پورت ۴۴۳) جلوی چند نود خارجی قرار می‌گیرد که با تونل معکوس به آن وصل می‌شوند و ترافیک با **path** به هر نود مسیریابی می‌شود. به‌طور پیش‌فرض فقط پورت ۴۴۳ روی سرور ایران عمومی است؛ لاین‌های اختیاری (plain/noise/direct-IP و آژنت REST) فقط وقتی خودت فعالشان کنی پورت جداگانه باز می‌کنند.
-
-**سه نقش (+ ایجنت اختیاری):** پنل ایران (`ratholectl` — rathole server + nginx)، نود خارج (`ratholenode` — rathole client)، هاب مرکزی (`hub.py` — پنل وب مدیریت چند سرور از طریق SSH یا REST API)، و **ایجنت REST** (`ratholeagent.py` — دیمن HTTP(S) روی پورت ۸۰۸۹ با توکن Bearer و HTTPS اختیاری).
-
-**اصل مرکزی:** تغییر state → بازتولید کانفیگ → `nginx -t` → hot-reload (با حفظ inode و بازگشت خودکار در صورت خطا).
-
-**هسته‌ها و حامل‌ها:** پشتیبانی از حامل‌های پیش‌فرض rathole (شامل WebSocket/TLS، KCP، Plain و Noise)، هسته‌ی مالتی‌پلکس **Backhaul (SMUX)**، هسته‌ی ریورس تونل **FRP (`fatedier/frp`)**، و تونل شبکه **GRE (لایه ۳ کرنل لینوکس)**؛ برچسب هر حامل همراه پروتکل گزارش‌شده نمایش داده می‌شود (مثل `FRP / TCP` یا `Backhaul / WSMUX` و `?` یعنی پروتکل گزارش نشده).
-
-**دستورهای مفید CLI:** `ratholectl status` (داشبورد کامل: دامنه، پورت‌ها، گواهی، سرویس‌ها، نودها — با `--json` برای هاب)، `ratholectl paths` (مسیر همه‌ی فایل‌ها با ✓/✗)، `ratholectl version` (نسخه‌ی مدیر + rathole). `ratholectl add` یک دستور آماده‌ی `curl … | sudo bash -s -- --node -- …` هم برای نصب نود چاپ می‌کند.
-
-**از هاب:** در صفحه‌ی ایران، ردیف هر نود یک **سلکتور حامل** دارد — انتخاب حامل، **یک‌کلیکی روی هر دو سمت** (ایران + نود) اعمال می‌شود و اگر سمت نود شکست بخورد سلکتور برمی‌گردد. پنج اکشن دیگر (**«حامل و پروتکل»** با فرم کامل، **«تست سلامت»**، **«ساخت کانفیگ VLESS»**، **«مدیریت سمت مقابل»** و **«حذف از دو سمت»**) زیر دکمه‌ی **⋯** همان ردیف هستند — هم در صفحه‌ی ایران و هم نود. نقشه‌ی مسیرها (`#/routing`) فقط نمایش توپولوژی (فقط‌خواندنی) است. دکمه‌های **«آپدیت همه»**، **«افزودن به نود»** و **«تنظیم تونل اصلی»** هم سر جای خود هستند.
-
-**نصب/آپدیت از مخزن خصوصی:** `install.sh --token <pat>` (یا `RATHOLE_GH_TOKEN`) و `tools/update-private.sh`؛ در حالت private آینه‌های عمومی ghproxy کنار گذاشته می‌شوند.
-
-**شروع سریع و مرجع کامل CLI (فارسی):** [`docs/README.fa.md`](docs/README.fa.md)
-
-**📢 کانال تلگرام:** [**@l8PY4NET**](https://t.me/l8PY4NET) — اعلان نسخه‌های جدید، نکته‌های راه‌اندازی و سریع‌ترین جای پرسیدن سؤال.
-
-**فهرست مستندات فارسی:**
-- [معماری](docs/architecture.md) · [حالت‌های transport](docs/transport-modes.md) · [مسیر ترافیک](docs/traffic-flow.md)
-- [هاب](docs/hub.md) · [پرفورمنس](docs/performance.md) · [AmneziaWG معکوس](docs/amneziawg-reverse.md)
-- [سند طراحی تفصیلی اصلی](rathole-multilocation-pasargad.md)
+**RatholeEngine** یک سیستم تونل معکوس چند-موقعیتی روی **rathole + Nginx** است: یک سرور ایران (پشت یک دامنه، یک گواهی TLS و پورت `443`) جلوی چندین نود خارج قرار می‌گیرد و ترافیک بر اساس **path** هدایت می‌شود. شامل ۴ نقش است: پنل ایران (`ratholectl`)، نود خارج (`ratholenode`)، پنل وب **RatholeHub** (رابط شیشه‌ای Apple Glass در `v2.1.0`، تم روشن/تاریک، پالت فرمان `Ctrl+K`، کارت‌های KPI، بارگذاری موازی و همگام‌سازی صریح دوطرفه) و **REST Agent** اختیاری (`:8089` بدون SSH). از ۸ حامل (**WebSocket/TLS**، **KCP+FEC**، **Plain**، **Noise**، **Backhaul SMUX**، **FRP روی پورت `7000/TCP+UDP`**، **GRE لایه ۳** و **FRP+GRE**) پشتیبانی می‌کند. شروع سریع و مستندات کامل فارسی: [`docs/quickstart.md`](docs/quickstart.md) · [`docs/README.fa.md`](docs/README.fa.md) · [**@l8PY4NET**](https://t.me/l8PY4NET).

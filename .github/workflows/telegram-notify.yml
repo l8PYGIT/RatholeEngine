@@ -1,0 +1,153 @@
+name: telegram-notify
+
+# Reusable serverless Telegram announcer for GitHub releases.
+# Other repositories can call:
+#   uses: l8PYGIT/RatholeEngine/.github/workflows/telegram-notify.yml@main
+#   secrets: inherit
+
+on:
+  release:
+    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v2.1.0)"
+        required: true
+        type: string
+      title:
+        description: "Release title"
+        required: false
+        type: string
+        default: ""
+      release_url:
+        description: "GitHub release URL"
+        required: false
+        type: string
+        default: ""
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        type: boolean
+        default: false
+      banner_path:
+        description: "Local banner image path inside caller repository"
+        required: false
+        type: string
+        default: "docs/assets/social-preview.png"
+      docs_url:
+        description: "Documentation site URL (optional button)"
+        required: false
+        type: string
+        default: ""
+      install_cmd:
+        description: "Optional quick-install snippet"
+        required: false
+        type: string
+        default: ""
+      channel:
+        description: "Channel handle footer (e.g. @l8PY4NET)"
+        required: false
+        type: string
+        default: "@l8PY4NET"
+      changelog_file:
+        description: "Path to CHANGELOG file in caller repository"
+        required: false
+        type: string
+        default: "CHANGELOG.md"
+    secrets:
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to announce (reads notes from CHANGELOG.md)"
+        required: false
+        type: string
+        default: ""
+      dry_run:
+        description: "Render message in logs without sending to Telegram"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  announce:
+    name: send telegram announcement
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch announcer script when called from external repo
+        if: ${{ hashFiles('tools/telegram_notify.py') == '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: l8PYGIT/RatholeEngine
+          ref: main
+          path: _rh_notify
+          sparse-checkout: |
+            tools/telegram_notify.py
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_TITLE: ${{ inputs.title }}
+          INPUT_RELEASE_URL: ${{ inputs.release_url }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+          INPUT_BANNER_PATH: ${{ inputs.banner_path }}
+          INPUT_DOCS_URL: ${{ inputs.docs_url }}
+          INPUT_INSTALL_CMD: ${{ inputs.install_cmd }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_CHANGELOG_FILE: ${{ inputs.changelog_file }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          SCRIPT="tools/telegram_notify.py"
+          [ -f "$SCRIPT" ] || SCRIPT="_rh_notify/tools/telegram_notify.py"
+
+          CHANGELOG_FILE="${INPUT_CHANGELOG_FILE:-CHANGELOG.md}"
+          CHANNEL="${INPUT_CHANNEL:-@l8PY4NET}"
+          BANNER="${INPUT_BANNER_PATH:-docs/assets/social-preview.png}"
+
+          ARGS=(
+            "--changelog-file" "$CHANGELOG_FILE"
+            "--channel" "$CHANNEL"
+          )
+          if [ -n "$INPUT_TAG" ]; then
+            ARGS+=("--tag" "$INPUT_TAG")
+          fi
+          if [ -n "$INPUT_TITLE" ]; then
+            ARGS+=("--title" "$INPUT_TITLE")
+          fi
+          if [ -n "$INPUT_RELEASE_URL" ]; then
+            ARGS+=("--release-url" "$INPUT_RELEASE_URL")
+          fi
+          if [ "$INPUT_PRERELEASE" = "true" ]; then
+            ARGS+=("--prerelease")
+          fi
+          if [ -n "$BANNER" ] && [ -f "$BANNER" ]; then
+            ARGS+=("--banner" "$BANNER")
+          fi
+          if [ -n "$INPUT_DOCS_URL" ]; then
+            ARGS+=("--docs-url" "$INPUT_DOCS_URL")
+          fi
+          if [ -n "$INPUT_INSTALL_CMD" ]; then
+            ARGS+=("--install-cmd" "$INPUT_INSTALL_CMD")
+          fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$INPUT_DRY_RUN" = "true" ]; then
+            ARGS+=("--dry-run")
+          fi
+
+          python3 "$SCRIPT" "${ARGS[@]}"

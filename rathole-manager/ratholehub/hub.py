@@ -9,6 +9,7 @@
 import os, sys, json, hmac, hashlib, time, subprocess, re, secrets, threading, shlex, shutil, traceback, ipaddress
 
 
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request
@@ -59,6 +60,27 @@ def login_reset(ip):
     with _login_lock:
         _LOGIN_FAILS.pop(ip, None)
 
+def _hash_password(pw):
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 200000)
+    return "pbkdf2_sha256$%s$%s" % (salt.hex(), dk.hex())
+
+def _verify_password(pw, stored):
+    if not isinstance(stored, str) or not stored:
+        return False
+    if stored.startswith("pbkdf2_sha256$"):
+        parts = stored.split("$")
+        if len(parts) != 3:
+            return False
+        try:
+            salt = bytes.fromhex(parts[1])
+            expected = bytes.fromhex(parts[2])
+        except ValueError:
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 200000)
+        return hmac.compare_digest(dk, expected)
+    return hmac.compare_digest(hashlib.sha256(pw.encode("utf-8")).hexdigest(), stored)
+
 # mghadir pishfrze naamn ke hrgz nbaid dar mohit vaghai estefade shavand.
 _INSECURE_TOKEN = "changeme"
 _INSECURE_PW_SHA = hashlib.sha256(b"admin").hexdigest()
@@ -76,10 +98,18 @@ def load_json(path, default):
 
 
 def save_json(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
     try:
         os.chmod(tmp, 0o600)
     except Exception:
@@ -148,6 +178,47 @@ def update_config(mutator):
         save_config(new_cfg if new_cfg is not None else cfg)
         return new_cfg if new_cfg is not None else cfg
 
+def _redact_cmd_for_audit(action, cmd):
+    parts = list(cmd)
+    if action == "add_svc" and len(parts) > 3:
+        parts[3] = "***REDACTED***"
+    elif action == "add_bh_svc" and len(parts) > 4:
+        parts[4] = "***REDACTED***"
+    elif action == "upstream_add_svc" and len(parts) > 5:
+        parts[5] = "***REDACTED***"
+    elif action == "kcp_on" and len(parts) > 4:
+        parts[4] = "***REDACTED***"
+    elif action == "upstream_kcp_on" and len(parts) > 6:
+        parts[6] = "***REDACTED***"
+    elif action == "backhaul_on" and parts and parts[0] == "ratholenode" and len(parts) > 4:
+        parts[4] = "***REDACTED***"
+    elif action == "frp_on" and len(parts) > 4:
+        if parts[0] == "ratholenode" or parts[4] not in ("tcp", "kcp", "quic", "websocket"):
+            parts[4] = "***REDACTED***"
+    return " ".join(parts)
+
+def _redact_proxy_creds(proxy):
+    p = str(proxy or "").strip()
+    if not p:
+        return ""
+    try:
+        parsed = urlparse(p)
+        if parsed.username or parsed.password:
+            host = parsed.hostname or ""
+            port = f":{parsed.port}" if parsed.port else ""
+            return f"{parsed.scheme}://***@{host}{port}"
+    except Exception:
+        pass
+    return p
+
+def _public_server(s):
+    out = {k: v for k, v in s.items() if k != "api_token"}
+    if s.get("transport") == "api":
+        out["api_token_set"] = bool(s.get("api_token"))
+    if "proxy" in out:
+        out["proxy"] = _redact_proxy_creds(out["proxy"])
+    return out
+
 def audit_log(user, server, action, cmd, rc):
     # sbte append-only az har amliate nvshtari baraye rdgiri.
     try:
@@ -155,9 +226,12 @@ def audit_log(user, server, action, cmd, rc):
             "ts": int(time.time()), "user": user, "server": server,
             "action": action, "cmd": cmd, "rc": rc,
         }, ensure_ascii=False)
-        os.makedirs(os.path.dirname(AUDIT_PATH), exist_ok=True)
+        d = os.path.dirname(AUDIT_PATH)
+        if d:
+            os.makedirs(d, exist_ok=True)
         with _lock:
-            with open(AUDIT_PATH, "a", encoding="utf-8") as f:
+            fd = os.open(AUDIT_PATH, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
     except Exception:
         pass  # log nbaid masir asli ra bshknd
@@ -263,10 +337,17 @@ from hubcmds import (  # noqa: F401  (nam-ha dar sartasar-e hub estefade mishava
 )
 
 # ---------- ejra-ye az rah dvr (Agent API ya SSH) ----------
+def _norm_agent_url(url):
+    u = (url or "").strip().rstrip("/")
+    low = u.lower()
+    if low.startswith("https://"):
+        return "https://" + u[8:]
+    if low.startswith("http://"):
+        return "http://" + u[7:]
+    return ("http://" + u) if u else ""
+
 def build_agent_request(server, cmd_args, timeout=120):
-    url = (server.get("api_url") or "").rstrip("/")
-    if url and not (url.startswith("http://") or url.startswith("https://")):
-        url = "http://" + url
+    url = _norm_agent_url(server.get("api_url"))
     url = url + "/api/exec"
     token = server.get("api_token", "")
     payload = json.dumps({"cmd": cmd_args, "timeout": timeout}).encode("utf-8")
@@ -275,6 +356,95 @@ def build_agent_request(server, cmd_args, timeout=120):
         "Authorization": f"Bearer {token}",
     }
     return urllib.request.Request(url, data=payload, headers=headers)
+
+def valid_proxy_url(value):
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    v = value.strip()
+    if not v or v.lower() in ("direct", "none", "off"):
+        return True
+    if any(ord(ch) < 32 or ord(ch) == 127 or ch.isspace() or ch in "'\"`$;|&><()\\" for ch in v):
+        return False
+    try:
+        parsed = urlparse(v)
+        port = parsed.port
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https", "socks5", "socks5h") or not parsed.hostname:
+        return False
+    if port is not None and not (1 <= port <= 65535):
+        return False
+    return parsed.path in ("", "/") and not parsed.query and not parsed.fragment
+
+_SAFE_SSH_OPT_KV = re.compile(
+    r"^(?:BatchMode=(?:yes|no)"
+    r"|ConnectTimeout=([1-9][0-9]{0,2})"
+    r"|StrictHostKeyChecking=(?:accept-new|yes|no)"
+    r"|ServerAliveInterval=([1-9][0-9]{0,2})"
+    r"|ServerAliveCountMax=([1-9][0-9]?)"
+    r"|IdentitiesOnly=(?:yes|no))$"
+)
+
+def _valid_ssh_kv(kv):
+    m = _SAFE_SSH_OPT_KV.match(kv)
+    if not m:
+        return False
+    if m.group(1) and not (1 <= int(m.group(1)) <= 300):
+        return False
+    if m.group(2) and not (1 <= int(m.group(2)) <= 300):
+        return False
+    if m.group(3) and not (1 <= int(m.group(3)) <= 20):
+        return False
+    return True
+
+def valid_ssh_opts(opts):
+    if not isinstance(opts, list) or not all(isinstance(x, str) for x in opts):
+        return False
+    i = 0
+    while i < len(opts):
+        item = opts[i]
+        if any(ord(ch) < 32 for ch in item):
+            return False
+        if item == "-o":
+            if i + 1 >= len(opts) or not _valid_ssh_kv(opts[i + 1]):
+                return False
+            i += 2
+        elif item.startswith("-o") and len(item) > 2:
+            if not _valid_ssh_kv(item[2:]):
+                return False
+            i += 1
+        else:
+            return False
+    return True
+
+def valid_ssh_key_path(path):
+    if path == "":
+        return True
+    if not isinstance(path, str) or any(ord(ch) < 32 for ch in path):
+        return False
+    norm = path.replace("\\", "/")
+    if not norm.startswith("/") or ".." in norm.split("/"):
+        return False
+    if not re.fullmatch(r"/[A-Za-z0-9_./-]{1,255}", norm):
+        return False
+    cand = os.path.realpath(path)
+    allowed_roots = [os.path.realpath("/etc/ratholehub"), os.path.realpath("/root/.ssh")]
+    home_ssh = os.path.realpath(os.path.expanduser("~/.ssh"))
+    if home_ssh not in allowed_roots:
+        allowed_roots.append(home_ssh)
+    conf_dir = os.path.realpath(os.path.dirname(os.path.abspath(CONF_PATH)))
+    disallowed = {os.path.realpath(p) for p in ("/", "/dev", "/tmp", "/etc")}
+    if conf_dir not in disallowed:
+        allowed_roots.append(conf_dir)
+    for root in allowed_roots:
+        try:
+            if os.path.commonpath([cand, root]) == root and cand != root:
+                return True
+        except ValueError:
+            continue
+    return False
 
 def valid_agent_url(value):
     try:
@@ -290,8 +460,10 @@ def run_on_agent(server, cmd_args, timeout=120):
     proxy = get_proxy(server)
     handlers = []
     if proxy:
+        if proxy.lower().startswith("socks"):
+            return {"rc": 1, "out": "", "err": "SOCKS5 proxy is not supported by urllib for Agent API; use HTTP proxy or direct"}
         handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
-    url = (server.get("api_url") or "").strip()
+    url = _norm_agent_url(server.get("api_url"))
     if url.startswith("https://"):
         import ssl
         ctx = ssl.create_default_context()
@@ -303,7 +475,7 @@ def run_on_agent(server, cmd_args, timeout=120):
     req = build_agent_request(server, cmd_args, timeout=timeout)
     try:
         with opener.open(req, timeout=timeout + 5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            data = json.loads(resp.read(4 * 1024 * 1024).decode("utf-8"))
             return {
                 "rc": data.get("rc", 0),
                 "out": _strip_ansi(data.get("out", "")),
@@ -312,7 +484,7 @@ def run_on_agent(server, cmd_args, timeout=120):
     except urllib.error.HTTPError as e:
         err_msg = ""
         try:
-            err_data = json.loads(e.read().decode("utf-8"))
+            err_data = json.loads(e.read(65536).decode("utf-8"))
             err_msg = err_data.get("error", "")
         except Exception:
             err_msg = str(e)
@@ -321,10 +493,10 @@ def run_on_agent(server, cmd_args, timeout=120):
         return {"rc": 1, "out": "", "err": f"Agent connection error: {e}"}
 
 def run_on_server(server, cmd_args, timeout=120):
-    if server.get("transport") == "api":
-        return run_on_agent(server, cmd_args, timeout=timeout)
     if MOCK:
         return mock_run(server, cmd_args)
+    if server.get("transport") == "api":
+        return run_on_agent(server, cmd_args, timeout=timeout)
     cfg = get_config()
     ssh = _ssh_base(cfg, server) + [shlex.join(cmd_args)]  # hefz-e argv dar shell-e remote
     try:
@@ -336,13 +508,20 @@ def run_on_server(server, cmd_args, timeout=120):
         return {"rc": 1, "out": "", "err": str(e)}
 
 def _ssh_base(cfg, server):
-    ssh = ["ssh"] + list(cfg.get("ssh_opts", []))
+    raw_opts = cfg.get("ssh_opts", [])
+    if not valid_ssh_opts(raw_opts):
+        raise ValueError("invalid ssh_opts")
+    ssh = ["ssh"] + list(raw_opts)
     proxy = get_proxy(server)
     if proxy:
+        if not valid_proxy_url(proxy):
+            raise ValueError("invalid proxy URL")
         bridge_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "ssh_proxy.py"))
         py_bin = sys.executable or "python3"
-        ssh += ["-o", f'ProxyCommand="{py_bin}" "{bridge_script}" "{proxy}" %h %p']
+        ssh += ["-o", f"ProxyCommand={shlex.quote(py_bin)} {shlex.quote(bridge_script)} {shlex.quote(proxy)} %h %p"]
     if cfg.get("ssh_key_path"):
+        if not valid_ssh_key_path(cfg["ssh_key_path"]):
+            raise ValueError("invalid ssh_key_path")
         ssh += ["-i", cfg["ssh_key_path"]]
     ssh += ["-p", str(server.get("ssh_port", 22)),
             "%s@%s" % (server.get("ssh_user", "root"), server["host"]), "--"]
@@ -422,6 +601,9 @@ def deploy_to_server(server):
     chan = str(cfg.get("update_channel", "stable"))
     if not RE_CHAN.match(chan):
         return {"rc": 1, "out": "", "err": "update_channel namotabar dar config: %r (stable|beta)" % chan}
+    if server.get("transport") == "api":
+        cli = "ratholectl" if server.get("role") == "iran" else "ratholenode"
+        return run_on_server(server, [cli, "update", chan], timeout=600)
     # yek script-e khoddATka ke rooye server ejra mishavad. tanha meghdar-haye tazrigh-shode
     # slug (RE_SLUG) va kanal (RE_CHAN) hastand — har do etebarsanji-shode. mirror-ha hamsan-e install.sh.
     # baraye kanal-e beta: tag-e pre-release ra rooye KHODE server az releases.atom peyda mikonim
@@ -458,6 +640,8 @@ def ensure_hub_key():
     # motmaen mishavad hub yek jft-kelid SSH darad; agar nabashad misazad va masir ra dar config zakhire mikonad.
     cfg = get_config()
     kp = cfg.get("ssh_key_path") or "/etc/ratholehub/id_ed25519"
+    if not valid_ssh_key_path(kp):
+        raise ValueError("ssh_key_path namotabar ast")
     pub = kp + ".pub"
     if not (os.path.exists(kp) and os.path.exists(pub)):
         os.makedirs(os.path.dirname(kp), exist_ok=True)
@@ -999,25 +1183,32 @@ def make_session_token(cfg):
     return "%s.%s" % (exp, sig)
 
 def check_session(cfg, token):
+    tok = cfg.get("api_token") or ""
+    if not tok:
+        return False
     try:
         exp, sig = token.split(".", 1)
         if int(exp) < time.time(): return False
-        good = hmac.new(cfg["api_token"].encode(), exp.encode(), hashlib.sha256).hexdigest()
+        good = hmac.new(tok.encode(), exp.encode(), hashlib.sha256).hexdigest()
         return hmac.compare_digest(good, sig)
     except Exception:
         return False
 
 def authed(cfg, headers, cookies):
     # Bearer token (baraye API kharji) ya kvki nshst (baraye UI)
+    cfg_tok = cfg.get("api_token") or ""
+    if not cfg_tok:
+        return False
     auth = headers.get("Authorization", "")
     if auth.startswith("Bearer "):
-        return hmac.compare_digest(auth[7:].strip(), cfg["api_token"])
+        return hmac.compare_digest(auth[7:].strip(), cfg_tok)
     tok = cookies.get("rhsession", "")
     return check_session(cfg, tok)
 
 # ---------- HTTP handler ----------
 class Handler(BaseHTTPRequestHandler):
     server_version = "ratholehub/0.1"
+    timeout = 30
 
     def _cookies(self):
         raw = self.headers.get("Cookie", "")
@@ -1047,11 +1238,11 @@ class Handler(BaseHTTPRequestHandler):
     def _body_json(self):
         try:
             n = int(self.headers.get("Content-Length", "0"))
-            # saghf-e andaze-ye body (1 MiB) ta yek Content-Length-e bozorg rooye masir-e
-            # ehraz-nashode (masalan /api/login) hafeze ra por nakonad.
-            if n > 1048576:
+            # saghf-e andaze-ye body (1 MiB) va jelogiri az Content-Length-e manfi/na-motabar
+            if not 0 < n <= 1048576:
                 return {}
-            return json.loads(self.rfile.read(n) or b"{}")
+            obj = json.loads(self.rfile.read(n) or b"{}")
+            return obj if isinstance(obj, dict) else {}
         except Exception:
             return {}
 
@@ -1070,11 +1261,12 @@ class Handler(BaseHTTPRequestHandler):
         # asset-haye UI — ham zir '/' va ham zir '/hub/' (nginx hub ra zir /hub/ mizanad).
         # faghat nam-e file-e akhar estefade mishavad va bayad dar UI_FILES bashad.
         if "/ui/" in path:
-            body, ctype = ui_asset(path.rsplit("/", 1)[-1])
+            asset_name = path.rsplit("/", 1)[-1]
+            body, ctype = ui_asset(asset_name)
             if body is not None:
-                # asset-ha ba mtime cache mishavand; be client no-cache midahim ta baad az
-                # apdit-e hub noskhe-ye ghadimi dar marorgar namanad.
-                return self._send(200, body, ctype, {"Cache-Control": "no-cache"})
+                # font-ha cache-e tulani-tar migirand؛ HTML/CSS/JS no-cache mimanand ta baad az update stale nashavand.
+                cc = "public, max-age=86400" if ctype.startswith("font/") else "no-cache"
+                return self._send(200, body, ctype, {"Cache-Control": cc})
             return self._send(404, {"error": "not found"})
         if path in ("/api/health", "/hub/api/health"):
             return self._send(200, {"ok": True, "mock": MOCK})
@@ -1082,7 +1274,7 @@ class Handler(BaseHTTPRequestHandler):
         if not authed(cfg, self.headers, self._cookies()):
             return self._send(401, {"error": "unauthorized"})
         if p == "/api/servers":
-            return self._send(200, get_inventory())
+            return self._send(200, [_public_server(s) for s in get_inventory()])
         if p == "/api/hubstatus":
             return self._send(200, hub_status())
         if p == "/api/config":
@@ -1131,17 +1323,12 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         p = path.replace("/hub", "", 1) if path.startswith("/hub/api") else path
         if p == "/api/login":
-            peer_ip = self.client_address[0] if self.client_address else "127.0.0.1"
-            # Only trust X-Real-IP if peer is local reverse proxy (Nginx)
-            if peer_ip in ("127.0.0.1", "::1", "localhost"):
-                ip = self.headers.get("X-Real-IP") or peer_ip
-            else:
-                ip = peer_ip
+            ip = self._client_ip()
             if not login_allowed(ip):
                 return self._send(429, {"error": "too many attempts; try later"})
             data = self._body_json()
-            pw = str(data.get("password", "")).encode()
-            if hmac.compare_digest(hashlib.sha256(pw).hexdigest(), cfg["admin_password_sha256"]):
+            pw = str(data.get("password", ""))
+            if _verify_password(pw, cfg.get("admin_password_sha256", "")):
                 login_reset(ip)
                 tok = make_session_token(cfg)
                 return self._send(200, {"ok": True, "token": cfg["api_token"]},
@@ -1187,6 +1374,7 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             name = m.group(1)
             update_inventory(lambda inv: [s for s in inv if s.get("name") != name])
+            audit_log(self._user(), name, "del_server", "delete", 0)
             return self._send(200, {"ok": True})
         return self._send(404, {"error": "not found"})
 
@@ -1197,9 +1385,15 @@ class Handler(BaseHTTPRequestHandler):
                 return s
         return None
 
+    def _client_ip(self):
+        peer_ip = self.client_address[0] if getattr(self, "client_address", None) else "127.0.0.1"
+        if peer_ip in ("127.0.0.1", "::1", "localhost"):
+            return self.headers.get("X-Real-IP") or peer_ip
+        return peer_ip
+
     def _user(self):
-        # hvite tghribi baraye audit: IP klaint (psht nginx, X-Real-IP).
-        return self.headers.get("X-Real-IP") or (self.client_address[0] if self.client_address else "?")
+        # hvite tghribi baraye audit: IP klaint (psht nginx, X-Real-IP faghat az loopback).
+        return self._client_ip()
 
     def _add_server(self, d):
         name = str(d.get("name", "")); role = str(d.get("role", ""))
@@ -1207,13 +1401,16 @@ class Handler(BaseHTTPRequestHandler):
         if transport not in ("ssh", "api"):
             transport = "ssh"
         proxy = str(d.get("proxy", "")).strip()
+        if not valid_proxy_url(proxy):
+            return self._send(400, {"error": "invalid proxy"})
 
         if transport == "api":
-            api_url = str(d.get("api_url", "")).strip()
+            api_url = _norm_agent_url(str(d.get("api_url", "")))
             api_token = str(d.get("api_token", "")).strip()
             if not RE_NAME.match(name) or role not in ("iran", "node") or not valid_agent_url(api_url) or not api_token:
                 return self._send(400, {"error": "invalid fields for api transport"})
             srv = {"name": name, "role": role, "transport": "api", "api_url": api_url, "api_token": api_token}
+            if d.get("insecure_ssl"): srv["insecure_ssl"] = True
             if proxy: srv["proxy"] = proxy
         else:
             host = str(d.get("host", "")); user = str(d.get("ssh_user", "root"))
@@ -1232,6 +1429,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(409, {"error": "name exists"})
             inv.append(srv)
             set_inventory(inv)
+        audit_log(self._user(), name, "add_server", f"role={role} transport={transport}", 0)
         return self._send(200, {"ok": True})
 
     def _provision(self, d):
@@ -1267,28 +1465,32 @@ class Handler(BaseHTTPRequestHandler):
             changed = []
             new_pw = d.get("new_password")
             if new_pw is not None:
-                cur = str(d.get("current_password", "")).encode()
-                if not hmac.compare_digest(hashlib.sha256(cur).hexdigest(), cfg.get("admin_password_sha256", "")):
+                cur = str(d.get("current_password", ""))
+                if not _verify_password(cur, cfg.get("admin_password_sha256", "")):
                     return self._send(403, {"error": "current password incorrect"})
                 if not RE_PW.match(str(new_pw)):
                     return self._send(400, {"error": "password must be 6-128 chars"})
-                cfg["admin_password_sha256"] = hashlib.sha256(str(new_pw).encode()).hexdigest()
+                cfg["admin_password_sha256"] = _hash_password(str(new_pw))
                 changed.append("password")
             new_token = None
             if d.get("rotate_token"):
                 new_token = secrets.token_hex(24)
                 cfg["api_token"] = new_token
                 changed.append("api_token")
-            if "proxy" in d and isinstance(d["proxy"], str):
+            if "proxy" in d:
+                if not isinstance(d["proxy"], str) or not valid_proxy_url(d["proxy"]):
+                    return self._send(400, {"error": "invalid proxy"})
                 cfg["proxy"] = d["proxy"].strip(); changed.append("proxy")
             # ssh_key_path: masir-e file (reshte). ssh_opts: HATMAN list-e reshte
             # (chvn _ssh_base list(...)-esh mikonad; reshte be karaktr-ha shekaste mishavad).
-            if "ssh_key_path" in d and isinstance(d["ssh_key_path"], str):
+            if "ssh_key_path" in d:
+                if not isinstance(d["ssh_key_path"], str) or not valid_ssh_key_path(d["ssh_key_path"]):
+                    return self._send(400, {"error": "invalid ssh_key_path"})
                 cfg["ssh_key_path"] = d["ssh_key_path"]; changed.append("ssh_key_path")
             if "ssh_opts" in d:
                 v = d["ssh_opts"]
-                if not (isinstance(v, list) and all(isinstance(x, str) for x in v)):
-                    return self._send(400, {"error": "ssh_opts must be a list of strings"})
+                if not valid_ssh_opts(v):
+                    return self._send(400, {"error": "ssh_opts contains disallowed or invalid options"})
                 cfg["ssh_opts"] = v; changed.append("ssh_opts")
             if not changed:
                 return self._send(400, {"error": "nothing to change"})
@@ -1304,11 +1506,17 @@ class Handler(BaseHTTPRequestHandler):
         # aval hame-ye field-ha ra etebar-sanji va jam mikonim, sps atomic emal mikonim.
         changes = {}
         if "api_url" in d:
-            api_url = str(d["api_url"]).strip()
+            api_url = _norm_agent_url(str(d["api_url"]))
             if not valid_agent_url(api_url): return self._send(400, {"error": "bad API URL"})
             changes["api_url"] = api_url
         if "api_token" in d and str(d["api_token"]).strip():
             changes["api_token"] = str(d["api_token"]).strip()
+        if "proxy" in d:
+            px = str(d["proxy"] or "").strip()
+            if not valid_proxy_url(px): return self._send(400, {"error": "bad proxy"})
+            changes["proxy"] = px
+        if "insecure_ssl" in d:
+            changes["insecure_ssl"] = bool(d["insecure_ssl"])
         if "host" in d:
             if not RE_HOST.match(str(d["host"])): return self._send(400, {"error": "bad host"})
             changes["host"] = str(d["host"])
@@ -1338,7 +1546,9 @@ class Handler(BaseHTTPRequestHandler):
             if target.get("transport") != "api" and ("api_url" in changes or "api_token" in changes):
                 return self._send(400, {"error": "server does not use Agent API"})
             target.update(changes)
-            found = dict(target)
+            if not target.get("proxy"):
+                target.pop("proxy", None)
+            found = _public_server(target)
             set_inventory(inv)
         audit_log(self._user(), name, "edit_server", "metadata", 0)
         return self._send(200, {"ok": True, "server": found})
@@ -1400,76 +1610,144 @@ class Handler(BaseHTTPRequestHandler):
         if not cmd:
             return self._send(400, {"error": "unknown or invalid action"})
         res = run_on_server(s, cmd)
+        safe_cmd = _redact_cmd_for_audit(action, cmd)
         if action in WRITE_ACTIONS:
-            audit_log(self._user(), name, action, " ".join(cmd), res.get("rc"))
-        return self._send(200, {"server": name, "cmd": " ".join(cmd), **res})
+            audit_log(self._user(), name, action, safe_cmd, res.get("rc"))
+        return self._send(200, {"server": name, "cmd": safe_cmd, **res})
 
     def _overview(self, name):
         s = self._find(name)
         if not s:
             return self._send(404, {"error": "server not found"})
         role = s.get("role")
-        ov = {"server": name, "role": role, "host": s.get("host"), "reachable": True}
+        host_fallback = s.get("host") or (urlparse(s.get("api_url") or "").hostname if s.get("transport") == "api" else None)
+        ov = {"server": name, "role": role, "host": host_fallback, "reachable": True}
         def R(args):
             return run_on_server(s, args)
         if role == "iran":
-            r = R(["ratholectl", "ls"])
-            # HAR rc-e gheyre-sefr (255=SSH fail, 124=timeout, 'Connection refused',
-            # 'No route to host', 'Host key verification failed', ...) yani server dar dastras
-            # nist ya command shekast khord — na faghat do zir-reshte-ye khass.
-            if r.get("rc") not in (0, None):
-                ov["reachable"] = False; ov["error"] = r.get("err", "") or ("rc=%s" % r.get("rc")); return self._send(200, ov)
-            ov["nodes"] = parse_iran_ls(r.get("out", ""))
-            ov["kcp"] = parse_kcp_status(R(["ratholectl", "kcp", "status"]).get("out", ""))
-            ov["noise"] = parse_noise_status(R(["ratholectl", "noise", "status"]).get("out", ""))
-            ov["plain"] = parse_plain_status(R(["ratholectl", "plain", "status"]).get("out", ""))
-            ov["direct"] = parse_direct_status(R(["ratholectl", "direct", "status"]).get("out", ""))
-            ov["game"] = parse_game_ls(R(["ratholectl", "game", "ls"]).get("out", ""))
-            ov["backhaul"] = parse_backhaul_status(R(["ratholectl", "backhaul", "status"]).get("out", ""))
-            ov["frp"] = parse_frp_status(R(["ratholectl", "frp", "status"]).get("out", ""))
-            ov["gre"] = parse_gre_status(R(["ratholectl", "gre", "status"]).get("out", ""))
-            # doctor DAR overview: hatman ba mohafez-e timeout. probe-haye websocket-e doctor
-            # mitavanand samt-e server gir konand (101 = connection-e baz mimanad) va an vaght
-            # HAR bar-shodan-e safhe 120 sanie block mishod + yek process-e yatim rooye server
-            # ja migozasht. build_iran_cmd("doctor") khodesh `timeout 60` ra ezafe mikonad.
-            ov["health"] = parse_doctor(R(build_iran_cmd("doctor", {})).get("out", ""))
-            ov["version"] = parse_version(R(["ratholectl", "version"]).get("out", ""))
-            # status --json hameye port-ha (fake/sub/control/internal/hub/plain/noise/
-            # backhaul/direct) ra yekja midahad — UI baraye safhe-ye tanzimat va check-e
-            # tadakhol-e port be an niaz darad. shekast-e parse nabayad overview ra bekoshad.
-            raw = ""
+            # Sariat-e bala: be jaye 12 dastoor-e motavali + `doctor` (ke 6-9s rooye WS probe
+            # hang mikonad), status --json + kcp status + version ra hamzaman ejra mikonim.
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                f_st = pool.submit(R, ["ratholectl", "status", "--json"])
+                f_kcp = pool.submit(R, ["ratholectl", "kcp", "status"])
+                f_ver = pool.submit(R, ["ratholectl", "version"])
+                r_st, r_kcp, r_ver = f_st.result(), f_kcp.result(), f_ver.result()
+            if r_st.get("rc") not in (0, None):
+                ov["reachable"] = False; ov["error"] = r_st.get("err", "") or ("rc=%s" % r_st.get("rc")); return self._send(200, ov)
+            st = {}
+            raw = r_st.get("out", "") or ""
             try:
-                raw = R(["ratholectl", "status", "--json"]).get("out", "") or "{}"
-                ov["status"] = json.loads(raw)
+                st = json.loads(raw) if raw.strip() else {}
             except Exception as e:
                 print(f"[hub] status --json parse failed for {name}: {e}")
                 print(f"[hub] raw output: {raw[:200]}")
-                traceback.print_exc()
-                ov["status"] = {}
+                st = {}
+            ov["status"] = st
+            ov["kcp"] = parse_kcp_status(r_kcp.get("out", ""))
+            ov["version"] = parse_version(r_ver.get("out", ""))
+            if isinstance(st, dict) and ("nodes" in st or "features" in st):
+                ov["domain"] = st.get("domain") or ""
+                if not ov["host"] and st.get("public_ip"):
+                    ov["host"] = st.get("public_ip")
+                raw_nodes = st.get("nodes") or []
+                norm_nodes = []
+                for nd in raw_nodes:
+                    if not isinstance(nd, dict):
+                        continue
+                    inb = nd.get("inbound_port") if nd.get("inbound_port") is not None else nd.get("inbound")
+                    norm_nodes.append({
+                        "name": nd.get("name", ""),
+                        "port": str(nd.get("port", "")) if nd.get("port") is not None else "",
+                        "inbound": str(inb) if inb is not None else "",
+                        "inbound_port": str(inb) if inb is not None else "",
+                        "api_port": str(nd.get("api_local_port")) if nd.get("api_local_port") else "",
+                        "sni": nd.get("sni") or "",
+                        "transport": nd.get("transport") or "ws",
+                    })
+                ov["nodes"] = norm_nodes
+                ov["game"] = [{"name": x["name"], "sni": x["sni"], "port": x["port"]} for x in norm_nodes if x.get("sni")]
+                feats = st.get("features") or {}
+                f_pl = feats.get("plain") or {}
+                f_dr = feats.get("direct") or {}
+                f_nz = feats.get("noise") or {}
+                f_bh = feats.get("backhaul") or {}
+                f_frp = feats.get("frp") or {}
+                f_gre = feats.get("gre") or {}
+                nz_nodes = [x["name"] for x in norm_nodes if x.get("transport") == "noise"]
+                ov["plain"] = {"enabled": bool(f_pl.get("configured")), "port": f_pl.get("port")}
+                ov["direct"] = {"enabled": bool(f_dr.get("configured")), "port": f_dr.get("port"), "header": st.get("direct_header") or ""}
+                ov["noise"] = {"enabled": bool(f_nz.get("configured")), "active": bool(f_nz.get("active")), "port": f_nz.get("port"), "nodes": nz_nodes, "count": len(nz_nodes)}
+                ov["backhaul"] = {"enabled": bool(f_bh.get("configured")), "active": bool(f_bh.get("active")), "port": f_bh.get("port"), "mode": f_bh.get("mode"), "transport": f_bh.get("transport")}
+                ov["frp"] = {"enabled": bool(f_frp.get("configured")), "active": bool(f_frp.get("active")), "port": f_frp.get("port"), "transport": f_frp.get("transport")}
+                ov["gre"] = {"enabled": bool(f_gre.get("configured")), "active": bool(f_gre.get("active")), "name": f_gre.get("name"), "remote_ip": f_gre.get("remote_ip"), "tunnel_ip": f_gre.get("tunnel_ip")}
+                svcs = st.get("services") or {}
+                h_ok, h_fail = 0, 0
+                for k in ("rathole_server", "nginx", "nginx_config_ok"):
+                    if k in svcs:
+                        if svcs[k] == "yes": h_ok += 1
+                        else: h_fail += 1
+                for k in ("noise", "backhaul", "frp"):
+                    if svcs.get(k) in ("yes", "no"):
+                        if svcs[k] == "yes": h_ok += 1
+                        else: h_fail += 1
+                ov["health"] = {"ok": h_ok, "fail": h_fail, "nodes": {}}
+            else:
+                # Fallback baraye panel-haye ghadimi ke status --json nadarand (hamzaman, bedoone doctor-e kond)
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    f_ls = pool.submit(R, ["ratholectl", "ls"])
+                    f_nz = pool.submit(R, ["ratholectl", "noise", "status"])
+                    f_pl = pool.submit(R, ["ratholectl", "plain", "status"])
+                    f_dr = pool.submit(R, ["ratholectl", "direct", "status"])
+                    f_gm = pool.submit(R, ["ratholectl", "game", "ls"])
+                    f_bh = pool.submit(R, ["ratholectl", "backhaul", "status"])
+                    f_frp = pool.submit(R, ["ratholectl", "frp", "status"])
+                    f_gre = pool.submit(R, ["ratholectl", "gre", "status"])
+                    r_ls = f_ls.result()
+                    if r_ls.get("rc") not in (0, None):
+                        ov["reachable"] = False; ov["error"] = r_ls.get("err", "") or ("rc=%s" % r_ls.get("rc")); return self._send(200, ov)
+                    ov["nodes"] = parse_iran_ls(r_ls.get("out", ""))
+                    ov["noise"] = parse_noise_status(f_nz.result().get("out", ""))
+                    ov["plain"] = parse_plain_status(f_pl.result().get("out", ""))
+                    ov["direct"] = parse_direct_status(f_dr.result().get("out", ""))
+                    ov["game"] = parse_game_ls(f_gm.result().get("out", ""))
+                    ov["backhaul"] = parse_backhaul_status(f_bh.result().get("out", ""))
+                    ov["frp"] = parse_frp_status(f_frp.result().get("out", ""))
+                    ov["gre"] = parse_gre_status(f_gre.result().get("out", ""))
+                    ov["health"] = {"ok": 0, "fail": 0, "nodes": {}}
         else:
             r = R(["ratholenode", "ls"])
             if r.get("rc") not in (0, None):
                 ov["reachable"] = False; ov["error"] = r.get("err", "") or ("rc=%s" % r.get("rc")); return self._send(200, ov)
             nls = parse_node_ls(r.get("out", ""))
             ov["main_server"] = nls["server"]; ov["services"] = nls["services"]
-            bls = parse_node_ls(R(["ratholenode", "backhaul", "ls"]).get("out", ""))
-            ov["backhaul_services"] = bls["services"]
-            # Node-haye jadid JSON-e normalized midahand; node-haye ghadimi fallback-e parser ra negah midarand.
-            try:
-                raw = R(["ratholenode", "status", "--json"]).get("out", "") or "{}"
-                node_status = json.loads(raw)
-                if isinstance(node_status, dict) and "main" in node_status:
-                    ov["status"] = node_status
-                    ov["main_tunnel"] = node_status.get("main", {}).get("transport", "ws")
-            except Exception:
-                ov["status"] = {}
-            ov["kcp"] = parse_kcp_status(R(["ratholenode", "kcp", "status"]).get("out", ""))
-            ov["noise"] = parse_noise_status(R(["ratholenode", "noise", "status"]).get("out", ""))
-            ov["backhaul"] = parse_backhaul_status(R(["ratholenode", "backhaul", "status"]).get("out", ""))
-            ov["frp"] = parse_frp_status(R(["ratholenode", "frp", "status"]).get("out", ""))
-            ov["gre"] = parse_gre_status(R(["ratholenode", "gre", "status"]).get("out", ""))
-            ups = parse_upstream_ls(R(["ratholenode", "upstream", "ls"]).get("out", ""))
-            ov["upstreams"] = ups["upstreams"]
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                f_bls = pool.submit(R, ["ratholenode", "backhaul", "ls"])
+                f_st  = pool.submit(R, ["ratholenode", "status", "--json"])
+                f_kcp = pool.submit(R, ["ratholenode", "kcp", "status"])
+                f_nz  = pool.submit(R, ["ratholenode", "noise", "status"])
+                f_bh  = pool.submit(R, ["ratholenode", "backhaul", "status"])
+                f_frp = pool.submit(R, ["ratholenode", "frp", "status"])
+                f_gre = pool.submit(R, ["ratholenode", "gre", "status"])
+                f_ups = pool.submit(R, ["ratholenode", "upstream", "ls"])
+                f_ver = pool.submit(R, ["ratholenode", "version"])
+                bls = parse_node_ls(f_bls.result().get("out", ""))
+                ov["backhaul_services"] = bls["services"]
+                try:
+                    raw = f_st.result().get("out", "") or "{}"
+                    node_status = json.loads(raw)
+                    if isinstance(node_status, dict) and "main" in node_status:
+                        ov["status"] = node_status
+                        ov["main_tunnel"] = node_status.get("main", {}).get("transport", "ws")
+                except Exception:
+                    ov["status"] = {}
+                ov["kcp"] = parse_kcp_status(f_kcp.result().get("out", ""))
+                ov["noise"] = parse_noise_status(f_nz.result().get("out", ""))
+                ov["backhaul"] = parse_backhaul_status(f_bh.result().get("out", ""))
+                ov["frp"] = parse_frp_status(f_frp.result().get("out", ""))
+                ov["gre"] = parse_gre_status(f_gre.result().get("out", ""))
+                ups = parse_upstream_ls(f_ups.result().get("out", ""))
+                ov["upstreams"] = ups["upstreams"]
+                ov["version"] = parse_version(f_ver.result().get("out", ""))
             if not ov.get("status", {}).get("main", {}).get("transport"):
                 if ov.get("frp", {}).get("enabled"):
                     ov["main_tunnel"] = "frp"
@@ -1481,7 +1759,6 @@ class Handler(BaseHTTPRequestHandler):
                     ov["main_tunnel"] = "kcp"
                 elif not ov.get("main_tunnel"):
                     ov["main_tunnel"] = (ups.get("main") or {}).get("tunnel", ov["kcp"].get("mode", "ws"))
-            ov["version"] = parse_version(R(["ratholenode", "version"]).get("out", ""))
         return self._send(200, ov)
 
     def _details(self, name):
@@ -1705,10 +1982,11 @@ class Handler(BaseHTTPRequestHandler):
 # motlagh nemitavanad az pooshe-ye ui/ birun beravad.
 UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 UI_FILES = {
-    "index.html": "text/html",
-    "app.css":    "text/css",
-    "app.js":     "application/javascript",
-    "i18n.js":    "application/javascript",
+    "index.html":      "text/html",
+    "app.css":         "text/css",
+    "app.js":          "application/javascript",
+    "i18n.js":         "application/javascript",
+    "vazirmatn.woff2": "font/woff2",
 }
 _ui_cache = {}
 _ui_lock = threading.Lock()
@@ -1748,6 +2026,7 @@ def main():
             "     ghabl az gharar dadn panel psht nginx, config.json ra ba mghadir ghvi bsaz:\n"
             "       api_token, admin_password_sha256\n\n")
     httpd = ThreadingHTTPServer((host, port), Handler)
+    httpd.daemon_threads = True
     print("ratholehub rooye http://%s:%d (mock=%s)" % (host, port, MOCK))
     try:
         httpd.serve_forever()

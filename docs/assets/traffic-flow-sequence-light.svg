@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 690" width="1220" height="690" font-family="Segoe UI, system-ui, -apple-system, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f6f8fc"/>
+      <stop offset="52%" stop-color="#eef2ff"/>
+      <stop offset="100%" stop-color="#e8f1ff"/>
+    </linearGradient>
+    <radialGradient id="orbA" cx="20%" cy="15%" r="55%">
+      <stop offset="0%" stop-color="rgba(124,58,237,0.11)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="orbB" cx="85%" cy="85%" r="55%">
+      <stop offset="0%" stop-color="rgba(0,122,255,0.10)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.15" fill="rgba(71,85,105,0.10)"/>
+    </pattern>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#0284c7"/>
+    </marker>
+    <marker id="arrV" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrG" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#059669"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrN" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1220" height="690" rx="18" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1220" height="690" rx="18" fill="url(#orbA)"/>
+  <rect x="0" y="0" width="1220" height="690" rx="18" fill="url(#orbB)"/>
+  <rect x="0" y="0" width="1220" height="690" rx="18" fill="url(#dotGrid)"/>
+  <rect x="20" y="16" width="1180" height="66" rx="14" fill="rgba(255,255,255,0.86)" stroke="rgba(15,23,42,0.11)" stroke-width="1.2"/>
+  <text x="610.0" y="41" text-anchor="middle" fill="#0f172a" font-size="18.5" font-weight="700">Packet &amp; Tunnel Sequence Diagram — Control Setup + User Session</text>
+  <text x="610.0" y="62" text-anchor="middle" fill="#475569" font-size="12.5">Chronological lifecycle of control tunnel registration and end-to-end encrypted data flow.</text>
+  <rect x="1128" y="27" width="56" height="22" rx="11" fill="rgba(0,122,255,0.11)" stroke="rgba(0,122,255,0.30)" stroke-width="1"/>
+  <text x="1156" y="42" text-anchor="middle" fill="#0369a1" font-size="11" font-weight="700">v2.1.0</text>
+  <rect x="38" y="98" width="144" height="36" rx="11" fill="#ffffff" stroke="#007aff" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="110.0" y="120.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0c4a6e">User Xray</text>
+  <rect x="38" y="632" width="144" height="36" rx="11" fill="#ffffff" stroke="#007aff" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="110.0" y="654.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0c4a6e">User Xray</text>
+  <line x1="110" y1="134" x2="110" y2="632" stroke="#475569" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="4 4"/>
+  <rect x="238" y="98" width="144" height="36" rx="11" fill="#ffffff" stroke="#007aff" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="310.0" y="120.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0c4a6e">Nginx :443</text>
+  <rect x="238" y="632" width="144" height="36" rx="11" fill="#ffffff" stroke="#007aff" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="310.0" y="654.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0c4a6e">Nginx :443</text>
+  <line x1="310" y1="134" x2="310" y2="632" stroke="#475569" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="4 4"/>
+  <rect x="438" y="98" width="144" height="36" rx="11" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="510.0" y="120.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#4c1d95">rathole server</text>
+  <rect x="438" y="632" width="144" height="36" rx="11" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="510.0" y="654.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#4c1d95">rathole server</text>
+  <line x1="510" y1="134" x2="510" y2="632" stroke="#475569" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="4 4"/>
+  <rect x="638" y="98" width="144" height="36" rx="11" fill="#ffffff" stroke="#059669" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="710.0" y="120.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#064e3b">rathole client</text>
+  <rect x="638" y="632" width="144" height="36" rx="11" fill="#ffffff" stroke="#059669" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="710.0" y="654.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#064e3b">rathole client</text>
+  <line x1="710" y1="134" x2="710" y2="632" stroke="#475569" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="4 4"/>
+  <rect x="838" y="98" width="144" height="36" rx="11" fill="#ffffff" stroke="#059669" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="910.0" y="120.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#064e3b">Xray (Node)</text>
+  <rect x="838" y="632" width="144" height="36" rx="11" fill="#ffffff" stroke="#059669" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="910.0" y="654.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#064e3b">Xray (Node)</text>
+  <line x1="910" y1="134" x2="910" y2="632" stroke="#475569" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="4 4"/>
+  <rect x="1038" y="98" width="144" height="36" rx="11" fill="#ffffff" stroke="#64748b" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="1110.0" y="120.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#1e293b">Internet</text>
+  <rect x="1038" y="632" width="144" height="36" rx="11" fill="#ffffff" stroke="#64748b" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="1110.0" y="654.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#1e293b">Internet</text>
+  <line x1="1110" y1="134" x2="1110" y2="632" stroke="#475569" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="4 4"/>
+  <rect x="40" y="148" width="1140" height="148" rx="14" fill="rgba(255,255,255,0.72)" stroke="#7c3aed" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="56" y="170" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#4c1d95">PHASE 0 — CONTROL CHANNEL ESTABLISHMENT (PERSISTENT)</text>
+  <line x1="710" y1="202" x2="310" y2="202" stroke="#7c3aed" stroke-width="2.1" marker-end="url(#arrV)"/>
+  <rect x="415.0" y="176.0" width="190" height="20" rx="10.0" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="415.0" y="176.0" width="190" height="20" rx="10.0" fill="rgba(124,58,237,0.08)"/>
+  <text x="510.0" y="189.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#4c1d95">1 · TLS + WS Upgrade /_rh/&lt;hex&gt;</text>
+  <line x1="310" y1="240" x2="510" y2="240" stroke="#0284c7" stroke-width="2.1" marker-end="url(#arr)"/>
+  <rect x="347.0" y="214.0" width="126" height="20" rx="10.0" fill="#ffffff" stroke="#007aff" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="347.0" y="214.0" width="126" height="20" rx="10.0" fill="rgba(0,122,255,0.08)"/>
+  <text x="410.0" y="227.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">2 · -&gt; 127.0.0.1:2333</text>
+  <line x1="510" y1="278" x2="710" y2="278" stroke="#059669" stroke-width="2.1" stroke-dasharray="6 4" marker-end="url(#arrG)"/>
+  <rect x="535.0" y="252.0" width="150" height="20" rx="10.0" fill="#ffffff" stroke="#059669" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="535.0" y="252.0" width="150" height="20" rx="10.0" fill="rgba(5,150,105,0.08)"/>
+  <text x="610.0" y="265.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#064e3b">3 · Heartbeat Active (30s)</text>
+  <rect x="40" y="310" width="1140" height="308" rx="14" fill="rgba(255,255,255,0.72)" stroke="#059669" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="56" y="332" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#064e3b">PHASE 1 — USER SESSION (PER CONNECTION)</text>
+  <line x1="110" y1="366" x2="310" y2="366" stroke="#0284c7" stroke-width="2.1" marker-end="url(#arr)"/>
+  <rect x="132.0" y="341.0" width="156" height="20" rx="10.0" fill="#ffffff" stroke="#007aff" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="132.0" y="341.0" width="156" height="20" rx="10.0" fill="rgba(0,122,255,0.08)"/>
+  <text x="210.0" y="354.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">4 · wss /trk01 (VLESS+WS)</text>
+  <line x1="310" y1="408" x2="510" y2="408" stroke="#0284c7" stroke-width="2.1" marker-end="url(#arr)"/>
+  <rect x="342.0" y="383.0" width="136" height="20" rx="10.0" fill="#ffffff" stroke="#007aff" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="342.0" y="383.0" width="136" height="20" rx="10.0" fill="rgba(0,122,255,0.08)"/>
+  <text x="410.0" y="396.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">5 · map $uri -&gt; :1001</text>
+  <line x1="510" y1="450" x2="710" y2="450" stroke="#7c3aed" stroke-width="2.1" stroke-dasharray="6 4" marker-end="url(#arrV)"/>
+  <rect x="547.0" y="425.0" width="126" height="20" rx="10.0" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="547.0" y="425.0" width="126" height="20" rx="10.0" fill="rgba(124,58,237,0.08)"/>
+  <text x="610.0" y="438.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#4c1d95">6 · Open mux stream</text>
+  <line x1="710" y1="492" x2="910" y2="492" stroke="#0284c7" stroke-width="2.1" marker-end="url(#arr)"/>
+  <rect x="747.0" y="467.0" width="126" height="20" rx="10.0" fill="#ffffff" stroke="#059669" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="747.0" y="467.0" width="126" height="20" rx="10.0" fill="rgba(5,150,105,0.08)"/>
+  <text x="810.0" y="480.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#064e3b">7 · Forward -&gt; :2087</text>
+  <line x1="910" y1="534" x2="1110" y2="534" stroke="#059669" stroke-width="2.1" marker-end="url(#arrG)"/>
+  <rect x="933.0" y="509.0" width="154" height="20" rx="10.0" fill="#ffffff" stroke="#059669" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="933.0" y="509.0" width="154" height="20" rx="10.0" fill="rgba(5,150,105,0.08)"/>
+  <text x="1010.0" y="522.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#064e3b">8 · Decrypt VLESS -&gt; Web</text>
+  <line x1="1110" y1="588" x2="110" y2="588" stroke="#7c3aed" stroke-width="2.1" stroke-dasharray="6 4" marker-end="url(#arrV)"/>
+  <rect x="365.0" y="563.0" width="490" height="20" rx="10.0" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="365.0" y="563.0" width="490" height="20" rx="10.0" fill="rgba(124,58,237,0.08)"/>
+  <text x="610.0" y="576.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#4c1d95">9 · Encrypted Reverse Return Path (Internet -&gt; Xray -&gt; Tunnel -&gt; Nginx -&gt; User)</text>
+</svg>

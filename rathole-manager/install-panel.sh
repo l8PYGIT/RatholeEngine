@@ -87,7 +87,7 @@ fresh_reset(){
   for p in /etc/rathole-manager/state.json \
            /etc/rathole/server.toml \
            /etc/nginx/conf.d/rathole.conf \
-           /etc/nginx/conf.d/rathole-stream.conf; do
+           /etc/nginx/stream.d/rathole-stream.conf; do
     if [ -e "$p" ]; then cp -a "$p" "$bdir/" 2>/dev/null || true; rm -f "$p"; fi
   done
   log "vaziat-e ghabli pak shod; hameye ajza az no sakhte mishavand (init-e mojadad)."
@@ -212,10 +212,7 @@ install_rathole(){
 # vagarna install_rathole (download-e upstream) ra ejra kon.
 if [ -f "$SCRIPT_DIR/core/SHA256SUMS" ] && [ -f "$SCRIPT_DIR/core-install.sh" ]; then
   log "core-install.sh peyda shod — nasb binary-e patched..."
-  bash "$SCRIPT_DIR/core-install.sh" || {
-    warn "core-install shekast khord; fallback be download-e upstream..."
-    install_rathole
-  }
+  bash "$SCRIPT_DIR/core-install.sh" || die "nasb core-e bundle shekast khord (checksum/binary ra barresi kon)."
 else
   install_rathole
 fi
@@ -370,7 +367,7 @@ else
     ls -l /usr/local/bin/rathole 2>&1 | sed 's/^/    /' >&2 || true
     chmod +x /usr/local/bin/rathole 2>/dev/null || true
   fi
-  RTH_DIAG="$(RUST_LOG=info timeout 3 /usr/local/bin/rathole /etc/rathole/server.toml 2>&1 | head -20)"
+  RTH_DIAG="$(RUST_LOG=info timeout 3 /usr/local/bin/rathole /etc/rathole/server.toml 2>&1 | head -20 || true)"
   printf '%s\n' "$RTH_DIAG" | sed 's/^/    /' >&2
   # tashkhis-e ellat-haye shayea az rooye khorooji
   if printf '%s' "$RTH_DIAG" | grep -qi "Address already in use\|Failed to listen"; then

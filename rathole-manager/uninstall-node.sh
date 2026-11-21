@@ -83,7 +83,11 @@ fi
 
 # ---------- purge ekhtiari ----------
 if [ "$PURGE" -eq 1 ]; then
-  if ask_yn "bainri /usr/local/bin/rathole hazf shvd?"; then rm -f /usr/local/bin/rathole; fi
+  if [ -f /etc/systemd/system/rathole-server.service ]; then
+    warn "rathole-server.service hanooz nasb ast؛ /usr/local/bin/rathole pak nashod."
+  elif ask_yn "bainri /usr/local/bin/rathole hazf shvd?"; then
+    rm -f /usr/local/bin/rathole
+  fi
 fi
 
 echo

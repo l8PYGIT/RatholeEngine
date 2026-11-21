@@ -4,7 +4,7 @@
 
 این سیستم یک راهکار **معکوس‌تونل (Reverse Tunnel)** پیشرفته و چندموقعیتی بر پایه‌ی **rathole + Nginx** برای عبور از فیلترینگ شدید است. در نسخه‌های اخیر، کنار lane رتهول چند **هسته‌ی مستقل** هم اضافه شده است: **Backhaul (SMUX)**، **FRP**، تونل لایه‌۳ **GRE** و حالت ترکیبی **FRP + GRE**؛ به‌علاوه‌ی **REST Agent** که اجازه می‌دهد هاب سرورها را بدون SSH و از طریق یک API توکن‌دار مدیریت کند.
 
-> نسخه‌ی فعلی: **v2.0.2** — در این نسخه «بورد سیم‌کشی» (Wiring Board) از پنل هاب حذف شد و جای آن **کنترل‌های سرویس** در ردیف هر سرویس آمد؛ برچسب حامل‌ها هم حالا **پروتکل گزارش‌شده از سرور** را نشان می‌دهند (مثل `FRP / QUIC` و `Backhaul / WSMUX`). علامت `?` یعنی پروتکل گزارش نشده است.
+> نسخه‌ی فعلی: **v2.1.0** — رابط وب هاب به سبک شیشه‌ای **Apple Glass** بازطراحی شد (تم روشن/تاریک/سیستم، فونت آفلاین Vazirmatn، پالت فرمان `⌘K / Ctrl+K`، کارت‌های KPI، فیلتر زنده و بارگذاری موازی سریع‌تر)، همراه با ربات سرورلس اعلان تلگرام، بنرها و نمودارهای بازطراحی‌شده. همچنین سلکتور حامل در ردیف هر نود یک‌کلیکی با همگام‌سازی صریح دوطرفه و منوی `⋯` عمل می‌کند، و برچسب حامل‌ها پروتکل واقعی سرور را نشان می‌دهند (`FRP / QUIC`، `Backhaul / WSMUX` و …).
 
 ![داشبورد RatholeHub — نسخهٔ نمایشی](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
 
@@ -29,20 +29,20 @@
 3. 📖 **[مرجع کامل دستورات CLI (CLI Reference)](CLI-Reference)**
    - دستورات سرور ایران (`ratholectl`) و نود خارج (`ratholenode`)
    - مدیریت REST Agent (`agent on|off|status|token`)
-   - حامل‌ها: WS، KCP، Plain، Noise، **Backhaul (SMUX)**، **FRP**، **GRE** و **FRP + GRE**
+   - حامل‌ها: WS، KCP، Plain، Noise، **Backhaul (SMUX)**، **FRP** (`7000/TCP` + `7000/UDP`)، **GRE** و **FRP + GRE**
    - مسیر مخفی کنترلی (`control-path`)، upstream چندسروره، `migrate` و `set-main`
    - آپدیت، بک‌آپ و رول‌بک
 
 4. 🖥️ **[مدیریت مرکزی با Hub (Hub Management)](Hub-Management)**
-   - نصب و کانفیگ پنل وب Hub (`hub.py`)
-   - کنترل‌های سرویس (نسخه‌ی ۲.۰.۲) و برچسب پروتکل حامل‌ها
+   - نصب و کانفیگ پنل وب Hub (`hub.py`) با رابط Apple Glass و `⌘K / Ctrl+K`
+   - سلکتور یک‌کلیکی حامل، منوی `⋯` کنترل سرویس‌ها و برچسب پروتکل حامل‌ها
    - اتصال REST Agent (بدون SSH) در برابر اتصال SSH
    - REST API، مدل امنیتی و آپدیت گروهی
 
 5. 🛠️ **[عیب‌یابی، بک‌آپ و رول‌بک (Troubleshooting)](Troubleshooting)**
    - عیب‌یابی اتصالات و لاگ‌ها
    - خطاهای REST Agent (401/403، توکن، HTTPS self-signed)
-   - ناسازگاری حامل‌ها (پروتکل `?`، توکن/profile بک‌هال، MTU و probe در GRE، transport در FRP)
+   - ناسازگاری حامل‌ها (پروتکل `?`، توکن/profile بک‌هال، MTU و probe در GRE، پورت UDP ۷۰۰۰ و transport در FRP)
    - آپدیت از مخزن خصوصی و رول‌بک
 
 6. 📋 **[راهنماهای عملی (Workflow Guides)](Workflow-Guides)**
@@ -54,16 +54,16 @@
 
 ---
 
-## 🆕 تازه در نسخه‌های ۲.۰.۱ و ۲.۰.۲
+## 🆕 تازه در نسخه‌های ۲.۰.۳ تا ۲.۱.۰
 
 | موضوع | خلاصه |
 |-------|-------|
-| **کنترل‌های سرویس** | جای بورد سیم‌کشی را گرفت: «حامل و پروتکل»، «تست سلامت»، «ساخت کانفیگ VLESS»، «مدیریت سمت مقابل» و «حذف از دو سمت» در ردیف هر سرویس (صفحه‌ی ایران و نود). لینک قدیمی `#/wiring` به داشبورد برمی‌گردد. |
+| **ربات سرورلس تلگرام (`v2.1.0`)** | [`tools/telegram_notify.py`](https://github.com/l8PYGIT/RatholeEngine/blob/main/tools/telegram_notify.py) + ورک‌فلوی [`.github/workflows/telegram-notify.yml`](https://github.com/l8PYGIT/RatholeEngine/blob/main/.github/workflows/telegram-notify.yml) + Cloudflare Worker در `tools/telegram-bot-worker/` برای اعلان خودکار ریلیزها در کانال تلگرام با بنر و دکمه‌های Inline. |
+| **رابط شیشه‌ای Apple Glass (`v2.1.0`)** | تم روشن / تاریک / هماهنگ با سیستم، فونت آفلاین `vazirmatn.woff2` (بدون CDN)، ۴ کارت KPI، فیلتر زنده در داشبورد/جداول/audit، پالت فرمان **`⌘K / Ctrl+K`** و بارگذاری موازی سریع‌تر وضعیت سرورها. |
+| **سلکتور حامل + منوی `⋯` (`v2.0.4`–`v2.1.0`)** | تغییر یک‌کلیکی حامل در ردیف نود (همگام‌سازی خودکار دوطرفه با پیام وضعیت شفاف و بازگشت در صورت خطا)؛ ۵ اکشن («حامل و پروتکل»، «تست سلامت»، «ساخت کانفیگ VLESS»، «مدیریت سمت مقابل» و «حذف از دو سمت») زیر دکمه‌ی تک‌خطی `⋯`. |
+| **پورت `7000/UDP` و حفظ ترانسپورت FRP** | در FRP با ترانسپورت `kcp` یا `quic` علاوه‌بر `7000/TCP`، پورت `7000/UDP` (`kcpBindPort`/`quicBindPort`) در UFW باز می‌شود و انتخاب ترانسپورت پس از `frp off` حفظ می‌گردد. |
 | **گزارش پروتکل حامل** | برچسب‌ها پروتکل واقعی گزارش‌شده از سرور را نشان می‌دهند؛ `?` = گزارش نشده. |
-| **REST Agent** | `ratholeagent.py` + `install-agent.sh` (systemd: `rathole-agent.service`، پیش‌فرض پورت ۸۰۸۹) با احراز هویت Bearer و امکان HTTPS؛ هاب با `transport: "api"` از آن استفاده می‌کند. |
-| **هسته‌های FRP و GRE** | `ratholectl frp\|gre` و `ratholenode frp\|gre`؛ FRP با ترانسپورت‌های `tcp\|kcp\|quic\|websocket` و GRE به‌صورت تونل L3 کرنل؛ حالت ترکیبی FRP + GRE از کنترل سرویس هاب. |
-| **مخزن خصوصی** | `install.sh --token/-t` (یا `RATHOLE_GH_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`) و به‌روزرسانی با `tools/update-private.sh`. |
-| **رفع اشکال نصب/چرخه‌عمر** | حفظ توکن نود بعد از جداکننده‌ی `--`، جلوگیری از تصادم فایل agent هنگام آپدیت، حفظ توکن agent و ری‌استارت واحد آن در `update.sh`. |
+| **سخت‌گیری امنیتی و پایداری** | اعتبارسنجی `proxy`/`ssh_opts` هاب، لیست‌سفید سخت‌گیرانه‌تر REST Agent (`ratholectl|ratholenode|systemctl|journalctl|jq|tail`) + منع توکن خالی + مجوز `0600`، حذف inline JS در UI، ری‌استارت امن agent در `update.sh`، حفظ توکن پس از `--` در `install.sh` و پوشش کامل اسرار در `rth_redact`. |
 
 ---
 

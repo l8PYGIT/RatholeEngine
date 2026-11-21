@@ -203,7 +203,11 @@ ratholectl control-path rotate
 A standalone reverse tunnel core (`fatedier/frp`) operating alongside rathole and Backhaul. Designed for advanced connection multiplexing over TCP, KCP, QUIC, or WebSocket with shared token authentication.
 
 - **Architecture:** `frps` runs on Iran and `frpc` on the Foreign Node (`/etc/frp/frps.toml` and `frpc.toml`).
-- **Supported Transports:** `tcp`, `kcp`, `quic`, `websocket`.
+- **Supported Transports & Port `7000` (TCP vs. UDP):**
+  - `frps` **always binds `bindPort` (`7000/TCP` by default)** for control and `tcp`/`websocket` streams.
+  - When `kcp` or `quic` is selected, `gen_frp_server_toml` also writes **`kcpBindPort = <port>`** or **`quicBindPort = <port>`**, so `frps` binds the same port number on **UDP (`7000/UDP`)** as well. Seeing `7000/TCP` alongside `7000/UDP` is expected when KCP or QUIC is active.
+  - `ratholectl frp on` automatically opens both `ufw allow <port>/tcp` and (for `kcp`/`quic`) `ufw allow <port>/udp`. Make sure any external cloud firewall also permits **`7000/UDP`** when using KCP or QUIC.
+- **Transport Persistence Across Switches (v2.0.5):** `frp off` preserves `.frp_transport` in state (`FRP_TRANSPORT` in `node.env` on nodes), so re-enabling FRP without an explicit transport argument restores your previous `kcp`/`quic` choice rather than resetting to `tcp`.
 - **Port Mapping:** Binds an Iran local port directly to the foreign inbound proxy port. **User path/443 stays untouched.**
 - **Argument order:** the token comes before the transport; if the token slot holds one of `tcp|kcp|quic|websocket`, it is treated as the transport and the stored/random token is used.
 

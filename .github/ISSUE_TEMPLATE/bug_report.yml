@@ -15,6 +15,7 @@ body:
         - Iran panel (ratholectl)
         - Foreign node (ratholenode)
         - Hub web panel (ratholehub)
+        - REST Agent (ratholeagent.py)
         - Install / update script
     validations:
       required: true
@@ -23,7 +24,7 @@ body:
     attributes:
       label: Version
       description: "`ratholectl version` or `ratholenode version`"
-      placeholder: "v1.8.3"
+      placeholder: "v2.1.0"
     validations:
       required: true
   - type: textarea

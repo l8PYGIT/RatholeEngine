@@ -1,15 +1,17 @@
 # مدیریت مرکزی با پنل وب Hub
 
-**RatholeHub** یک پنل وب Python 3 stdlib (بدون pip و بدون build فرانت‌اند) است که مدیریت چندین سرور ایران و نود خارج را متمرکز می‌کند. backend در `hub.py`/`hubcmds.py` و UI در پوشه‌ی `ui/` قرار دارد. هاب می‌تواند هر سرور را به دو روش کنترل کند:
+**RatholeHub** یک پنل وب Python 3 stdlib (بدون pip و بدون build فرانت‌اند) است که مدیریت چندین سرور ایران و نود خارج را متمرکز می‌کند. backend در `hub.py`/`hubcmds.py` و UI آفلاین آن (`index.html`، `app.css`، `app.js`، `i18n.js`، `vazirmatn.woff2`) در پوشه‌ی `ui/` قرار دارد. هاب می‌تواند هر سرور را به دو روش کنترل کند:
 
 | روش اتصال | `transport` | پیش‌نیاز | توضیح |
 |-----------|-------------|----------|-------|
 | **SSH** | `ssh` | کلید SSH هاب در `authorized_keys` سرور | روش سنتی؛ هر دستور به‌صورت argv از طریق SSH اجرا می‌شود. |
 | **REST Agent** | `api` | سرویس `rathole-agent.service` روی سرور + API URL/توکن | بدون SSH؛ هاب درخواست را به `POST <api_url>/api/exec` می‌فرستد. |
 
-> در نسخه‌ی **v2.0.2** صفحه‌ی «بورد سیم‌کشی» (`#/wiring`) حذف شده است. لینک قدیمی `#/wiring` بی‌صدا به داشبورد برمی‌گردد. جای آن، **کنترل‌های سرویس** در ردیف هر سرویس (صفحه‌ی ایران و نود) قرار گرفته است.
+> در نسخه‌ی **v2.1.0** رابط کاربری هاب به سبک شیشه‌ای **Apple Glass** بازطراحی شده است (تم روشن/تاریک/سیستم، پالت فرمان `⌘K / Ctrl+K`، ۴ کارت KPI، فیلتر زنده، بارگذاری موازی سریع‌تر و پیام شفاف همگام‌سازی دوطرفه). صفحه‌ی قدیمی «بورد سیم‌کشی» (`#/wiring`) از v2.0.2 حذف شده و لینک آن بی‌صدا به داشبورد برمی‌گردد.
 
 ![معماری هاب](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/hub-architecture.svg)
+
+![داشبورد پنل هاب RatholeHub v2.1.0](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
 
 ![کنترل‌های سرویس — مودال «حامل و پروتکل» روی یک سرویس](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/service-controls.png)
 
@@ -96,13 +98,13 @@ sudo ratholenode agent on 8089
 
 | صفحه | آدرس | محتوا |
 |------|------|-------|
-| **داشبورد** | `#/dashboard` | کارت سرورها، grid/list، وضعیت و badge نسخه؛ افزودن/Provision؛ آپدیت همه با progress؛ نوار وضعیت هاب (uptime/load/RAM/دیسک، تعداد متصل، badge پروکسی) |
-| **صفحه سرور** | `#/server/<name>` | overview، دامنه/گواهی، پورت/path، carrierها، ingress، سرویس‌های rathole و Backhaul، game، upstreamها، ابزارهای تشخیص و log |
+| **داشبورد** | `#/dashboard` | **۴ کارت KPI**، نوار وضعیت هاب، فیلتر سریع (نقش/وضعیت/متن)، کارت/فهرست سرورها، وضعیت و badge نسخه؛ افزودن/Provision؛ آپدیت همه با progress |
+| **صفحه سرور** | `#/server/<name>` | overview، دامنه/گواهی، پورت/path، carrierها، ingress، جستجوی زنده و سرویس‌های rathole و Backhaul، game، upstreamها، ابزارهای تشخیص و log |
 | **مسیریابی / کنسول** | `#/routing` | **فقط‌خواندنی**: نمای گراف/جدول topology و کنسول؛ تغییر مسیر از ردیف سرویس یا کارت حامل انجام می‌شود |
-| **فعالیت** | `#/audit` | تاریخچه‌ی عملیات (زمان، کاربر، سرور، action، rc) — ۱۰۰ رکورد آخر |
-| **تنظیمات** | `#/settings` | hint listen/token، چرخش API token و تغییر رمز مدیر |
+| **فعالیت** | `#/audit` | تاریخچه‌ی عملیات با جستجوی زنده (زمان، کاربر، سرور، action، rc) — ۱۰۰ رکورد آخر |
+| **تنظیمات** | `#/settings` | انتخابگر سه‌حالتهٔ تم (**روشن / تاریک / سیستم**)، تغییر زبان، پروکسی هاب، hint listen/token، چرخش API token و تغییر رمز مدیر |
 
-UI برای موبایل/دسکتاپ ریسپانسیو است، تم روشن/تیره و RTL/LTR دارد، وضعیت focus و dialogهای keyboard-accessible را رعایت می‌کند و از `prefers-reduced-motion` پشتیبانی می‌کند. زبان و تم در مرورگر ذخیره می‌شوند. نوار ناوبری چهار بخش دارد: داشبورد، نقشه مسیرها، گزارش فعالیت‌ها، تنظیمات.
+رابط شیشه‌ای **Apple Glass** (نسخه‌ی **v2.1.0**) برای موبایل/دسکتاپ ریسپانسیو است، تم **روشن / تاریک / هماهنگ با سیستم**، RTL/LTR، فونت آفلاین **`vazirmatn.woff2`** (بدون CDN)، **`⌘K / Ctrl+K` پالت فرمان**، مودال‌های `<dialog>`، بارگذاری موازی سریع‌تر سرورها، پیام شفاف همگام‌سازی دوطرفه و `prefers-reduced-motion` دارد. زبان و تم در مرورگر ذخیره می‌شوند. نوار ناوبری چهار بخش دارد: داشبورد، نقشه مسیرها، گزارش فعالیت‌ها، تنظیمات.
 
 ---
 
@@ -221,7 +223,7 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST \
 2. آرگومان‌ها با regex (`RE_NAME`, `RE_IPPORT`, `RE_KEY`, …) اعتبارسنجی می‌شوند
 3. دستورات به‌صورت **argv لیستی** اجرا می‌شوند — برای SSH با هر آرگومان جدا، و برای REST Agent به‌صورت `{"cmd":[...]}` — نه string interpolation
 4. actionهای تغییردهنده در `WRITE_ACTIONS` علامت‌گذاری شده‌اند و در **audit log** ثبت می‌شوند
-5. **سخت‌گیری سمت agent:** فقط بایناری‌های `ratholectl`، `ratholenode`، `bash`، `python3`، `python`، `systemctl`، `journalctl`، `curl`، `jq`، `cat`، `tail`، `ls` مجاز هستند؛ payload بین ۱ بایت و ۱ مگابایت، `timeout` بین ۱ تا ۳۶۰۰ ثانیه، و احراز هویت با مقایسه‌ی constant-time.
+5. **سخت‌گیری سمت agent:** فقط بایناری‌های `ratholectl`، `ratholenode`، `systemctl`، `journalctl`، `jq`، `tail` مجاز هستند و `cmd[0]` دارای `/` مسدود می‌شود؛ اجرای agent با توکن خالی رد می‌شود؛ payload بین ۱ بایت و ۱ مگابایت، `timeout` بین ۱ تا ۳۶۰۰ ثانیه، و احراز هویت با مقایسه‌ی constant-time.
 6. دکمه «آپدیت» در خودِ سرور آخرین `install.sh` را از GitHub (از طریق mirror ghproxy برای مخزن عمومی) می‌گیرد و با `--update` اجرا می‌کند؛ slug مخزن (`gh_repo`) و کانال آپدیت از config می‌آیند و هر دو regex-validated هستند.
 
 ---

@@ -69,6 +69,7 @@ After=network.target
 
 [Service]
 Type=simple
+KillMode=process
 ExecStart=/usr/bin/python3 /usr/local/share/rathole/ratholeagent.py --port ${PORT} --role ${ROLE}
 Restart=always
 RestartSec=3
@@ -76,6 +77,7 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 UNIT
+chmod 644 /etc/systemd/system/rathole-agent.service
 
 systemctl daemon-reload
 systemctl enable --now rathole-agent >/dev/null 2>&1

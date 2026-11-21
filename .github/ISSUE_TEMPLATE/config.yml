@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Telegram Community & Fast Support (@l8PY4NET)
+    url: https://t.me/l8PY4NET
+    about: Release updates, carrier tips, and fast Q&A from the community.
+  - name: Official Documentation & Interactive Quickstart
+    url: https://l8pygit.github.io/RatholeEngine/
+    about: Architecture, transport carriers, REST Agent setup, and step-by-step install guide.
+  - name: Troubleshooting & Rollback Wiki
+    url: https://l8pygit.github.io/RatholeEngine/wiki/Troubleshooting/
+    about: Common tunnel errors, adaptive failover checks, and update rollback instructions.

@@ -53,19 +53,19 @@ sudo ratholectl hub on 8088   # → https://<domain>/hub/
 
 ## UI
 
-The UI is a static asset tree under `ratholehub/ui/`, served by the stdlib backend with a **filename whitelist**. It has no frontend build step or runtime dependency. It is bilingual (Persian/English) with RTL/LTR switching, light/dark themes, responsive desktop/mobile layouts, accessible dialogs, keyboard focus management, inline validation, and reduced-motion support. `install-hub.sh` and `update.sh` install/update the whole tree (`hub.py` + `hubcmds.py` + `ui/`). Refresh is page-aware (default 20 seconds).
+The UI is a static asset tree under `ratholehub/ui/` (`index.html`, `app.css`, `app.js`, `i18n.js`, plus the offline bundled variable font **`vazirmatn.woff2`**), served by the stdlib backend with a **filename whitelist**. In **v2.1.0**, the UI was redesigned in an **Apple Glass** aesthetic with **Light / Dark / System** themes, native top-layer `<dialog>` modals, a **`⌘K / Ctrl+K` Command Palette**, dashboard KPI cards, live table/audit filtering, parallel status loading with short-TTL caching, and explicit two-sided carrier sync feedback — while staying 100% offline (zero external CDNs, strict CSP) and build-free. It supports Persian (RTL) and English (LTR), responsive desktop/mobile layouts, and reduced-motion support. `install-hub.sh` and `update.sh` install/update the full tree (`hub.py` + `hubcmds.py` + `ui/`). Refresh is page-aware (default 20 seconds).
 
 ### UI Pages
 
 | Page | Hash | Content |
 |------|------|---------|
-| **Dashboard** | `#/dashboard` | Server cards/list, availability and version badges, add-server and Provision forms, hub status strip (uptime/load/RAM/disk, connected count, proxy badge), and Update All progress. |
-| **Server page** | `#/server/<name>` | Iran server: four tabs (Nodes & Paths, Carriers & Protocols, Network & Ingress, Maintenance & System) plus domain/certificate, the Ports section, ingress modes, and diagnostics. Node: main tunnel, quick presets, carrier select, watchdog and adaptive toggles, unified services table (rathole lane + Backhaul lane), upstreams, and diagnostics. |
+| **Dashboard** | `#/dashboard` | **4 KPI cards** (servers, connectivity, nodes/services, hub health), hub status strip, role/reachability/text filter bar, server cards/table with carrier protocol and version badges, add-server/Provision forms, and Update All progress. |
+| **Server page** | `#/server/<name>` | Iran server: four tabs (Nodes & Paths, Carriers & Protocols, Network & Ingress, Maintenance & System), live table filter + domain/certificate, the Ports section, ingress modes, and diagnostics. Node: main tunnel, quick presets, carrier select, watchdog and adaptive toggles, unified services table (rathole lane + Backhaul lane), upstreams, and diagnostics. |
 | **Routing map** | `#/routing` | **Read-only**: three views — a draggable SVG graph (layout persisted in the browser, with reset), a summary table, and an ingress/output console with per-node client connection recipes. Routing changes happen on the server/node pages. |
-| **Activity log** | `#/audit` | Last 100 audit records: time, user, server, action, and `rc`. |
-| **Settings** | `#/settings` | API-token hint, listen address, token rotation, admin-password change, and the insecure-default warning. Language/theme are controlled from the sidebar buttons. |
+| **Activity log** | `#/audit` | Last 100 audit records (with live text filter): time, user, server, action, and `rc`. |
+| **Settings** | `#/settings` | 3-state Appearance selector (**Light / Dark / System**), language toggle, hub proxy settings, API-token hint, listen address, token rotation, admin-password change, and the insecure-default warning. |
 
-On mobile widths (≤820px) the navigation collapses into a fixed bottom bar with the same four sections. There is no wiring-board page; the legacy `#/wiring` hash falls back to the dashboard.
+Press **`⌘K / Ctrl+K`** anywhere (or click the sidebar trigger) to open the **Command Palette** and jump straight to any server, page, or theme/language toggle. On mobile widths (≤820px) navigation collapses into a fixed bottom bar. There is no wiring-board page; `#/wiring` falls back to `#/dashboard`.
 
 ### Per-node carrier selector (v2.0.4)
 
@@ -183,9 +183,9 @@ Authorization: Bearer <token>
 → {"ok":true,"rc":0,"out":"...","err":""}
 ```
 
-- Auth: `Authorization: Bearer <token>` with a constant-time compare; missing header/invalid scheme → `401`, wrong token → `403`.
+- Auth: `Authorization: Bearer <token>` with a constant-time compare (agent refuses requests/startup if token is empty); missing header/invalid scheme → `401`, wrong token → `403`.
 - Body: 1 byte to 1 MiB; `cmd` must be a non-empty list of strings (no NUL); `timeout` is an integer from 1 to 3600 seconds. An optional leading `["timeout", N, ...]` wrapper is accepted and clamped.
-- **Binary allow-list**: `ratholectl`, `ratholenode`, `bash`, `python3`, `python`, `systemctl`, `journalctl`, `curl`, `jq`, `cat`, `tail`, `ls`. Anything else → `403`.
+- **Binary allow-list**: `ratholectl`, `ratholenode`, `systemctl`, `journalctl`, `jq`, `tail` (anything else, or a `cmd[0]` containing `/`, → `403`).
 - Execution is a direct argv (no shell); on timeout the process group is killed.
 - Default listen: `--host 0.0.0.0 --port 8089 --role node|iran`.
 
@@ -294,7 +294,8 @@ ratholehub/
     ├── index.html
     ├── app.css
     ├── app.js
-    └── i18n.js     Persian/English strings
+    ├── i18n.js         Persian/English strings
+    └── vazirmatn.woff2 Bundled offline variable font (RTL)
 ```
 
 Files are served with a **filename whitelist** (no path joining, so path traversal is impossible). `install-hub.sh` and `update.sh` both install/update the full tree.

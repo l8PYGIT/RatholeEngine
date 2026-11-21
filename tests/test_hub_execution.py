@@ -15,7 +15,9 @@ class ExecutionTests(unittest.TestCase):
              patch.object(hub, 'audit_log'):
             code, body = handler._edit_server('hub', {'api_url': 'http://192.0.2.5:8089'})
             self.assertEqual(code, 200)
-            self.assertEqual(body['server']['api_token'], 'existing')
+            self.assertNotIn('api_token', body['server'])
+            self.assertTrue(body['server'].get('api_token_set'))
+            self.assertEqual(save.call_args.args[0][0]['api_token'], 'existing')
             self.assertEqual(save.call_args.args[0][0]['api_url'], 'http://192.0.2.5:8089')
 
     def test_public_ip_override_is_saved_separately_from_ssh_host(self):
@@ -38,11 +40,11 @@ class ExecutionTests(unittest.TestCase):
             self.assertEqual(shlex.split(run.call_args.args[0][-1]), args)
 
     def test_api_only_deploy_does_not_require_host(self):
-        server = {'name':'node', 'transport':'api', 'api_url':'http://example.test', 'api_token':'test'}
+        server = {'name':'node', 'role':'node', 'transport':'api', 'api_url':'http://example.test', 'api_token':'test'}
         with patch.object(hub, 'MOCK', False), patch.object(hub, 'get_config', return_value={}), patch.object(hub, 'run_on_server', return_value={'rc':0}) as run:
             self.assertEqual(hub.deploy_to_server(server)['rc'], 0)
             self.assertEqual(run.call_args.args[0], server)
-            self.assertEqual(run.call_args.args[1][:2], ['bash', '-c'])
+            self.assertEqual(run.call_args.args[1], ['ratholenode', 'update', 'stable'])
             self.assertEqual(run.call_args.kwargs['timeout'], 600)
 
     def test_connection_metadata(self):

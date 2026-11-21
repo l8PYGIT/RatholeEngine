@@ -1,53 +1,92 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 560" font-family="Segoe UI, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 444" width="1200" height="444" font-family="Segoe UI, system-ui, -apple-system, Arial, sans-serif">
   <defs>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#060b16"/>
+      <stop offset="52%" stop-color="#0d1528"/>
+      <stop offset="100%" stop-color="#121c36"/>
+    </linearGradient>
+    <radialGradient id="orbA" cx="20%" cy="15%" r="55%">
+      <stop offset="0%" stop-color="rgba(124,58,237,0.22)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="orbB" cx="85%" cy="85%" r="55%">
+      <stop offset="0%" stop-color="rgba(10,132,255,0.20)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.15" fill="rgba(148,163,184,0.13)"/>
+    </pattern>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#38bdf8"/>
     </marker>
-    <marker id="arrU" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#9333ea"/>
+    <marker id="arrV" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#a78bfa"/>
     </marker>
-    <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/>
+    <marker id="arrG" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#34d399"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#fb7185"/>
+    </marker>
+    <marker id="arrN" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#64748b"/>
     </marker>
   </defs>
-  <rect x="0" y="0" width="1160" height="560" fill="#ffffff"/>
-  <rect x="20" y="16" width="1120" height="60" rx="8" fill="#0f172a"/>
-  <text x="580" y="39" text-anchor="middle" fill="#ffffff" font-size="19" font-weight="bold">Central design principle: state → regenerate → hot-reload</text>
-  <text x="580" y="59" text-anchor="middle" fill="#cbd5e1" font-size="12.5">Never hand-edit a generated config — mutate state, regenerate, validate, reload.</text>
-  <rect x="20" y="100" width="250" height="210" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="145" y="126" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#1e3a8a">1 · mutate state</text>
-  <text x="40" y="156" text-anchor="start" font-size="11" fill="#334155">ratholectl: state.json (jq)</text>
-  <text x="40" y="176" text-anchor="start" font-size="11" fill="#334155">ratholenode: node.env +</text>
-  <text x="40" y="196" text-anchor="start" font-size="11" fill="#334155">services.conf + bh-services.conf</text>
-  <text x="40" y="216" text-anchor="start" font-size="11" fill="#334155">the single source of truth</text>
-  <line x1="270" y1="205" x2="308" y2="205" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="310" y="100" width="250" height="210" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="435" y="126" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#1e3a8a">2 · regenerate()</text>
-  <text x="330" y="156" text-anchor="start" font-size="11" fill="#334155">gen_server_toml()</text>
-  <text x="330" y="176" text-anchor="start" font-size="11" fill="#334155">gen_nginx_conf() (+ stream/SNI)</text>
-  <text x="330" y="196" text-anchor="start" font-size="11" fill="#334155">gen_client() / gen_backhaul_client_toml()</text>
-  <text x="330" y="216" text-anchor="start" font-size="11" fill="#334155">write .tmp → cat &gt; file (inode kept)</text>
-  <line x1="560" y1="205" x2="598" y2="205" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="600" y="100" width="250" height="210" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
-  <text x="725" y="126" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#1e3a8a">3 · validate</text>
-  <text x="620" y="156" text-anchor="start" font-size="11" fill="#334155">nginx -t (http + stream)</text>
-  <text x="620" y="176" text-anchor="start" font-size="11" fill="#334155">snapshot known-good first</text>
-  <text x="620" y="196" text-anchor="start" font-size="11" fill="#334155">gate before touching live nginx</text>
-  <line x1="850" y1="205" x2="888" y2="205" stroke="#334155" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="890" y="100" width="250" height="210" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="1015" y="126" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#14532d">4 · hot-reload</text>
-  <text x="910" y="156" text-anchor="start" font-size="11" fill="#334155">systemctl reload nginx</text>
-  <text x="910" y="176" text-anchor="start" font-size="11" fill="#334155">rathole config_watcher re-reads</text>
-  <text x="910" y="196" text-anchor="start" font-size="11" fill="#334155">tunnels stay up</text>
-  <text x="910" y="216" text-anchor="start" font-size="11" fill="#334155">restart only for transport changes</text>
-  <line x1="880" y1="310" x2="880" y2="366" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arr)"/>
-  <rect x="20" y="348" width="540" height="92" rx="12" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
-  <text x="290" y="374" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#7f1d1d">fail · 4′ auto-revert</text>
-  <text x="40" y="398" text-anchor="start" font-size="11" fill="#991b1b">restore http AND stream conf from the pre-regen snapshot /</text>
-  <text x="40" y="418" text-anchor="start" font-size="11" fill="#991b1b">.rathole-good.bak — nginx never stays broken</text>
-  <rect x="600" y="348" width="540" height="92" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="870" y="374" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#14532d">pass · active tunnels survive</text>
-  <text x="620" y="398" text-anchor="start" font-size="11" fill="#166534">config_watcher re-reads server.toml in place (inode preserved);</text>
-  <text x="620" y="418" text-anchor="start" font-size="11" fill="#166534">the node prefers hot-reload and only restarts for kcp / noise</text>
-  <text x="20" y="500" text-anchor="start" font-size="11.5" fill="#64748b">Same pattern for every lane: rathole (ws/kcp/plain/noise), Backhaul (bh-services.conf), FRP (frps.toml), GRE (ip tunnel), and the REST agent (rathole-agent.service).</text>
+  <rect x="0" y="0" width="1200" height="444" rx="18" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1200" height="444" rx="18" fill="url(#orbA)"/>
+  <rect x="0" y="0" width="1200" height="444" rx="18" fill="url(#orbB)"/>
+  <rect x="0" y="0" width="1200" height="444" rx="18" fill="url(#dotGrid)"/>
+  <rect x="20" y="16" width="1160" height="66" rx="14" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.13)" stroke-width="1.2"/>
+  <text x="600.0" y="41" text-anchor="middle" fill="#f8fafc" font-size="18.5" font-weight="700">Central Principle: State -&gt; Regenerate -&gt; Validate -&gt; Hot-Reload</text>
+  <text x="600.0" y="62" text-anchor="middle" fill="#94a3b8" font-size="12.5">Never hand-edit generated configs — mutate state safely, commit in place, validate nginx, then reload.</text>
+  <rect x="1108" y="27" width="56" height="22" rx="11" fill="rgba(10,132,255,0.20)" stroke="rgba(56,189,248,0.45)" stroke-width="1"/>
+  <text x="1136" y="42" text-anchor="middle" fill="#7dd3fc" font-size="11" font-weight="700">v2.1.0</text>
+  <rect x="28" y="102" width="266" height="134" rx="14" fill="rgba(15,23,42,0.58)" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="1.3"/>
+  <rect x="38" y="112" width="246" height="114" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="52" y="134" text-anchor="start" font-size="12" font-weight="700" fill="#e0f2fe">1 · Mutate State</text>
+  <text x="52" y="153" text-anchor="start" font-size="11" fill="#93c5fd">ratholectl: state_jq atomic write</text>
+  <text x="52" y="170" text-anchor="start" font-size="11" fill="#93c5fd">to state.json (single source)</text>
+  <text x="52" y="187" text-anchor="start" font-size="11" fill="#93c5fd">ratholenode: node.env +</text>
+  <text x="52" y="204" text-anchor="start" font-size="11" fill="#93c5fd">services.conf / bh-services.conf</text>
+  <line x1="296" y1="169" x2="314" y2="169" stroke="#38bdf8" stroke-width="2.4" marker-end="url(#arr)"/>
+  <rect x="320" y="102" width="266" height="134" rx="14" fill="rgba(15,23,42,0.58)" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="1.3"/>
+  <rect x="330" y="112" width="246" height="114" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="344" y="134" text-anchor="start" font-size="12" font-weight="700" fill="#e0f2fe">2 · Regenerate</text>
+  <text x="344" y="153" text-anchor="start" font-size="11" fill="#93c5fd">gen_server_toml() / gen_nginx_conf()</text>
+  <text x="344" y="170" text-anchor="start" font-size="11" fill="#93c5fd">gen_client() / backhaul TOML</text>
+  <text x="344" y="187" text-anchor="start" font-size="11" fill="#93c5fd">rth_commit_config(): flock +</text>
+  <text x="344" y="204" text-anchor="start" font-size="11" fill="#93c5fd">cat tmp &gt; file (inode preserved!)</text>
+  <line x1="588" y1="169" x2="606" y2="169" stroke="#38bdf8" stroke-width="2.4" marker-end="url(#arr)"/>
+  <rect x="612" y="102" width="266" height="134" rx="14" fill="rgba(15,23,42,0.58)" stroke="#fbbf24" stroke-opacity="0.45" stroke-width="1.3"/>
+  <rect x="622" y="112" width="246" height="114" rx="11" fill="#0f192e" stroke="#fbbf24" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="636" y="134" text-anchor="start" font-size="12" font-weight="700" fill="#fef3c7">3 · Validate Gate</text>
+  <text x="636" y="153" text-anchor="start" font-size="11" fill="#fcd34d">Snapshot known-good config to</text>
+  <text x="636" y="170" text-anchor="start" font-size="11" fill="#fcd34d">.rathole-good.bak BEFORE apply</text>
+  <text x="636" y="187" text-anchor="start" font-size="11" fill="#fcd34d">Run nginx -t (http + stream)</text>
+  <text x="636" y="204" text-anchor="start" font-size="11" fill="#fcd34d">Stop immediately if validation fails</text>
+  <line x1="880" y1="169" x2="898" y2="169" stroke="#34d399" stroke-width="2.4" marker-end="url(#arrG)"/>
+  <rect x="904" y="102" width="266" height="134" rx="14" fill="rgba(15,23,42,0.58)" stroke="#34d399" stroke-opacity="0.45" stroke-width="1.3"/>
+  <rect x="914" y="112" width="246" height="114" rx="11" fill="#0f192e" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="928" y="134" text-anchor="start" font-size="12" font-weight="700" fill="#d1fae5">4 · Hot-Reload</text>
+  <text x="928" y="153" text-anchor="start" font-size="11" fill="#86efac">systemctl reload nginx</text>
+  <text x="928" y="170" text-anchor="start" font-size="11" fill="#86efac">rathole config_watcher detects</text>
+  <text x="928" y="187" text-anchor="start" font-size="11" fill="#86efac">in-place write -&gt; zero drops</text>
+  <text x="928" y="204" text-anchor="start" font-size="11" fill="#86efac">Restart only if transport changed</text>
+  <rect x="28" y="286" width="558" height="74" rx="11" fill="rgba(244,63,94,0.12)" stroke="#fb7185" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="307.0" y="308" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffe4e6">Validation Failed -&gt; Auto-Revert (.rathole-good.bak)</text>
+  <text x="307.0" y="327" text-anchor="middle" font-size="11" fill="#fda4af">Restores both HTTP and Stream nginx configs + state before exit.</text>
+  <text x="307.0" y="344" text-anchor="middle" font-size="11" fill="#fda4af">Live reverse tunnels remain untouched and nginx never stays broken.</text>
+  <rect x="614" y="286" width="558" height="74" rx="11" fill="rgba(16,185,129,0.12)" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="893.0" y="308" text-anchor="middle" font-size="12.5" font-weight="700" fill="#d1fae5">Validation Passed -&gt; Active Tunnels Survive</text>
+  <text x="893.0" y="327" text-anchor="middle" font-size="11" fill="#86efac">Inode preservation keeps rathole config_watcher hot-reloading smoothly.</text>
+  <text x="893.0" y="344" text-anchor="middle" font-size="11" fill="#86efac">Applies identically across ws/kcp/plain/noise, Backhaul, FRP, GRE &amp; Agent.</text>
+  <path d="M 745.0 236 L 745.0 262 L 460 262 L 460 282" fill="none" stroke="#fb7185" stroke-width="2.3" stroke-dasharray="6 4" marker-end="url(#arrR)"/>
+  <rect x="568.0" y="251.0" width="88" height="22" rx="11.0" fill="#0b1324" stroke="#fb7185" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="568.0" y="251.0" width="88" height="22" rx="11.0" fill="rgba(244,63,94,0.12)"/>
+  <text x="612" y="265.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffe4e6">fail -&gt; revert</text>
+  <line x1="1037.0" y1="236" x2="1037.0" y2="282" stroke="#34d399" stroke-width="2.4" marker-end="url(#arrG)"/>
+  <rect x="1010.0" y="248.0" width="54" height="22" rx="11.0" fill="#0b1324" stroke="#34d399" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="1010.0" y="248.0" width="54" height="22" rx="11.0" fill="rgba(16,185,129,0.12)"/>
+  <text x="1037.0" y="262.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="#d1fae5">pass</text>
+  <text x="28" y="414" text-anchor="start" font-size="11" font-weight="500" fill="#94a3b8">Why rth_commit_config uses 'cat tmp &gt; dst' instead of 'mv': mv replaces the file inode and breaks inotify/config_watcher.</text>
 </svg>

@@ -434,8 +434,9 @@ cmd_logs_all(){
     esac
   done
   if [ "$bundle" -eq 1 ]; then
-    local out; out="/tmp/rathole-logs-$(hostname -s 2>/dev/null || echo node)-$(date +%Y%m%d-%H%M%S).txt.gz"
-    _logs_all_body "$n" 2>&1 | gzip -c > "$out" || die "sakht-e bundle shekast khord."
+    local out
+    out="$(umask 077 && mktemp /tmp/rathole-logs-XXXXXX.txt.gz)" || die "sakht-e file bundle shekast khord."
+    ( umask 077 && _logs_all_body "$n" 2>&1 | gzip -c > "$out" ) || die "sakht-e bundle shekast khord."
     chmod 600 "$out"
     log "bundle-e log sakhte shod: $out  ($(du -h "$out" 2>/dev/null | cut -f1))"
     echo "  bardashtan az system-e khodet:  scp root@<ip-node>:$out ."
@@ -458,22 +459,10 @@ BH_TOML=/etc/rathole/backhaul-client.toml
 
 env_set(){ # $1=key $2=value (dar node.env)
   touch "$ENV_FILE"; chmod 600 "$ENV_FILE" 2>/dev/null || true
-  if grep -qE "^$1=" "$ENV_FILE"; then sed -i "s#^$1=.*#$1=$2#" "$ENV_FILE"; else echo "$1=$2" >> "$ENV_FILE"; fi
+  kv_set "$ENV_FILE" "$1" "$2"
 }
 
-install_kcptun_client(){
-  local bin="$KCP_CLI_BIN" ver="${KCPTUN_VER:-$KCPTUN_VER_DEF}" base="${KCPTUN_BASE:-$KCPTUN_BASE_DEF}" arch tmp url
-  [ -x "$bin" ] && return 0
-  case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; armv7l) arch=armv7 ;; *) die "memari poshtibani nemishavad." ;; esac
-  command -v curl >/dev/null 2>&1 || die "curl lazem ast."
-  log "download kcptun ${ver}..."
-  tmp="$(rth_mktempd)"
-  url="${base}/${ver}/kcptun_linux_${arch}.tar.gz"
-  curl -fsSL "$url" -o "$tmp/k.tgz" || { rm -rf "$tmp"; die "download kcptun shekast khord."; }
-  tar -xzf "$tmp/k.tgz" -C "$tmp" || { rm -rf "$tmp"; die "baz kardan arshiv shekast khord."; }
-  install -m755 "$tmp/client_linux_${arch}" "$bin" || { rm -rf "$tmp"; die "nasb bainri shekast khord."; }
-  rm -rf "$tmp"; log "kcptun-client nasb shod."
-}
+install_kcptun_client(){ install_kcptun client; }
 
 gen_kcp_client_unit(){ # $1=remote $2=local $3=key $4=ds $5=ps $6=mode $7=sw $8=rw
   local remote="$1" local_ep="$2" key="$3" ds="$4" ps="$5" mode="$6" sw="$7" rw="$8"
@@ -516,7 +505,8 @@ cmd_kcp(){
 cmd_kcp_on(){
   local remote="${1:-}" key="${2:-}" profile="${3:-balanced}" local_ep="${KCP_LOCAL:-$KCP_LOCAL_DEF}" params ds ps mode sw rw
   [ -n "$remote" ] && [ -n "$key" ] || die "estefade: ratholenode kcp on <iran_ip:udp_port> <key> [profile]"
-  echo "$remote" | grep -qE '^[^:]+:[0-9]+$' || die "adres bayad be shkl IP:PORT bashad."
+  rth_valid_hostport "$remote" || die "adres bayad be shkl HOST:PORT motabar bashad."
+  rth_valid_kcp_key "$key" || die "key-e KCP namotabar ast."
   params="$(kcp_profile "$profile")" || die "profile namotabar: $profile (balanced|lossy|aggressive)"
   read -r ds ps mode sw rw <<<"$params"
   install_kcptun_client
@@ -577,7 +567,7 @@ cmd_plain(){
 cmd_plain_on(){
   local remote="${1:-}"
   [ -n "$remote" ] || die "estefade: ratholenode plain on <iran_ip:port>  (port-e HTTP-e sade rooye Iran, masalan 8880)"
-  echo "$remote" | grep -qE '^[^:]+:[0-9]+$' || die "adres bayad be shkl IP:PORT bashad (masalan 1.2.3.4:8880)."
+  rth_valid_hostport "$remote" || die "adres bayad be shkl HOST:PORT motabar bashad (masalan 1.2.3.4:8880)."
   env_set TUNNEL plain
   env_set PLAIN_REMOTE "$remote"
   gen_client || return 1
@@ -617,8 +607,9 @@ cmd_noise(){
 cmd_noise_on(){
   local remote="${1:-}" pubkey="${2:-}" pattern="${3:-}"
   [ -n "$remote" ] && [ -n "$pubkey" ] || die "estefade: ratholenode noise on <iran_ip:port> <pubkey> [pattern]  (port-e omomi-ye rathole-noise rooye Iran, masalan 2334)"
-  echo "$remote" | grep -qE '^[^:]+:[0-9]+$' || die "adres bayad be shkl IP:PORT bashad (masalan 1.2.3.4:2334)."
+  rth_valid_hostport "$remote" || die "adres bayad be shkl HOST:PORT motabar bashad (masalan 1.2.3.4:2334)."
   echo "$pubkey" | grep -qE '^[A-Za-z0-9+/]{40,64}={0,2}$' || die "pubkey bayad base64-e motabar bashad (az 'ratholectl noise show' rooye Iran)."
+  [ -z "$pattern" ] || rth_valid_noise_pattern "$pattern" || die "pattern-e Noise namotabar ast."
   env_set TUNNEL noise
   env_set NOISE_REMOTE "$remote"
   env_set NOISE_PUBKEY "$pubkey"
@@ -868,7 +859,6 @@ gen_frp_client_toml(){
     echo "transport.tcpMux = true"
     echo
     if [ -f "$SVC_FILE" ]; then
-      local svc_count; svc_count=$(grep -cvE '^\s*(#|$)' "$SVC_FILE" 2>/dev/null || echo 0)
       while IFS='|' read -r name stoken inbound rport_file _rest; do
         [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
         local rport="${rport_file:-}"
@@ -908,6 +898,7 @@ cmd_frp(){
 cmd_frp_on(){
   local remote="${1:-}" token="${2:-}" transport="${3:-}" rport="${4:-}"
   if [ "$token" = "tcp" ] || [ "$token" = "kcp" ] || [ "$token" = "quic" ] || [ "$token" = "websocket" ]; then
+    rport="$transport"
     transport="$token"
     token=""
   fi
@@ -946,7 +937,9 @@ cmd_frp_on(){
   fi
   systemctl disable --now "$SVC" 2>/dev/null || true
   systemctl disable --now rathole-kcp-client 2>/dev/null || true
-  systemctl disable --now "$BH_CLI_SVC" 2>/dev/null || true
+  if [ ! -f "$BH_SVC_FILE" ] || ! grep -qvE '^[[:space:]]*(#|$)' "$BH_SVC_FILE" 2>/dev/null; then
+    systemctl disable --now "$BH_CLI_SVC" 2>/dev/null || true
+  fi
   systemctl disable --now rathole-adaptive.timer 2>/dev/null || true
   env_set TUNNEL frp
   env_set FRP_REMOTE "$remote"
@@ -998,6 +991,7 @@ cmd_gre_probe(){
 }
 
 cmd_gre_on(){
+  need_root
   local iran_ip="${1:-}" tunnel_ip="${2:-10.10.10.2}" gre_name="${3:-gre1}"
   [ -n "$iran_ip" ] || die "estefade: ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]"
   echo "$iran_ip" | grep -qE '^[0-9.]+$' || die "iran_ip bayad IPv4 motabar bashad."
@@ -1012,6 +1006,7 @@ cmd_gre_on(){
 }
 
 cmd_gre_off(){
+  need_root; load_env
   local gre_name="${1:-}"
   [ -n "$gre_name" ] || gre_name="${GRE_NAME:-gre1}"
   gre_teardown_interface "$gre_name"
@@ -1026,34 +1021,15 @@ cmd_gre_status(){
   local gn="${GRE_NAME:-}"
   if [ -n "$gn" ]; then
     echo "GRE tunnel: $(c_g 'roshan')  interface: $gn (tunnel: ${GRE_TUNNEL_IP:-?}/30, peer: ${GRE_REMOTE:-?})"
-    command -v ip >/dev/null 2>&1 && { ip link show "$gn" 2>/dev/null && echo "  link status: $(c_g 'UP')" || echo "  link status: $(c_r 'DOWN')"; }
+    command -v ip >/dev/null 2>&1 && { ip link show "$gn" 2>/dev/null | grep -q "UP" && echo "  link status: $(c_g 'UP')" || echo "  link status: $(c_r 'DOWN')"; }
   else
     echo "GRE tunnel: $(c_y 'khamoosh')"
   fi
 }
 
 cmd_tune(){
-
   need_root
-  modprobe nf_conntrack 2>/dev/null || true
-  cat >/etc/sysctl.d/99-rathole-tune.conf <<'EOF'
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
-net.ipv4.tcp_mtu_probing=1
-net.ipv4.tcp_slow_start_after_idle=0
-net.ipv4.tcp_fastopen=3
-fs.file-max=2097152
-net.core.somaxconn=65535
-net.core.netdev_max_backlog=16384
-net.ipv4.tcp_max_syn_backlog=65535
-net.ipv4.ip_local_port_range=1024 65535
-net.netfilter.nf_conntrack_max=1048576
-net.core.rmem_max=26214400
-net.core.wmem_max=26214400
-net.core.rmem_default=26214400
-net.core.wmem_default=26214400
-EOF
-  sysctl --system >/dev/null 2>&1 || true
+  apply_sysctl_tuning
   log "tuning node eemal shod. BBR=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
 }
 
@@ -1062,6 +1038,7 @@ FAKEWEB_SVC="rathole-fakeweb"
 cmd_fakeweb(){
   need_root
   local action="${1:-}" port="${2:-8081}"
+  rth_valid_port "$port" || die "port namotabar."
   case "$action" in
     start)
       command -v python3 >/dev/null 2>&1 || die "python3 nasb nist (apt install -y python3)."
@@ -1150,6 +1127,7 @@ After=network.target
 
 [Service]
 Type=simple
+KillMode=process
 ExecStart=${py_bin} ${agent_py} --port ${port} --role node
 Restart=always
 RestartSec=3
@@ -1288,6 +1266,7 @@ gen_up_client(){
         echo "hostname = \"${HOST}\""
       fi
     fi
+    local emitted_services=0
     if [ -f "$(up_svc "$id")" ]; then
       while IFS='|' read -r name token inbound; do
         [ -n "$name" ] || continue; case "$name" in \#*) continue ;; esac
@@ -1296,6 +1275,7 @@ gen_up_client(){
           warn "khatt-e namotabar dar up-svc '$id' rad shod (name=$name)."
           continue
         fi
+        emitted_services=$((emitted_services + 1))
         echo
         echo "[client.services.${name}]"
         echo "token = \"${token}\""
@@ -1303,14 +1283,27 @@ gen_up_client(){
         echo "type = \"tcp\""
       done < "$(up_svc "$id")"
     fi
+    if [ "$emitted_services" -eq 0 ]; then
+      echo
+      echo "[client.services]"
+    fi
   } > "$toml.tmp"
   rth_commit_config "$toml.tmp" "$toml"
 }
 
 # ---------- kcp baraye upstream (har server airan, tunnel FEC jda) ----------
 kv_set(){ # $1=file $2=key $3=val
-  touch "$1"
-  if grep -qE "^$2=" "$1"; then sed -i "s#^$2=.*#$2=$3#" "$1"; else echo "$2=$3" >> "$1"; fi
+  local f="$1" k="$2" v="$3" tmp
+  touch "$f"
+  tmp="$(rth_mktemp)" || die "sakht-e file-e movaghat nashod."
+  RTH_KV_K="$k" RTH_KV_V="$v" awk '
+    BEGIN { k=ENVIRON["RTH_KV_K"]; v=ENVIRON["RTH_KV_V"]; found=0 }
+    index($0, k "=") == 1 { print k "=" v; found=1; next }
+    { print }
+    END { if (!found) print k "=" v }
+  ' "$f" > "$tmp" || { rm -f "$tmp"; die "neveshtan dar $f shekast khord."; }
+  cat "$tmp" > "$f"
+  rm -f "$tmp"
 }
 
 # entekhab port lvkal azad baraye kcp-client hai mkhtlf (main=29900, upstreamha az 29901)
@@ -1351,7 +1344,8 @@ UNIT
 up_kcp_on(){ # $1=id $2=remote $3=key [profile]
   local id="$1" remote="$2" key="$3" profile="${4:-balanced}" params ds ps mode sw rw local_ep
   [ -n "$remote" ] && [ -n "$key" ] || die "estefade: ratholenode upstream kcp <id> on <iran_ip:udp_port> <key> [profile]"
-  echo "$remote" | grep -qE '^[^:]+:[0-9]+$' || die "adres bayad IP:PORT bashad."
+  rth_valid_hostport "$remote" || die "adres bayad HOST:PORT motabar bashad."
+  rth_valid_kcp_key "$key" || die "key-e KCP namotabar ast."
   params="$(kcp_profile "$profile")" || die "profile namotabar: $profile (balanced|lossy|aggressive)"
   read -r ds ps mode sw rw <<<"$params"
   # port lvkal mojood ra ngh dar, vagarna iki azad begir
@@ -1419,8 +1413,9 @@ up_plain_on(){ # $1=id $2=remote(host:port)
 up_noise_on(){ # $1=id $2=remote(host:port) $3=pubkey [pattern]
   local id="$1" remote="$2" pubkey="$3" pattern="${4:-}"
   [ -n "$remote" ] && [ -n "$pubkey" ] || die "estefade: ratholenode upstream noise <id> on <iran_host:port> <pubkey> [pattern]"
-  echo "$remote" | grep -qE '^[A-Za-z0-9_.-]+:[0-9]+$' || die "adres bayad HOST:PORT bashad."
+  rth_valid_hostport "$remote" || die "adres bayad HOST:PORT motabar bashad."
   echo "$pubkey" | grep -qE '^[A-Za-z0-9+/=]{40,64}$' || die "pubkey-e noise namotabar (base64)."
+  [ -z "$pattern" ] || rth_valid_noise_pattern "$pattern" || die "pattern-e Noise namotabar ast."
   systemctl disable --now "rathole-kcp-up-${id}" 2>/dev/null || true
   rm -f "$(up_kcp_unit "$id")"; systemctl daemon-reload 2>/dev/null || true
   kv_set "$(up_env "$id")" TUNNEL noise
@@ -1795,7 +1790,8 @@ cmd_backup(){
   [ -n "${TLS_TRUSTED_ROOT:-}" ] && [ -f "$TLS_TRUSTED_ROOT" ] && items+=("${TLS_TRUSTED_ROOT#/}")
   [ -d "$UP_DIR" ] && items+=("${UP_DIR#/}")
   [ "${#items[@]}" -gt 0 ] || die "chizi baraye backup nist."
-  tar -czf "$out" -C / "${items[@]}" 2>/dev/null || die "sakht backup shekast khord."
+  ( umask 077 && tar -czf "$out" -C / "${items[@]}" 2>/dev/null ) || die "sakht backup shekast khord."
+  chmod 600 "$out" 2>/dev/null || true
   log "backup node sakhte shod: $out (node.env + services + upstreams)."
 }
 
@@ -2025,7 +2021,7 @@ adaptive_probe_tcp(){
   local host="$1" port="$2"
   local t0 t1 ms
   t0="$(date +%s%3N 2>/dev/null || echo 0)"
-  if timeout 5 bash -c "exec 3<>/dev/tcp/${host}/${port}" 2>/dev/null; then
+  if timeout 5 bash -c 'exec 3<>/dev/tcp/"$1"/"$2"' _ "$host" "$port" 2>/dev/null; then
     # `exec 3>&- 2>/dev/null` (bedoon-e command) HAR DO redirect ra DAEMI mikonad — yaani
     # stderr-e kol-e process ta akhar khafe mishod. group lazem ast: fd 3 baste mishavad
     # vali 2>/dev/null faghat hamin ja eemal mishavad.
@@ -2069,12 +2065,12 @@ adaptive_probe_ws_plain(){
   local t0 t1 ms out
   t0="$(date +%s%3N 2>/dev/null || echo 0)"
   out="$(printf 'GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n%s\r\n' \
-    "$path" "$host" "$xhdr" | timeout 5 bash -c "
-      exec 3<>/dev/tcp/${host}/${port}
+    "$path" "$host" "$xhdr" | timeout 5 bash -c '
+      exec 3<>/dev/tcp/"$1"/"$2"
       cat >&3
       timeout 3 cat <&3
       exec 3>&-
-    " 2>/dev/null)" || {
+    ' _ "$host" "$port" 2>/dev/null)" || {
     t1="$(date +%s%3N 2>/dev/null || echo "$t0")"; ms=$(( t1 - t0 ))
     echo "ws_timeout:${ms}"; return 1
   }
@@ -2099,9 +2095,12 @@ adaptive_run_probe(){
   local _srv="${SERVER:-}"; local host="${_srv%%:*}" port="${_srv##*:}" mode="${TUNNEL:-ws}"
   local tls_host="${TLS_HOSTNAME:-$host}" tls_trust="${TLS_TRUSTED_ROOT:-}"
   local cls ms result
-  local t0; t0="$(date +%s%3N 2>/dev/null || echo 0)"
-  local failures=0
-  [ -f "$ADAPTIVE_STATE" ] && failures="$(python3 -c "import json; d=json.load(open('$ADAPTIVE_STATE')); print(d.get('consecutive_failures',0))" 2>/dev/null || echo 0)"
+  local failures=0 recoveries=0 last_switch_ts=0
+  if [ -f "$ADAPTIVE_STATE" ] && command -v python3 >/dev/null 2>&1; then
+    local prev
+    prev="$(ADAPTIVE_STATE="$ADAPTIVE_STATE" python3 -c 'import json,os; d=json.load(open(os.environ["ADAPTIVE_STATE"])); print(int(d.get("consecutive_failures",0)), int(d.get("consecutive_recoveries",0)), int(d.get("last_switch_ts",0)))' 2>/dev/null || echo '0 0 0')"
+    read -r failures recoveries last_switch_ts <<<"$prev"
+  fi
 
   case "$mode" in
     ws)   result="$(adaptive_probe_ws_tls "$host" "$port" "${CONTROL_PATH:-/}" "" "$tls_host" "$tls_trust" 2>/dev/null)" ;;
@@ -2130,12 +2129,18 @@ adaptive_run_probe(){
 
   cls="${result%%:*}"; ms="${result##*:}"
   local now; now="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '')"
-  if [ "$cls" = "healthy" ]; then failures=0; else failures=$(( failures + 1 )); fi
+  if [ "$cls" = "healthy" ]; then
+    failures=0
+    recoveries=$(( recoveries + 1 ))
+  else
+    failures=$(( failures + 1 ))
+    recoveries=0
+  fi
 
   if [ "${ADAPTIVE_WRITE_STATE:-1}" = 1 ]; then
     local tmp; tmp="$(mktemp)"
-    printf '{"time":"%s","current":"%s","classification":"%s","latency_ms":%s,"consecutive_failures":%d}\n' \
-      "$now" "$mode" "$cls" "$ms" "$failures" > "$tmp"
+    printf '{"time":"%s","current":"%s","classification":"%s","latency_ms":%s,"consecutive_failures":%d,"consecutive_recoveries":%d,"last_switch_ts":%d}\n' \
+      "$now" "$mode" "$cls" "$ms" "$failures" "$recoveries" "$last_switch_ts" > "$tmp"
     chmod 600 "$tmp"
     mkdir -p "$(dirname "$ADAPTIVE_STATE")"
     mv "$tmp" "$ADAPTIVE_STATE"
@@ -2164,9 +2169,26 @@ adaptive_plain_allowed(){
   [ "$allow" = "1" ] && echo "yes" || echo "no"
 }
 
-# load tanzimat adaptive
+# load tanzimat adaptive (parser-e amn bedoon source/eval)
 adaptive_load_env(){
-  [ -f "$ADAPTIVE_ENV" ] && { set -a; . "$ADAPTIVE_ENV"; set +a; } || true
+  local line key val
+  if [ -f "$ADAPTIVE_ENV" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      line="${line%$'\r'}"
+      case "$line" in ''|\#*) continue ;; esac
+      [[ "$line" == *=* ]] || { warn "khat-e namotabar dar $ADAPTIVE_ENV nadide gerefte shod."; continue; }
+      key="${line%%=*}"; val="${line#*=}"
+      case "$key" in
+        ADAPTIVE_ENABLED|ADAPTIVE_INTERVAL|ADAPTIVE_FAILURES|ADAPTIVE_RECOVERIES|ADAPTIVE_COOLDOWN|ALLOW_INSECURE) ;;
+        *) warn "kelid-e gheyre-mojaz dar $ADAPTIVE_ENV nadide gerefte shod: $key"; continue ;;
+      esac
+      if [[ "$val" =~ ^[0-9]+$ ]]; then
+        printf -v "$key" '%s' "$val"
+      else
+        warn "meghdar-e gheyre-adadi dar $ADAPTIVE_ENV baraye $key nadide gerefte shod."
+      fi
+    done < "$ADAPTIVE_ENV"
+  fi
   ADAPTIVE_ENABLED="${ADAPTIVE_ENABLED:-0}"
   ADAPTIVE_INTERVAL="${ADAPTIVE_INTERVAL:-30}"
   ADAPTIVE_FAILURES="${ADAPTIVE_FAILURES:-3}"
@@ -2262,18 +2284,33 @@ print('consecutive_failures:', d.get('consecutive_failures','?'))
       ;;
     run)
       # ejra-ye controller: switch-e carrier agar lazem bashad
-      need_root; adaptive_load_env; load_env
+      need_root; load_env; adaptive_load_env
       [ "$ADAPTIVE_ENABLED" = "1" ] || { warn "adaptive khamoosh ast."; exit 0; }
+      local alock="${ADAPTIVE_LOCK:-/run/rathole-adaptive.lock}"
+      mkdir -p "$(dirname "$alock")" 2>/dev/null || alock="/tmp/rathole-adaptive.lock"
       # flock: faghat yek instance hamzaman
       (
         flock -n 9 || { warn "yek controller-e digar dar hal ejrast."; exit 0; }
         cls="$(adaptive_run_probe 2>/dev/null || echo 'probe_failed')"
-        failures="$(python3 -c "import json; d=json.load(open('$ADAPTIVE_STATE')); print(d.get('consecutive_failures',0))" 2>/dev/null || echo 0)"
-        switch="$(adaptive_should_switch "$failures" "$ADAPTIVE_FAILURES" 0 0)"
+        local state_vals="0 0 0" recoveries=0 last_switch_ts=0 now_ts cooldown_rem=0
+        if [ -f "$ADAPTIVE_STATE" ] && command -v python3 >/dev/null 2>&1; then
+          state_vals="$(ADAPTIVE_STATE="$ADAPTIVE_STATE" python3 -c 'import json,os; d=json.load(open(os.environ["ADAPTIVE_STATE"])); print(int(d.get("consecutive_failures",0)), int(d.get("consecutive_recoveries",0)), int(d.get("last_switch_ts",0)))' 2>/dev/null || echo '0 0 0')"
+        fi
+        read -r failures recoveries last_switch_ts <<<"$state_vals"
+        now_ts="$(date +%s 2>/dev/null || echo 0)"
+        if [ "$last_switch_ts" -gt 0 ] && [ "$now_ts" -ge "$last_switch_ts" ]; then
+          local elapsed=$(( now_ts - last_switch_ts ))
+          [ "$elapsed" -lt "$ADAPTIVE_COOLDOWN" ] && cooldown_rem=$(( ADAPTIVE_COOLDOWN - elapsed ))
+        fi
+        switch="$(adaptive_should_switch "$failures" "$ADAPTIVE_FAILURES" "$recoveries" "$cooldown_rem")"
         if [ "$switch" = "yes" ]; then
           local cur="${TUNNEL:-ws}" next
           case "$cur" in
-            ws)  next=kcp ;;
+            ws)  next=kcp
+                 if ! systemctl is-active --quiet rathole-kcp-client 2>/dev/null; then
+                   warn "adaptive: rathole-kcp-client faal nist; switch be 'kcp' anjam nashod."
+                   exit 0
+                 fi ;;
             kcp) next=ws ;;
             *)
               warn "adaptive: carrier '$cur' dast-saz ya kanooni ast; switch khodkar anjam nmishavad."
@@ -2283,9 +2320,20 @@ print('consecutive_failures:', d.get('consecutive_failures','?'))
           warn "adaptive: switch az '$cur' be '$next' (failures=$failures)"
           env_set TUNNEL "$next"
           gen_client
-          reload_svc
+          restart_svc
+          if [ -f "$ADAPTIVE_STATE" ] && command -v python3 >/dev/null 2>&1; then
+            ADAPTIVE_STATE="$ADAPTIVE_STATE" ADAPTIVE_SWITCH_TS="$now_ts" python3 -c '
+import json, os
+p = os.environ["ADAPTIVE_STATE"]
+d = json.load(open(p, encoding="utf-8"))
+d["last_switch_ts"] = int(os.environ["ADAPTIVE_SWITCH_TS"])
+d["consecutive_failures"] = 0
+with open(p, "w", encoding="utf-8") as f:
+    json.dump(d, f)
+' 2>/dev/null || true
+          fi
         fi
-      ) 9>/run/rathole-adaptive.lock || true
+      ) 9>"$alock" || true
       ;;
     *) die "estefade: ratholenode adaptive on|off|status|test|run" ;;
   esac
@@ -2394,7 +2442,7 @@ main(){
     restore) shift; cmd_restore "${1:-}" ;;
     control-path) shift; cmd_control_path "$@" ;;
     show)    cmd_show ;;
-    status)  cmd_status ;;
+    status)  shift; cmd_status "${1:-}" ;;
     update)  shift; cmd_update "${1:-}" ;;
     adaptive) shift; cmd_adaptive "$@" ;;
     agent)   shift; cmd_agent "$@" ;;

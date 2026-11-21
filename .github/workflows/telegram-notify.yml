@@ -54,6 +54,16 @@ on:
         required: false
         type: string
         default: "CHANGELOG.md"
+      skip_patches:
+        description: "Skip patch releases (vX.Y.Z where Z != 0)"
+        required: false
+        type: boolean
+        default: true
+      skip_prereleases:
+        description: "Skip pre-releases (-beta/-rc/-alpha)"
+        required: false
+        type: boolean
+        default: true
     secrets:
       TELEGRAM_BOT_TOKEN:
         required: false
@@ -111,6 +121,8 @@ jobs:
           INPUT_INSTALL_CMD: ${{ inputs.install_cmd }}
           INPUT_CHANNEL: ${{ inputs.channel }}
           INPUT_CHANGELOG_FILE: ${{ inputs.changelog_file }}
+          INPUT_SKIP_PATCHES: ${{ inputs.skip_patches }}
+          INPUT_SKIP_PRERELEASES: ${{ inputs.skip_prereleases }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
@@ -146,8 +158,18 @@ jobs:
           if [ -n "$INPUT_INSTALL_CMD" ]; then
             ARGS+=("--install-cmd" "$INPUT_INSTALL_CMD")
           fi
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$INPUT_DRY_RUN" = "true" ]; then
-            ARGS+=("--dry-run")
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ARGS+=("--force")
+            if [ "$INPUT_DRY_RUN" = "true" ]; then
+              ARGS+=("--dry-run")
+            fi
+          else
+            if [ "${INPUT_SKIP_PATCHES:-true}" = "true" ]; then
+              ARGS+=("--skip-patches")
+            fi
+            if [ "${INPUT_SKIP_PRERELEASES:-true}" = "true" ]; then
+              ARGS+=("--skip-prereleases")
+            fi
           fi
 
           python3 "$SCRIPT" "${ARGS[@]}"

@@ -52,3 +52,8 @@ npx wrangler deploy
 - **Events:** گزینهٔ **Let me select individual events** را بزنید و تیک **Releases** (و در صورت نیاز `Repositories` / `Pushes`) را بگذارید.
 
 > برای اعلان Pushهای شاخهٔ پیش‌فرض یا مخازن تازه، در [`wrangler.toml`](wrangler.toml) مقدار `NOTIFY_PUSH = "true"` یا `NOTIFY_NEW_REPO = "true"` را روشن کنید و دوباره deploy بزنید.
+
+## فیلتر پیش‌فرض اعلان ریلیزها (سکوت برای Patch و Pre-release)
+- به‌طور پیش‌فرض، ریلیزهای پچ (`vX.Y.Z` با `Z != 0` مثل `v2.1.1`)، پیش‌انتشارها (`-beta` / `-rc` / `-alpha`) و ریلیزهایی که در متن خود مارکر `<!-- no-telegram -->` یا `[no-telegram]` / `[skip-telegram]` داشته باشند، به کانال تلگرام ارسال **نمی‌شوند**.
+- نسخه‌های اصلی/فرعی پایدار (`vX.Y.0` مثل `v2.1.0` یا `v2.2.0`) به‌صورت خودکار اعلان می‌شوند.
+- این رفتار با ورودی `skip_patches` / `skip_prereleases` در ورک‌فلو یا متغیرهای `SKIP_PATCH_RELEASES` / `SKIP_PRERELEASES` در Worker قابل تنظیم است؛ همچنین اجرای دستی `workflow_dispatch` روی [`telegram-notify.yml`](../../.github/workflows/telegram-notify.yml) همچنان می‌تواند هر تگی را اعلان کند.

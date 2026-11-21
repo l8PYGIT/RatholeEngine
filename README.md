@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
   --fullchain /root/cert/panel.example.ir/fullchain.pem \
   --key       /root/cert/panel.example.ir/privkey.pem
 
-# Foreign node (keep node flags after `--`; pass `--release v2.1.0` before `--panel`/`--node` to pin)
+# Foreign node (keep node flags after `--`; pass `--release v2.1.1` before `--panel`/`--node` to pin)
 curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --node -- \
   --server panel.example.ir:443 --name trk01 --token <T> --inbound-port 2087
 
@@ -161,7 +161,7 @@ sudo bash bootstrap.sh --uninstall   # add --purge --yes to remove binaries & hu
 | [`docs/hub.en.md`](docs/hub.en.md) · [`fa`](docs/hub.md) | RatholeHub UI, REST Agent & security model |
 | [`docs/performance.md`](docs/performance.md) · [`README.fa.md`](docs/README.fa.md) | BBR/KCP tuning & full Persian CLI reference |
 | [`tools/telegram-bot-worker/`](tools/telegram-bot-worker/README.md) | Serverless Telegram announcer (GitHub Actions reusable workflow + Cloudflare Worker) |
-| [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Release notes (`v2.1.0`), tests, LF & code rules ([CoC](CODE_OF_CONDUCT.md)) |
+| [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Release notes (`v2.1.1`), tests, LF & code rules ([CoC](CODE_OF_CONDUCT.md)) |
 
 ## Community & Donate
 

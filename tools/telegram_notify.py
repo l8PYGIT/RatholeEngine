@@ -31,6 +31,37 @@ _INLINE_TOKEN_RE = re.compile(
     r"|(\[[^\]\n]+\]\(https?://[^)\s]+\))"
 )
 _TAG_RE = re.compile(r"<(/?)([a-zA-Z]+)(?:\s+[^>]*)?>")
+_SKIP_MARKER_RE = re.compile(r"(?:<!--\s*no-telegram\s*-->|\[(?:no|skip)-telegram\])", re.IGNORECASE)
+_CODE_OR_MARKER_RE = re.compile(
+    r"(`[^`\n]+`)|(?:<!--\s*no-telegram\s*-->|\[(?:no|skip)-telegram\])",
+    re.IGNORECASE,
+)
+_SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$")
+
+
+def _strip_code_spans(md_text: str) -> str:
+    """Remove fenced/inline code spans before checking literal opt-out directives."""
+    without_fences = re.sub(r"```[\s\S]*?```", "", md_text)
+    return re.sub(r"`[^`\n]+`", "", without_fences)
+
+
+def should_skip_release(
+    tag: str,
+    body_md: str = "",
+    *,
+    prerelease: bool = False,
+    skip_patches: bool = False,
+    skip_prereleases: bool = False,
+) -> str | None:
+    """Return a skip reason when a release should not be announced automatically."""
+    if body_md and _SKIP_MARKER_RE.search(_strip_code_spans(body_md)):
+        return "opt-out marker in release notes"
+    m = _SEMVER_RE.match(tag.strip())
+    if skip_prereleases and (prerelease or (m and m.group(4))):
+        return f"pre-release tag {tag}"
+    if skip_patches and m and int(m.group(3)) != 0:
+        return f"patch release tag {tag}"
+    return None
 
 
 def escape_html(text: str) -> str:
@@ -106,7 +137,11 @@ def md_to_telegram_html(md_text: str) -> str:
     code_buf: list[str] = []
 
     for raw in md_text.splitlines():
-        line = raw.rstrip("\r\n")
+        raw_no_nl = raw.rstrip("\r\n")
+        if in_code_block or raw_no_nl.strip().startswith("```"):
+            line = raw_no_nl
+        else:
+            line = _CODE_OR_MARKER_RE.sub(lambda m: m.group(1) or "", raw_no_nl)
         stripped = line.strip()
 
         if stripped.startswith("```"):
@@ -442,6 +477,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--install-cmd", default="")
     ap.add_argument("--channel", default=os.environ.get("TELEGRAM_CHANNEL", DEFAULT_CHANNEL))
     ap.add_argument("--prerelease", action="store_true")
+    ap.add_argument("--skip-patches", action="store_true")
+    ap.add_argument("--skip-prereleases", action="store_true")
+    ap.add_argument("--force", action="store_true")
     ap.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "l8PYGIT/RatholeEngine"))
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
@@ -473,6 +511,18 @@ def main(argv: list[str] | None = None) -> int:
             body_md = rel.get("body") or extract_changelog_section(args.changelog_file, tag)
         release_url = args.release_url or rel.get("html_url") or ""
         prerelease = bool(args.prerelease or rel.get("prerelease") or any(k in tag for k in ("-beta", "-rc", "-alpha")))
+
+        if not args.force:
+            skip_reason = should_skip_release(
+                tag,
+                body_md,
+                prerelease=prerelease,
+                skip_patches=args.skip_patches,
+                skip_prereleases=args.skip_prereleases,
+            )
+            if skip_reason:
+                print(f"[telegram_notify] skipped: {skip_reason}")
+                return 0
 
         # Prefer sending full caption with banner when under Telegram's 1024-char sendPhoto cap
         full_text, markup = build_release_payload(

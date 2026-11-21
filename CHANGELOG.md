@@ -9,6 +9,18 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-21
+
+### Added
+- **راهنمای نصب آفلاین/دستی با فایل:** اضافه شدن صفحات [`docs/install-offline.md`](docs/install-offline.md) و [`docs/install-offline.en.md`](docs/install-offline.en.md) به همراه تب اختصاصی در سایت مستندات و لینک مستقیم در شروع سریع و README.
+- **فیلتر خودکار سکوت ربات تلگرام:** ریلیزهای پچ (`vX.Y.Z` با `Z != 0`)، پیش‌انتشارها و ریلیزهای دارای مارکر `<!-- no-telegram -->` یا `[no-telegram]` در متن به‌طور خودکار در کانال تلگرام ارسال نمی‌شوند (`release.yml`، `telegram-notify.yml`، `tools/telegram_notify.py` و Cloudflare Worker).
+
+### Changed
+- **سیستم انیمیشن رابط وب RatholeHub (اصول Emil Kowalski):** آکاردئون WAAPI قابل قطع در میانهٔ حرکت (`toggleDiagDetails`) برای `details.diag-sec` و باکس «افزودن سرور»، ورود/خروج متصل به دکمهٔ ماشه برای منوی `.more-menu`، بازشدن بدون تاخیر (`0ms`) برای پالت فرمان `⌘K / Ctrl+K`، محدودشدن hover به دسکتاپ (`@media (hover: hover) and (pointer: fine)`), حس فشار `scale(0.97)` و پشتیبانی کامل `prefers-reduced-motion`.
+
+### Fixed
+- **رفع باگ افتادن منوی `⋯` زیر باکس پایینی و باگ مشابه نوار موبایل:** پورتال کردن `.more-menu` به `document.body` هنگام بازشدن، حذف `container-type: inline-size` از `.table-wrap` و انتقال `backdrop-filter` نوار موبایل `#sb` به شبه-المان `#sb::before` تا `.nav-list` در پایین صفحه به دام نیفتد.
+
 ## [2.1.0] - 2026-11-21
 
 ### Added

@@ -118,6 +118,43 @@ class TelegramNotifyTests(unittest.TestCase):
         self.assertTrue(calls[0].endswith("/sendPhoto"))
         self.assertTrue(calls[1].endswith("/sendMessage"))
 
+    def test_should_skip_release_patches_prereleases_and_markers(self):
+        self.assertEqual(
+            tn.should_skip_release("v2.1.1", skip_patches=True),
+            "patch release tag v2.1.1",
+        )
+        self.assertIsNone(tn.should_skip_release("v2.1.0", skip_patches=True))
+        self.assertEqual(
+            tn.should_skip_release("v2.1.0-beta.1", skip_prereleases=True),
+            "pre-release tag v2.1.0-beta.1",
+        )
+        self.assertEqual(
+            tn.should_skip_release("v2.2.0", "notes\n<!-- no-telegram -->", skip_patches=True),
+            "opt-out marker in release notes",
+        )
+        self.assertEqual(
+            tn.should_skip_release("v2.2.0", "release note [skip-telegram]", skip_patches=True),
+            "opt-out marker in release notes",
+        )
+        self.assertIsNone(
+            tn.should_skip_release("v2.2.0", "Supports `<!-- no-telegram -->` and `[no-telegram]` docs", skip_patches=True)
+        )
+
+    def test_md_to_telegram_html_strips_skip_marker(self):
+        out = tn.md_to_telegram_html("<!-- no-telegram -->\n- Fix documenting `<!-- no-telegram -->`")
+        self.assertIn("▸ Fix documenting <code>&lt;!-- no-telegram --&gt;</code>", out)
+        self.assertNotIn("-->\n", out)
+
+    def test_main_skips_patch_without_sending_and_force_overrides(self):
+        with mock.patch.object(tn, "send_telegram") as mock_send:
+            rc = tn.main(["--tag", "v2.1.1", "--skip-patches"])
+            self.assertEqual(rc, 0)
+            mock_send.assert_not_called()
+
+            rc_force = tn.main(["--tag", "v2.1.1", "--skip-patches", "--force", "--dry-run"])
+            self.assertEqual(rc_force, 0)
+            mock_send.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,8 @@ compatibility_date = "2026-01-01"
 CHANNEL_HANDLE = "@l8PY4NET"
 NOTIFY_PUSH = "false"
 NOTIFY_NEW_REPO = "false"
+SKIP_PATCH_RELEASES = "true"
+SKIP_PRERELEASES = "true"
 
 # Set secrets before deploying:
 #   npx wrangler secret put TELEGRAM_BOT_TOKEN

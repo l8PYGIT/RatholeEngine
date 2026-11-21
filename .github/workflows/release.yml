@@ -196,15 +196,19 @@ jobs:
 
   # Releases published using GITHUB_TOKEN do not re-trigger `on: release`,
   # so call our reusable Telegram announcer directly after publishing.
+  # Patch releases (vX.Y.Z where Z != 0) and pre-releases stay silent unless dispatched manually.
   notify-telegram:
     name: notify telegram channel
     needs: [build-release]
+    if: ${{ endsWith(github.ref_name, '.0') && !contains(github.ref_name, '-') }}
     uses: ./.github/workflows/telegram-notify.yml
     with:
       tag: ${{ github.ref_name }}
       title: RatholeEngine ${{ github.ref_name }}
       release_url: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
       prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') }}
+      skip_patches: true
+      skip_prereleases: true
       banner_path: docs/assets/social-preview.png
       docs_url: https://l8pygit.github.io/RatholeEngine/
       install_cmd: curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash

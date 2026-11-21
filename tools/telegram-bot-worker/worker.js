@@ -6,6 +6,9 @@
 
 const TG_CAPTION_LIMIT = 1024;
 const TG_TEXT_LIMIT = 4096;
+const SKIP_MARKER_RE = /<!--\s*no-telegram\s*-->|\[(?:no|skip)-telegram\]/i;
+const CODE_OR_MARKER_RE = /(`[^`\n]+`)|(?:<!--\s*no-telegram\s*-->|\[(?:no|skip)-telegram\])/gi;
+const SEMVER_RE = /^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/;
 
 function escapeHtml(text = "") {
   return String(text)
@@ -27,7 +30,11 @@ function mdToTelegramHtml(md = "") {
   let inFence = false;
   let fenceBuf = [];
 
-  for (const raw of String(md).split(/\r?\n/)) {
+  for (const rawLine of String(md).split(/\r?\n/)) {
+    const raw =
+      inFence || rawLine.trim().startsWith("```")
+        ? rawLine
+        : rawLine.replace(CODE_OR_MARKER_RE, (_m, code) => code || "");
     const line = raw.trim();
     if (line.startsWith("```")) {
       if (inFence) {
@@ -213,6 +220,26 @@ function formatPush(payload, env) {
   };
 }
 
+function stripCodeSpans(md = "") {
+  return String(md)
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`[^`\n]+`/g, "");
+}
+
+function shouldSkipRelease(rel = {}, env = {}) {
+  const tag = String(rel.tag_name || "").trim();
+  const body = String(rel.body || "");
+  if (body && SKIP_MARKER_RE.test(stripCodeSpans(body))) return "opt_out_marker";
+  const m = tag.match(SEMVER_RE);
+  if (env.SKIP_PRERELEASES === "true" && (Boolean(rel.prerelease) || (m && Boolean(m[4])))) {
+    return "prerelease";
+  }
+  if (env.SKIP_PATCH_RELEASES === "true" && m && Number(m[3]) !== 0) {
+    return "patch_release";
+  }
+  return null;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -237,6 +264,10 @@ export default {
     }
 
     if (event === "release" && payload.action === "published") {
+      const skipReason = shouldSkipRelease(payload.release || {}, env);
+      if (skipReason) {
+        return Response.json({ ok: true, skipped: skipReason });
+      }
       const { fullBody, ogUrl, markup } = formatRelease(payload, env);
       const photoRes = await tgCall(env.TELEGRAM_BOT_TOKEN, "sendPhoto", {
         chat_id: env.TELEGRAM_CHAT_ID,

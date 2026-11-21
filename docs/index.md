@@ -53,7 +53,7 @@
     `ratholeagent.py` (stdlib خالص، پورت ۸۰۸۹) با احراز هویت Bearer، مجوز ۰۶۰۰ فایل توکن، لیست‌سفید محدود باینری‌ها و HTTPS اختیاری؛
     هاب با `transport: "api"` سرور را بدون کلید SSH مدیریت می‌کند.
 
--   **🖥️ هاب مرکزی شیشه‌ای (v2.0.5)**
+-   **🖥️ هاب مرکزی شیشه‌ای (v2.1.0)**
 
     ---
 
@@ -82,6 +82,7 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 (دامنه و مسیر گواهی برای پنل؛ آدرس/نام/توکن/پورت برای نود).
 
 [**راهنمای مرحله‌به‌مرحلهٔ نصب تعاملی →**](quickstart.md){ .md-button .md-button--primary }
+[نصب دستی با فایل (آفلاین)](install-offline.md){ .md-button }
 [راهنمای نصب دستی (کامل)](install-manual.fa.md){ .md-button }
 
 ??? example "همان سؤال‌ها، به‌صورت متنی (برای اینکه بدانی چه چیزی می‌آید)"
@@ -135,6 +136,23 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
     curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
       | sudo bash -s -- --update
     ```
+
+=== "نصب دستی با فایل"
+
+    برای سرورهای بدون دسترسی پایدار به گیتهاب: `rathole-manager.zip` و `bootstrap.sh` را از [**Releases**](https://github.com/l8PYGIT/RatholeEngine/releases/latest) گرفته و به `/root/` سرور منتقل کن:
+
+    ```bash
+    # تعاملی (پنل/نود/آپدیت):
+    cd /root && sudo bash bootstrap.sh --local ./rathole-manager.zip
+
+    # غیرتعاملی (پنل ایران):
+    sudo bash bootstrap.sh --local ./rathole-manager.zip --panel \
+      --domain panel.example.ir \
+      --fullchain /root/cert/panel.example.ir/fullchain.pem \
+      --key       /root/cert/panel.example.ir/privkey.pem
+    ```
+
+    [راهنمای کامل نصب دستی با فایل →](install-offline.md)
 
 !!! tip "بدون pip، بدون build فرانت‌اند"
     کل سیستم bash + Python 3 stdlib است؛ هاب هیچ `node_modules` یا مرحلهٔ build ندارد.
@@ -200,6 +218,7 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
     ---
 
     - [شروع سریع (تعاملی)](quickstart.md)
+    - [نصب دستی با فایل (آفلاین)](install-offline.md)
     - [راهنمای نصب دستی](install-manual.fa.md)
     - [مرجع کامل CLI](README.fa.md)
     - [معماری سیستم](architecture.md)
@@ -226,6 +245,7 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
     ---
 
     - [Quick start (interactive)](quickstart.en.md)
+    - [Offline / File Install](install-offline.en.md)
     - [Install Manual](install-manual.md)
     - [Architecture](architecture.en.md)
     - [Transport Modes](transport-modes.en.md)

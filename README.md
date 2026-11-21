@@ -15,7 +15,7 @@
 [![Stars](https://img.shields.io/github/stars/l8PYGIT/RatholeEngine?style=flat-square&color=16a34a)](https://github.com/l8PYGIT/RatholeEngine/stargazers)
 [![Telegram](https://img.shields.io/badge/Telegram-%40l8PY4NET-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/l8PY4NET)
 
-[**Docs Site**](https://l8pygit.github.io/RatholeEngine/) · [**Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [**Quick Start**](#quick-start) · [**Transport Modes**](#transport--ingress-modes) · [**RatholeHub**](#ratholehub-web-panel-v205) · [**فارسی**](docs/README.fa.md) · [**Telegram**](https://t.me/l8PY4NET)
+[**Docs Site**](https://l8pygit.github.io/RatholeEngine/) · [**Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [**Quick Start**](#quick-start) · [**Transport Modes**](#transport--ingress-modes) · [**RatholeHub**](#ratholehub-web-panel-v210) · [**فارسی**](docs/README.fa.md) · [**Telegram**](https://t.me/l8PY4NET)
 
 </div>
 
@@ -40,7 +40,8 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 ```
 
 > [!TIP]
-> **Step-by-step interactive walkthrough** (every prompt, expected answer, and troubleshooting table): [`docs/quickstart.md`](docs/quickstart.md) · [English](docs/quickstart.en.md).
+> **Step-by-step interactive walkthrough:** [`docs/quickstart.md`](docs/quickstart.md) · [English](docs/quickstart.en.md)  
+> **Offline / file-based install (`bootstrap.sh --local`):** [`docs/install-offline.md`](docs/install-offline.md) · [English](docs/install-offline.en.md)
 
 <details>
 <summary>⚙️ <b>Non-interactive flags, version pinning &amp; essential panel commands</b></summary>

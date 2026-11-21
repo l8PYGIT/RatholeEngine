@@ -11,6 +11,8 @@ For a manual / fully custom install see the [full install manual](install-manual
       | sudo bash
     ```
 
+    > No direct GitHub access on the server? Use the [Offline / Manual File Install guide](install-offline.en.md) (`bootstrap.sh --local`).
+
 ---
 
 ## 0) Prerequisites
@@ -216,5 +218,5 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
     --server panel.example.ir:443 --name trk01 --token <T> --inbound-port 2087
 ```
 
-Specific version: `--release v2.0.3` · beta: `--beta` · stable: `--stable`
+Specific version: `--release v2.1.0` · beta: `--beta` · stable: `--stable`
 (`RATHOLE_GH=owner/repo` overrides the repository slug.)

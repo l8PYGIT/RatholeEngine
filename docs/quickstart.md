@@ -4,12 +4,14 @@
 اگر دنبال نصب دستی/سفارشی‌سازی هستی، به [راهنمای نصب کامل](install-manual.fa.md) برو.
 
 !!! tip "مختصر مفید"
-    رویسرور ایران فقط این را بزن و به سؤال‌ها جواب بده:
+    روی سرور ایران فقط این را بزن و به سؤال‌ها جواب بده:
 
     ```bash
     curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
       | sudo bash
     ```
+
+    > دسترسی به گیتهاب روی سرور قطع است؟ از [راهنمای نصب دستی با فایل (آفلاین)](install-offline.md) استفاده کن (`bootstrap.sh --local`).
 
 ---
 
@@ -216,5 +218,5 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
     --server panel.example.ir:443 --name trk01 --token <T> --inbound-port 2087
 ```
 
-نسخهٔ خاص: `--release v2.0.3` · بتا: `--beta` · پایدار: `--stable`
+نسخهٔ خاص: `--release v2.1.0` · بتا: `--beta` · پایدار: `--stable`
 (متغیر محیطی `RATHOLE_GH=owner/repo` مخزن را عوض می‌کند.)

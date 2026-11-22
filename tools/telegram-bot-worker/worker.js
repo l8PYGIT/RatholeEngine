@@ -154,15 +154,71 @@ function repoHashTag(fullName = "") {
   return clean ? `#${clean}` : "#GitHub";
 }
 
-function formatRelease(payload, env) {
+async function urlExistsImage(url) {
+  try {
+    const resp = await fetch(url, {
+      method: "HEAD",
+      headers: { "User-Agent": "github-telegram-announcer" },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!resp.ok) return false;
+    const ctype = (resp.headers.get("content-type") || "").toLowerCase();
+    return ctype.startsWith("image/") && !ctype.includes("svg");
+  } catch {
+    return false;
+  }
+}
+
+async function urlExists(url) {
+  try {
+    const resp = await fetch(url, {
+      method: "HEAD",
+      headers: { "User-Agent": "github-telegram-announcer" },
+      signal: AbortSignal.timeout(4000),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveReleaseMeta(payload) {
+  const repo = payload.repository || {};
+  const rel = payload.release || {};
+  const fullName = repo.full_name || "unknown/repo";
+  const defaultBranch = repo.default_branch || "main";
+  const tag = rel.tag_name || "v0.0.0";
+  const rawBase = `https://raw.githubusercontent.com/${fullName}/${encodeURIComponent(defaultBranch)}`;
+  const customBanner = `${rawBase}/docs/assets/social-preview.png`;
+  const altBanner = `${rawBase}/assets/social-preview.png`;
+  const changelogUrl = `${rawBase}/CHANGELOG.md`;
+
+  const [hasCustom, hasAlt, hasChangelog] = await Promise.all([
+    urlExistsImage(customBanner),
+    urlExistsImage(altBanner),
+    urlExists(changelogUrl),
+  ]);
+
+  const qTag = encodeURIComponent(tag);
+  const bannerUrl = hasCustom
+    ? `${customBanner}?v=${qTag}`
+    : hasAlt
+      ? `${altBanner}?v=${qTag}`
+      : `https://opengraph.githubassets.com/${qTag}/${fullName}`;
+
+  return { bannerUrl, hasChangelog, defaultBranch };
+}
+
+function formatRelease(payload, env, meta = {}) {
   const rel = payload.release || {};
   const repo = payload.repository || {};
   const fullName = repo.full_name || "unknown/repo";
   const repoUrl = repo.html_url || `https://github.com/${fullName}`;
+  const defaultBranch = meta.defaultBranch || repo.default_branch || "main";
   const tag = rel.tag_name || "v0.0.0";
   const badge = rel.prerelease ? "🧪 نسخهٔ آزمایشی (Pre-release)" : "🚀 انتشار نسخهٔ پایدار";
   const title = escapeHtml(rel.name || `${repo.name || fullName} ${tag}`);
-  const notes = mdToTelegramHtml(rel.body || "");
+  const notes = mdToTelegramHtml(rel.body || "") || (repo.description ? escapeHtml(repo.description) : "");
   const channel = env.CHANNEL_HANDLE ? `📢 ${escapeHtml(env.CHANNEL_HANDLE)}  ·  ` : "";
   const footer = `${channel}${repoHashTag(fullName)} #Release`;
 
@@ -173,17 +229,28 @@ function formatRelease(payload, env) {
   ].join("\n");
 
   const fullBody = notes ? `${head}\n\n${notes}\n\n${footer}` : `${head}\n\n${footer}`;
-  const ogUrl = `https://opengraph.githubassets.com/${encodeURIComponent(tag)}/${fullName}`;
+  const bannerUrl = meta.bannerUrl || `https://opengraph.githubassets.com/${encodeURIComponent(tag)}/${fullName}`;
+  const homepageRaw = String(repo.homepage || "").trim();
+  const homepage = /^https?:\/\//i.test(homepageRaw) ? homepageRaw : "";
+  const secondBtn = meta.hasChangelog
+    ? { text: "📖 تغییرات", url: `${repoUrl}/blob/${encodeURIComponent(defaultBranch)}/CHANGELOG.md` }
+    : { text: "📋 همهٔ ریلیزها", url: `${repoUrl}/releases` };
+  const row2 = homepage
+    ? [
+        { text: "🌐 وب‌سایت", url: homepage },
+        { text: "⭐ گیتهاب", url: repoUrl },
+      ]
+    : [{ text: "⭐ گیتهاب", url: repoUrl }];
   const markup = {
     inline_keyboard: [
       [
         { text: "⬇️ دانلود ریلیز", url: rel.html_url || `${repoUrl}/releases/tag/${tag}` },
-        { text: "📖 تغییرات", url: `${repoUrl}/blob/main/CHANGELOG.md` },
+        secondBtn,
       ],
-      [{ text: "⭐ گیتهاب", url: repoUrl }],
+      row2,
     ],
   };
-  return { fullBody, ogUrl, markup };
+  return { fullBody, bannerUrl, markup };
 }
 
 function formatPush(payload, env) {
@@ -268,10 +335,11 @@ export default {
       if (skipReason) {
         return Response.json({ ok: true, skipped: skipReason });
       }
-      const { fullBody, ogUrl, markup } = formatRelease(payload, env);
+      const meta = await resolveReleaseMeta(payload);
+      const { fullBody, bannerUrl, markup } = formatRelease(payload, env, meta);
       const photoRes = await tgCall(env.TELEGRAM_BOT_TOKEN, "sendPhoto", {
         chat_id: env.TELEGRAM_CHAT_ID,
-        photo: ogUrl,
+        photo: bannerUrl,
         caption: truncateHtmlSafe(fullBody, TG_CAPTION_LIMIT),
         parse_mode: "HTML",
         reply_markup: markup,

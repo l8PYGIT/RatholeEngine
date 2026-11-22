@@ -56,4 +56,5 @@ npx wrangler deploy
 ## فیلتر پیش‌فرض اعلان ریلیزها (سکوت برای Patch و Pre-release)
 - به‌طور پیش‌فرض، ریلیزهای پچ (`vX.Y.Z` با `Z != 0` مثل `v2.1.1`)، پیش‌انتشارها (`-beta` / `-rc` / `-alpha`) و ریلیزهایی که در متن خود مارکر `<!-- no-telegram -->` یا `[no-telegram]` / `[skip-telegram]` داشته باشند، به کانال تلگرام ارسال **نمی‌شوند**.
 - نسخه‌های اصلی/فرعی پایدار (`vX.Y.0` مثل `v2.1.0` یا `v2.2.0`) به‌صورت خودکار اعلان می‌شوند.
+- Worker به‌صورت خودکار وجود `docs/assets/social-preview.png` (یا `assets/social-preview.png`) و `CHANGELOG.md` را روی شاخهٔ پیش‌فرض هر مخزن بررسی می‌کند: اگر بنر اختصاصی باشد از آن استفاده می‌کند (وگرنه OpenGraph گیتهاب)، اگر `CHANGELOG.md` نباشد دکمهٔ «📋 همهٔ ریلیزها» قرار می‌گیرد و اگر مخزن `homepage` داشته باشد دکمهٔ «🌐 وب‌سایت» نیز اضافه می‌شود.
 - این رفتار با ورودی `skip_patches` / `skip_prereleases` در ورک‌فلو یا متغیرهای `SKIP_PATCH_RELEASES` / `SKIP_PRERELEASES` در Worker قابل تنظیم است؛ همچنین اجرای دستی `workflow_dispatch` روی [`telegram-notify.yml`](../../.github/workflows/telegram-notify.yml) همچنان می‌تواند هر تگی را اعلان کند.

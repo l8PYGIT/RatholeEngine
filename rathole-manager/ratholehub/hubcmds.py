@@ -11,6 +11,7 @@
 # in module be hich chiz-e digar-e hub vabaste nist (faghat re) ta betavan
 # mostaghel test-esh kard.
 
+import ipaddress
 import re
 
 # ---------- aatbarsnji vrvdi (zd tzrigh) ----------
@@ -45,11 +46,34 @@ RE_LINES    = re.compile(r"^[0-9]{1,4}\Z")   # tedad-e khat-e log (hadaksar 9999
 RE_FRP_TR   = re.compile(r"^(tcp|kcp|quic|websocket)\Z")
 _OCT        = r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
 RE_IP       = re.compile(r"^" + _OCT + r"\." + _OCT + r"\." + _OCT + r"\." + _OCT + r"\Z")
+_RE_IP_CHR  = re.compile(r"^[0-9A-Fa-f:.]{2,45}\Z")
+RE_GRE_KEY  = re.compile(r"^[0-9]{1,10}\Z")
+RE_MTU      = re.compile(r"^[0-9]{3,4}\Z")
+RE_PP_TOGGLE = re.compile(r"^(on|off|status)\Z")
+RE_PP_VER    = re.compile(r"^(v1|v2|off|status)\Z")
+
+
+def _valid_ip(val):
+    if not isinstance(val, str) or not _RE_IP_CHR.match(val):
+        return False
+    try:
+        ipaddress.ip_address(val)
+        return True
+    except ValueError:
+        return False
+
+
+def _valid_gre_key(val):
+    return isinstance(val, str) and bool(RE_GRE_KEY.match(val)) and 0 <= int(val) <= 4294967295
+
+
+def _valid_mtu(val):
+    return isinstance(val, str) and bool(RE_MTU.match(val)) and 576 <= int(val) <= 1500
 
 
 _INT_OK_KEYS = frozenset({
     "port", "inbound", "api_port", "remote_port", "lines",
-    "interval", "failures", "recoveries", "value",
+    "interval", "failures", "recoveries", "value", "gre_key", "mtu",
 })
 
 class _SafeArgs(dict):
@@ -253,8 +277,22 @@ def build_iran_cmd(action, a):
         name = a.get("name", "")
         if not RE_NAME.match(name): return None
         return ["ratholectl", "frp", "node", name, ("on" if action == "frp_node_on" else "off")]
-    # ---- gre: tunnel-e shabake-ye L3 Linux (ip tunnel) ----
+    if action == "frp_proxy_protocol":
+        ver = str(a.get("version", "status") or "status")
+        if not RE_PP_VER.match(ver): return None
+        return ["ratholectl", "frp", "proxy-protocol", ver]
+    # ---- gre: tunnel-e shabake-ye L3 Linux (ip tunnel / ip6gre) ----
     if action == "gre_status": return ["ratholectl", "gre", "status"]
+    if action == "gre_probe":
+        peer = str(a.get("peer_ip", "") or "")
+        name = str(a.get("name", "gre1") or "gre1")
+        if not _valid_ip(peer) or not RE_NAME.match(name): return None
+        return ["ratholectl", "gre", "probe", peer, name]
+    if action == "gre_auto_mtu":
+        peer = str(a.get("peer_ip", "") or "")
+        name = str(a.get("name", "gre1") or "gre1")
+        if not _valid_ip(peer) or not RE_NAME.match(name): return None
+        return ["ratholectl", "gre", "auto-mtu", peer, name]
     if action == "gre_off":
         name = str(a.get("name", "") or "")
         cmd = ["ratholectl", "gre", "off"]
@@ -266,11 +304,25 @@ def build_iran_cmd(action, a):
         rem = str(a.get("remote_ip", "") or "")
         tip = str(a.get("tunnel_ip", "10.10.10.1") or "10.10.10.1")
         name = str(a.get("name", "gre1") or "gre1")
-        if not RE_IP.match(rem) or not RE_IP.match(tip) or not RE_NAME.match(name): return None
-        return ["ratholectl", "gre", "on", rem, tip, name]
+        if not _valid_ip(rem) or not _valid_ip(tip) or not RE_NAME.match(name): return None
+        cmd = ["ratholectl", "gre", "on", rem, tip, name]
+        gkey = str(a.get("gre_key", "") or "")
+        if gkey:
+            if not _valid_gre_key(gkey): return None
+            if int(gkey) > 0:
+                cmd += ["--key", str(int(gkey))]
+        mtu = str(a.get("mtu", "") or "")
+        if mtu:
+            if not _valid_mtu(mtu): return None
+            cmd += ["--mtu", str(int(mtu))]
+        return cmd
     # ---- service game (SNI rooye 443 + TLS rooye node) ----
 
     if action == "game_ls":   return ["ratholectl", "game", "ls"]
+    if action == "game_proxy_protocol":
+        mode = str(a.get("mode", "status") or "status")
+        if not RE_PP_TOGGLE.match(mode): return None
+        return ["ratholectl", "game", "proxy-protocol", mode]
     if action == "game_show":
         name = a.get("name", "")
         if not RE_NAME.match(name): return None
@@ -350,6 +402,12 @@ def build_iran_cmd(action, a):
         return ["ratholectl", "set", key, val]
     if action == "backup":
         return ["ratholectl", "backup"]
+    if action == "backup_offsite_status":
+        return ["ratholectl", "backup", "offsite", "show"]
+    if action == "restore_test":
+        path = str(a.get("path", "") or "")
+        if not RE_PATH.match(path): return None
+        return ["ratholectl", "restore", "--test", path]
     if action == "enable":
         return ["ratholectl", "enable"]
     if action == "regen_full":
@@ -442,13 +500,22 @@ def build_node_cmd(action, a):
             if not RE_PORT.match(rport): return None
             return ["ratholenode", "frp", "on", rem, tok, tr, rport]
         return ["ratholenode", "frp", "on", rem, tok, tr]
-    # ---- gre: tunnel-e shabake-ye L3 Linux (ip tunnel) ----
+    if action == "frp_proxy_protocol":
+        ver = str(a.get("version", "status") or "status")
+        if not RE_PP_VER.match(ver): return None
+        return ["ratholenode", "frp", "proxy-protocol", ver]
+    # ---- gre: tunnel-e shabake-ye L3 Linux (ip tunnel / ip6gre) ----
     if action == "gre_status": return ["ratholenode", "gre", "status"]
     if action == "gre_probe":
         peer = str(a.get("peer_ip", "") or "")
         name = str(a.get("name", "gre1") or "gre1")
-        if not RE_IP.match(peer) or not RE_NAME.match(name): return None
+        if not _valid_ip(peer) or not RE_NAME.match(name): return None
         return ["ratholenode", "gre", "probe", peer, name]
+    if action == "gre_auto_mtu":
+        peer = str(a.get("peer_ip", "") or "")
+        name = str(a.get("name", "gre1") or "gre1")
+        if not _valid_ip(peer) or not RE_NAME.match(name): return None
+        return ["ratholenode", "gre", "auto-mtu", peer, name]
     if action == "gre_off":
         name = str(a.get("name", "") or "")
         cmd = ["ratholenode", "gre", "off"]
@@ -460,8 +527,24 @@ def build_node_cmd(action, a):
         rem  = str(a.get("remote_ip", "") or "")
         tip  = str(a.get("tunnel_ip", "10.10.10.2") or "10.10.10.2")
         name = str(a.get("name", "gre1") or "gre1")
-        if not RE_IP.match(rem) or not RE_IP.match(tip) or not RE_NAME.match(name): return None
-        return ["ratholenode", "gre", "on", rem, tip, name]
+        if not _valid_ip(rem) or not _valid_ip(tip) or not RE_NAME.match(name): return None
+        cmd = ["ratholenode", "gre", "on", rem, tip, name]
+        gkey = str(a.get("gre_key", "") or "")
+        if gkey:
+            if not _valid_gre_key(gkey): return None
+            if int(gkey) > 0:
+                cmd += ["--key", str(int(gkey))]
+        mtu = str(a.get("mtu", "") or "")
+        if mtu:
+            if not _valid_mtu(mtu): return None
+            cmd += ["--mtu", str(int(mtu))]
+        return cmd
+    if action == "backup_offsite_status":
+        return ["ratholenode", "backup", "offsite", "show"]
+    if action == "restore_test":
+        path = str(a.get("path", "") or "")
+        if not RE_PATH.match(path): return None
+        return ["ratholenode", "restore", "--test", path]
     if action == "migrate":     return ["ratholenode", "migrate"]
 
     if action == "tune":        return ["ratholenode", "tune"]
@@ -609,7 +692,8 @@ WRITE_ACTIONS = {
     "noise_on", "noise_off", "noise_node_on", "noise_node_off",
     "backhaul_on", "backhaul_off", "backhaul_node_on", "backhaul_node_off",
     "proxy_add", "proxy_rm",
-    "frp_on", "frp_off", "frp_node_on", "frp_node_off", "gre_on", "gre_off",
+    "frp_on", "frp_off", "frp_node_on", "frp_node_off", "frp_proxy_protocol",
+    "gre_on", "gre_off", "gre_auto_mtu", "game_proxy_protocol",
 
     "backup", "enable", "regen_full", "regen",
     # node

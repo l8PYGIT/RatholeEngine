@@ -41,7 +41,7 @@ if ! declare -F rth_commit_config >/dev/null 2>&1; then
   exit 1
 fi
 
-NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN FRP_REMOTE FRP_TOKEN FRP_TRANSPORT FRP_REMOTE_PORT GRE_REMOTE GRE_TUNNEL_IP GRE_NAME"
+NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN FRP_REMOTE FRP_TOKEN FRP_TRANSPORT FRP_REMOTE_PORT FRP_PROXY_PROTOCOL GRE_REMOTE GRE_TUNNEL_IP GRE_NAME GRE_FAMILY GRE_KEY GRE_MTU"
 
 load_env_file(){
   local file="$1" line key val old_key
@@ -209,12 +209,35 @@ reload_svc(){
   fi
 }
 
+collect_node_reserved_ports(){
+  local f p lp
+  for f in "$SVC_FILE" "$BH_SVC_FILE"; do
+    [ -f "$f" ] || continue
+    awk -F'|' 'NF>=3 && $1 !~ /^[[:space:]]*(#|$)/ && $3 ~ /^[0-9]+$/ {print $3}' "$f" 2>/dev/null
+  done
+  if [ -n "${KCP_LOCAL:-}" ]; then
+    lp="${KCP_LOCAL##*:}"
+    [[ "$lp" =~ ^[0-9]+$ ]] && echo "$lp"
+  fi
+  if [ -d "${UP_DIR:-/etc/rathole/upstreams}" ]; then
+    for f in "${UP_DIR:-/etc/rathole/upstreams}"/*.env; do
+      [ -f "$f" ] || continue
+      lp="$(grep -E '^KCP_LOCAL=' "$f" 2>/dev/null | head -n1 | cut -d= -f2-)"
+      lp="${lp##*:}"
+      [[ "$lp" =~ ^[0-9]+$ ]] && echo "$lp"
+    done
+  fi
+}
+
 cmd_apply(){
   need_root; load_env
+  local -a _nrp=()
+  mapfile -t _nrp < <(collect_node_reserved_ports 2>/dev/null || true)
   if [ "${TUNNEL:-ws}" = frp ]; then
     [ -n "${FRP_REMOTE:-}" ] && [ -n "${FRP_TOKEN:-}" ] || die "tanzimat-e FRP naghese ast."
     gen_frp_client_toml "${FRP_REMOTE%:*}" "${FRP_REMOTE##*:}" "$FRP_TOKEN" "${FRP_TRANSPORT:-tcp}" "${FRP_REMOTE_PORT:-}" || return 1
     systemctl restart "$FRP_CLI_SVC" || return 1
+    [ "${#_nrp[@]}" -gt 0 ] && apply_reserved_ports "${_nrp[@]}" 2>/dev/null || true
     log "frpc.toml berooz shod."
     return 0
   fi
@@ -228,6 +251,7 @@ cmd_apply(){
   fi
   gen_client || return 1
   reload_svc || return 1
+  [ "${#_nrp[@]}" -gt 0 ] && apply_reserved_ports "${_nrp[@]}" 2>/dev/null || true
   log "client.toml ba $(grep -cvE '^\s*(#|$)' "$SVC_FILE" 2>/dev/null || echo 0) service rooye yek tunnel sakhte shod."
 }
 
@@ -877,6 +901,9 @@ gen_frp_client_toml(){
         echo "localIP = \"127.0.0.1\""
         echo "localPort = $inbound"
         echo "remotePort = $rport"
+        if [ "${FRP_PROXY_PROTOCOL:-}" = "v1" ] || [ "${FRP_PROXY_PROTOCOL:-}" = "v2" ]; then
+          echo "transport.proxyProtocolVersion = \"${FRP_PROXY_PROTOCOL}\""
+        fi
         echo
       done < "$SVC_FILE"
     fi
@@ -891,7 +918,42 @@ cmd_frp(){
     on)   cmd_frp_on "$@" ;;
     off)  cmd_frp_off ;;
     status) cmd_frp_status ;;
-    *) die "estefade: ratholenode frp <on <iran_ip:port> <token> [transport] [remote_port]|off|status>" ;;
+    proxy-protocol) cmd_frp_proxy_protocol "${1:-status}" ;;
+    *) die "estefade: ratholenode frp <on <iran_ip:port> <token> [transport] [remote_port]|off|status|proxy-protocol <v2|v1|off|status>>" ;;
+  esac
+}
+
+cmd_frp_proxy_protocol(){
+  local pp="${1:-status}"
+  load_env
+  case "$pp" in
+    v1|v2)
+      warn "MOHEM: avval acceptProxyProtocol ra rooye inbound-e Xray-e in node faal kon, vagarna ettesalha ghat mishavand!"
+      env_set FRP_PROXY_PROTOCOL "$pp"
+      FRP_PROXY_PROTOCOL="$pp"
+      if [ "${TUNNEL:-ws}" = frp ] && [ -n "${FRP_REMOTE:-}" ] && [ -n "${FRP_TOKEN:-}" ]; then
+        gen_frp_client_toml "${FRP_REMOTE%:*}" "${FRP_REMOTE##*:}" "$FRP_TOKEN" "${FRP_TRANSPORT:-tcp}" "${FRP_REMOTE_PORT:-}" || return 1
+        systemctl restart "$FRP_CLI_SVC" 2>/dev/null || true
+      fi
+      log "FRP proxy-protocol faal shod: $pp"
+      ;;
+    off)
+      env_set FRP_PROXY_PROTOCOL ""
+      FRP_PROXY_PROTOCOL=""
+      if [ "${TUNNEL:-ws}" = frp ] && [ -n "${FRP_REMOTE:-}" ] && [ -n "${FRP_TOKEN:-}" ]; then
+        gen_frp_client_toml "${FRP_REMOTE%:*}" "${FRP_REMOTE##*:}" "$FRP_TOKEN" "${FRP_TRANSPORT:-tcp}" "${FRP_REMOTE_PORT:-}" || return 1
+        systemctl restart "$FRP_CLI_SVC" 2>/dev/null || true
+      fi
+      log "FRP proxy-protocol khamoosh shod."
+      ;;
+    status)
+      if [ -n "${FRP_PROXY_PROTOCOL:-}" ]; then
+        echo "FRP proxy-protocol: $(c_g "$FRP_PROXY_PROTOCOL")"
+      else
+        echo "FRP proxy-protocol: $(c_y 'khamoosh')"
+      fi
+      ;;
+    *) die "estefade: ratholenode frp proxy-protocol <v2|v1|off|status>" ;;
   esac
 }
 
@@ -968,7 +1030,7 @@ cmd_frp_status(){
   fi
 }
 
-# ---------- GRE: tunnel-e shabake-ye L3 Linux (ip tunnel) ----------
+# ---------- GRE: tunnel-e shabake-ye L3 Linux (ip link/tunnel: gre / ip6gre) ----------
 cmd_gre(){
   need_root
   local sub="${1:-status}"; shift || true
@@ -976,33 +1038,74 @@ cmd_gre(){
     on)   cmd_gre_on "$@" ;;
     off)  cmd_gre_off "${1:-}" ;;
     status) cmd_gre_status ;;
-    probe) cmd_gre_probe "${1:-}" "${2:-gre1}" ;;
-    *) die "estefade: ratholenode gre <on <iran_ip> [tunnel_ip] [gre_name]|off [gre_name]|status|probe <peer_ip> [gre_name]>" ;;
+    probe) cmd_gre_probe "${1:-}" "${2:-}" ;;
+    auto-mtu) cmd_gre_auto_mtu "${1:-}" "${2:-}" ;;
+    *) die "estefade: ratholenode gre <on <iran_ip> [tunnel_ip] [gre_name] [--key N] [--mtu N]|off [gre_name]|status|probe <peer_ip> [gre_name]|auto-mtu <peer_ip> [gre_name]>" ;;
   esac
 }
 
 cmd_gre_probe(){
-  local peer_ip="${1:-}" gre_name="${2:-gre1}"
-  echo "$peer_ip" | grep -qE '^[0-9.]+$' || die "peer_ip namotabar ast."
+  load_env
+  local peer_ip="${1:-}" gre_name="${2:-${GRE_NAME:-gre1}}"
+  rth_valid_ip "$peer_ip" || die "peer_ip namotabar ast."
   echo "$gre_name" | grep -qE '^[a-zA-Z0-9_-]{2,15}$' || die "gre_name namotabar ast."
   ip link show "$gre_name" >/dev/null 2>&1 || { err "GRE interface '$gre_name' peyda nashod."; return 1; }
-  ping -I "$gre_name" -c 2 -W 2 "$peer_ip" >/dev/null 2>&1 || { err "GRE peer $peer_ip az $gre_name dastres nist (proto 47/firewall/IP ra check kon)."; return 1; }
+  local -a pcmd=(ping -I "$gre_name" -c 2 -W 2)
+  rth_is_ipv6 "$peer_ip" && pcmd=(ping -6 -I "$gre_name" -c 2 -W 2)
+  "${pcmd[@]}" "$peer_ip" >/dev/null 2>&1 || { err "GRE peer $peer_ip az $gre_name dastres nist (proto 47/firewall/IP ra check kon)."; return 1; }
   log "GRE peer $peer_ip az $gre_name dastres ast."
+}
+
+cmd_gre_auto_mtu(){
+  load_env
+  local peer_ip="${1:-}" gre_name="${2:-${GRE_NAME:-gre1}}"
+  rth_valid_ip "$peer_ip" || die "estefade: ratholenode gre auto-mtu <peer_tunnel_ip> [gre_name]"
+  echo "$gre_name" | grep -qE '^[a-zA-Z0-9_-]{2,15}$' || die "gre_name namotabar ast."
+  gre_probe_mtu "$gre_name" "$peer_ip" || return 1
+  local new_mtu
+  new_mtu="$(ip link show dev "$gre_name" 2>/dev/null | sed -n 's/.* mtu \([0-9]*\).*/\1/p' | head -n1)"
+  [[ "$new_mtu" =~ ^[0-9]+$ ]] && env_set GRE_MTU "$new_mtu"
 }
 
 cmd_gre_on(){
   need_root
-  local iran_ip="${1:-}" tunnel_ip="${2:-10.10.10.2}" gre_name="${3:-gre1}"
-  [ -n "$iran_ip" ] || die "estefade: ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]"
-  echo "$iran_ip" | grep -qE '^[0-9.]+$' || die "iran_ip bayad IPv4 motabar bashad."
-  echo "$tunnel_ip" | grep -qE '^[0-9.]+$' || die "tunnel_ip bayad IPv4 motabar bashad (masalan 10.10.10.2)."
+  local iran_ip="" tunnel_ip="10.10.10.2" gre_name="gre1" gre_key="0" gre_mtu="0"
+  local -a pos=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --key) gre_key="${2:-}"; shift 2 || die "--key meghdar lazem darad." ;;
+      --mtu) gre_mtu="${2:-}"; shift 2 || die "--mtu meghdar lazem darad." ;;
+      *) pos+=("$1"); shift ;;
+    esac
+  done
+  iran_ip="${pos[0]:-}"
+  [ -n "${pos[1]:-}" ] && tunnel_ip="${pos[1]}"
+  [ -n "${pos[2]:-}" ] && gre_name="${pos[2]}"
+  [ -n "${pos[3]:-}" ] && gre_key="${pos[3]}"
+  [ -n "$iran_ip" ] || die "estefade: ratholenode gre on <iran_ip> [tunnel_ip] [gre_name] [--key N] [--mtu N]"
+  rth_valid_ip "$iran_ip" || die "iran_ip bayad IPv4 ya IPv6 motabar bashad."
+  rth_valid_ip "${tunnel_ip%%/*}" || die "tunnel_ip bayad IPv4 ya IPv6 motabar bashad (masalan 10.10.10.2)."
   echo "$gre_name" | grep -qE '^[a-zA-Z0-9_-]{2,15}$' || die "gre_name namotabar ast."
-  local local_ip; local_ip="$(detect_ip)"
-  gre_setup_interface "$gre_name" "$local_ip" "$iran_ip" "$tunnel_ip" || die "rah-andazi GRE tunnel shekast khord."
+  rth_valid_gre_key "$gre_key" || die "gre_key namotabar ast (0..4294967295)."
+  [ "$gre_mtu" = "0" ] || rth_valid_mtu "$gre_mtu" || die "mtu namotabar ast (576..1500)."
+  gre_key=$((10#$gre_key))
+  gre_mtu=$((10#${gre_mtu:-0}))
+  local fam="gre" local_ip=""
+  rth_is_ipv6 "$iran_ip" && fam="ip6gre"
+  [ "$fam" = "gre" ] && local_ip="$(detect_ip)"
+  gre_setup_interface "$gre_name" "$local_ip" "$iran_ip" "$tunnel_ip" "$gre_key" "$gre_mtu" || die "rah-andazi GRE tunnel shekast khord."
+  local applied_mtu
+  applied_mtu="$(ip link show dev "$gre_name" 2>/dev/null | sed -n 's/.* mtu \([0-9]*\).*/\1/p' | head -n1)"
+  [[ "$applied_mtu" =~ ^[0-9]+$ ]] || applied_mtu="$gre_mtu"
   env_set GRE_REMOTE "$iran_ip"
   env_set GRE_TUNNEL_IP "$tunnel_ip"
   env_set GRE_NAME "$gre_name"
-  log "GRE tunnel '$gre_name' faal shod (local: $local_ip, remote: $iran_ip, tunnel: $tunnel_ip/30)."
+  env_set GRE_FAMILY "$fam"
+  env_set GRE_KEY "$gre_key"
+  env_set GRE_MTU "${applied_mtu:-0}"
+  local key_msg=""
+  [ "$gre_key" -gt 0 ] && key_msg=", key: $gre_key"
+  log "GRE tunnel '$gre_name' ($fam) faal shod (remote: $iran_ip, tunnel: $tunnel_ip${key_msg})."
 }
 
 cmd_gre_off(){
@@ -1013,6 +1116,9 @@ cmd_gre_off(){
   env_set GRE_REMOTE ""
   env_set GRE_TUNNEL_IP ""
   env_set GRE_NAME ""
+  env_set GRE_FAMILY ""
+  env_set GRE_KEY ""
+  env_set GRE_MTU ""
   log "GRE tunnel '$gre_name' khamoosh shod."
 }
 
@@ -1020,7 +1126,7 @@ cmd_gre_status(){
   load_env
   local gn="${GRE_NAME:-}"
   if [ -n "$gn" ]; then
-    echo "GRE tunnel: $(c_g 'roshan')  interface: $gn (tunnel: ${GRE_TUNNEL_IP:-?}/30, peer: ${GRE_REMOTE:-?})"
+    echo "GRE tunnel (${GRE_FAMILY:-gre}): $(c_g 'roshan')  interface: $gn (tunnel: ${GRE_TUNNEL_IP:-?}, peer: ${GRE_REMOTE:-?}${GRE_KEY:+, key: $GRE_KEY}${GRE_MTU:+, mtu: $GRE_MTU})"
     command -v ip >/dev/null 2>&1 && { ip link show "$gn" 2>/dev/null | grep -q "UP" && echo "  link status: $(c_g 'UP')" || echo "  link status: $(c_r 'DOWN')"; }
   else
     echo "GRE tunnel: $(c_y 'khamoosh')"
@@ -1028,8 +1134,10 @@ cmd_gre_status(){
 }
 
 cmd_tune(){
-  need_root
-  apply_sysctl_tuning
+  need_root; load_env
+  local -a _nrp=()
+  mapfile -t _nrp < <(collect_node_reserved_ports 2>/dev/null || true)
+  apply_sysctl_tuning "${_nrp[@]}"
   log "tuning node eemal shod. BBR=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
 }
 
@@ -1040,40 +1148,7 @@ cmd_fakeweb(){
   local action="${1:-}" port="${2:-8081}"
   rth_valid_port "$port" || die "port namotabar."
   case "$action" in
-    start)
-      command -v python3 >/dev/null 2>&1 || die "python3 nasb nist (apt install -y python3)."
-      mkdir -p /var/www/rathole-fake
-      [ -f /var/www/rathole-fake/index.html ] || cat > /var/www/rathole-fake/index.html <<'HTML'
-<!doctype html><html><head><meta charset="utf-8"><title>Welcome</title></head>
-<body style="font-family:sans-serif"><h1>It works!</h1><p>Default web page.</p></body></html>
-HTML
-      cat > /etc/systemd/system/${FAKEWEB_SVC}.service <<UNIT
-[Unit]
-Description=rathole fake web (TLS fallback)
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/python3 -m http.server ${port} --bind 127.0.0.1 --directory /var/www/rathole-fake
-Restart=always
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-      systemctl daemon-reload
-      systemctl enable --now ${FAKEWEB_SVC}
-      log "web fik rooye 127.0.0.1:${port} bala amad (baraye fallback inbound)."
-      ;;
-    stop)
-      systemctl stop ${FAKEWEB_SVC} 2>/dev/null && log "web fik motevaghef shod." || warn "web fik ejra naboodan."
-      ;;
-    rm)
-      systemctl disable --now ${FAKEWEB_SVC} 2>/dev/null || true
-      rm -f /etc/systemd/system/${FAKEWEB_SVC}.service
-      systemctl daemon-reload
-      log "web fik hazf shod."
-      ;;
-    status) systemctl --no-pager status ${FAKEWEB_SVC} | sed -n '1,8p' || true ;;
+    start|stop|rm|status) fakeweb_service "$FAKEWEB_SVC" "$port" "$action" "$(dirname "$ENV_FILE")/fakeweb.seed" ;;
     *) die "estefade: ratholenode fakeweb <start|stop|rm|status> [port]" ;;
   esac
 }
@@ -1776,9 +1851,43 @@ wd_run(){
 }
 
 # ---------- backup va restore (node) ----------
+NODE_OFFSITE_CFG="${NODE_OFFSITE_CFG:-/etc/rathole/offsite-backup.json}"
+
 cmd_backup(){
   need_root
-  local out="${1:-/root/rathole-node-backup-$(date +%Y%m%d-%H%M%S).tar.gz}"
+  if [ "${1:-}" = "offsite" ]; then
+    shift
+    local sub="${1:-status}"; shift || true
+    case "$sub" in
+      set)    rth_offsite_hook_set "$NODE_OFFSITE_CFG" "$@" ;;
+      show|status) rth_offsite_hook_show "$NODE_OFFSITE_CFG" ;;
+      off)    rth_offsite_hook_off "$NODE_OFFSITE_CFG" ;;
+      test)
+        local target="${1:-}"
+        if [ -z "$target" ]; then
+          target="$(ls -t /root/rathole-node-backup-*.tar.gz 2>/dev/null | head -n1 || true)"
+        fi
+        [ -n "$target" ] && [ -f "$target" ] || die "file backup baraye test peyda nashod; aval: ratholenode backup"
+        [ -f "$NODE_OFFSITE_CFG" ] || die "offsite backup tanzim nashode; aval: ratholenode backup offsite set <cmd... {}>"
+        if rth_offsite_hook_run "$NODE_OFFSITE_CFG" "$target"; then
+          log "test-e ersal offsite movafagh bood ($target)."
+        else
+          die "test-e ersal offsite shekast khord ($target)."
+        fi
+        ;;
+      *) die "estefade: ratholenode backup offsite <set <argv... {}>|show|off|test [file]>" ;;
+    esac
+    return 0
+  fi
+
+  local run_offsite=0 out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --offsite) run_offsite=1; shift ;;
+      *) out="$1"; shift ;;
+    esac
+  done
+  [ -n "$out" ] || out="/root/rathole-node-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
   local items=()
   [ -f "$ENV_FILE" ] && items+=("${ENV_FILE#/}")
   [ -f "$SVC_FILE" ] && items+=("${SVC_FILE#/}")
@@ -1790,14 +1899,30 @@ cmd_backup(){
   [ -n "${TLS_TRUSTED_ROOT:-}" ] && [ -f "$TLS_TRUSTED_ROOT" ] && items+=("${TLS_TRUSTED_ROOT#/}")
   [ -d "$UP_DIR" ] && items+=("${UP_DIR#/}")
   [ "${#items[@]}" -gt 0 ] || die "chizi baraye backup nist."
-  ( umask 077 && tar -czf "$out" -C / "${items[@]}" 2>/dev/null ) || die "sakht backup shekast khord."
+  ( umask 077 && tar -czf "$out" -C / "${items[@]}" 2>/dev/null ) || die "sakht backup mahalli shekast khord."
   chmod 600 "$out" 2>/dev/null || true
-  log "backup node sakhte shod: $out (node.env + services + upstreams)."
+  log "backup mahalli node sakhte shod: $out (node.env + services + upstreams)."
+  if [ "$run_offsite" -eq 1 ] || [ -f "$NODE_OFFSITE_CFG" ]; then
+    if [ ! -f "$NODE_OFFSITE_CFG" ]; then
+      warn "offsite hook tanzim nashode; ersal offsite rad shod."
+    elif rth_offsite_hook_run "$NODE_OFFSITE_CFG" "$out"; then
+      log "backup node be maghsad offsite ersal shod."
+    else
+      err "backup mahalli sakhte shod ($out) AMA ersal offsite shekast khord (maghsad/hook ra barresi kon)."
+      return 1
+    fi
+  fi
 }
 
 cmd_restore(){
   need_root
-  local f="${1:-}"
+  local f="" dry_run=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --test|--dry-run) dry_run=1; shift ;;
+      *) f="$1"; shift ;;
+    esac
+  done
   [ -n "$f" ] && [ -f "$f" ] || die "file backup peyda nashod: $f"
   local tmp; tmp="$(rth_mktempd)" || die "sakht-e temp baraye restore shekast khord."
   tar -tzf "$f" >/dev/null 2>&1 || { rm -rf "$tmp"; die "backup-e gzip namotabar ast."; }
@@ -1811,6 +1936,30 @@ cmd_restore(){
     rm -rf "$tmp"
     die "backup file-e vizhe ya symlink darad va pazirofte nemishavad."
   fi
+
+  if [ "$dry_run" -eq 1 ]; then
+    local env_p="$tmp/${ENV_FILE#/}" svc_p="$tmp/${SVC_FILE#/}" bh_p="$tmp/${BH_SVC_FILE#/}" up_p="$tmp/${UP_DIR#/}"
+    [ -f "$env_p" ] || env_p="$tmp/etc/rathole/node.env"
+    [ -f "$svc_p" ] || svc_p="$tmp/etc/rathole/services.conf"
+    [ -f "$bh_p" ] || bh_p="$tmp/etc/rathole/bh-services.conf"
+    [ -d "$up_p" ] || up_p="$tmp/etc/rathole/upstreams"
+    [ -f "$env_p" ] || [ -f "$svc_p" ] || [ -f "$bh_p" ] || { rm -rf "$tmp"; die "backup hich config-e node (node.env/services) nadarad."; }
+    local b_srv="-" b_tun="ws" sc=0 bhc=0 upc=0
+    if [ -f "$env_p" ]; then
+      b_srv="$(grep -E '^SERVER=' "$env_p" | head -n1 | cut -d= -f2- || echo '-')"
+      b_tun="$(grep -E '^TUNNEL=' "$env_p" | head -n1 | cut -d= -f2- || echo 'ws')"
+    fi
+    [ -f "$svc_p" ] && sc="$(grep -cvE '^[[:space:]]*(#|$)' "$svc_p" 2>/dev/null || echo 0)"
+    [ -f "$bh_p" ] && bhc="$(grep -cvE '^[[:space:]]*(#|$)' "$bh_p" 2>/dev/null || echo 0)"
+    [ -d "$up_p" ] && upc="$(find "$up_p" -maxdepth 1 -name '*.env' 2>/dev/null | wc -l)"
+    echo "$(c_g '[DRY-RUN] test-e restore node movafagh (hich taghiri rooye server eemal nashod):')"
+    echo "  server       : ${b_srv:-'-'} (tunnel=${b_tun:-ws})"
+    echo "  services     : rathole=$sc  backhaul=$bhc  upstreams=$upc"
+    [ "$sc" -eq 0 ] && [ "$bhc" -eq 0 ] && warn "backup hich service-i nadarad!"
+    rm -rf "$tmp"
+    return 0
+  fi
+
   for entry in etc/rathole/node.env etc/rathole/services.conf etc/rathole/bh-services.conf \
                etc/rathole/adaptive.env etc/rathole/adaptive-state.json etc/rathole/watchdog.env; do
     [ -f "$tmp/$entry" ] || continue
@@ -1982,8 +2131,10 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   noise on <iran_ip:port> <pubkey> [pattern] | off | status   tunnel-e ramznegari-shode (Noise) bedoon-e TLS/cert
   backhaul on <domain|host:port> <token> [transport] [profile] | off | status   lane-e joda: TLS/443=wss/wssmux, direct-IP=ws/wsmux
   backhaul add-svc <name> <token> <port> | rm-svc <name> | ls   registry-e servicehaye lane-e backhaul
+  frp on <iran_ip:port> <token> [transport] [remote_port] | off | status | proxy-protocol <v2|v1|off|status>   tunnel-e FRP (tcp/kcp/quic/websocket)
+  gre on <iran_ip> [tunnel_ip] [gre_name] [--key N] [--mtu N] | off [gre_name] | status | probe <peer_ip> [gre_name] | auto-mtu <peer_ip> [gre_name]   tunnel-e L3 GRE/IP6GRE
 
-  fakeweb <start|stop|rm> [port] web fik sabok baraye fallback inbound TLS (pishfarz 8081)
+  fakeweb <start|stop|rm|status> [port] web fik sabok baraye fallback inbound TLS (pishfarz 8081)
   upstream add <id> <server:port> [host]      afzoodan server Iran dovom/sevom (tunnel jda)
   upstream add-svc <id> <name> <token> <inbound> | rm-svc | rm | apply | restart | ls
   upstream kcp <id> on <ip:port> <key> [profile] | off | status   kcp baraye an server Iran
@@ -1994,7 +2145,9 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   upstream logs <id> [n]         log-e rathole-client@<id> (+ kcp-up agar bashad)
   migrate                        naghshe-ye mohajerat hame tunnelha (main + upstreamha) be kcp
   watchdog <on [interval]|off|status>   restart khodkar tunnel gir-karde/ghat-shode
-  backup [file] | restore <file>   backup/restore tanzimat node
+  backup [--offsite] [file]      backup tanzimat node
+  backup offsite <set <argv... {}>|show|off|test [file]>   ersal khodkar-e backup be maghsad-e bironi (bedoon shell)
+  restore [--test] <file>        restore tanzimat node (--test = barresi bedoon taghir)
   update [beta|stable|vX.Y.Z]    beroozresani-e kamel az GitHub (snapshot + rollback-e khodkar). 'beta' = akharin pre-release؛ tag = noskhe-ye khas
   doctor                         barresi-ye salamat node va poshtibanei core az control_path
   control-path show              masir-e jari (pishfarz: /)
@@ -2343,6 +2496,7 @@ with open(p, "w", encoding="utf-8") as f:
 cmd_doctor(){
   echo "$(c_g '==== barresi-ye node va binary ====')"
   local ok=0 bad=0
+  fix_hint(){ printf '       %s %s\n' "$(c_y '→ rah-e hal:')" "$*"; }
 
   # 1. barresi vojood-e binary
   if command -v /usr/local/bin/rathole >/dev/null 2>&1; then
@@ -2350,6 +2504,7 @@ cmd_doctor(){
     ok=$((ok+1))
   else
     printf '  %s rathole binary peyda nashod\n' "$(c_r 'FAIL')"
+    fix_hint "install-node.sh ya ratholenode update ra ejra kon"
     bad=$((bad+1))
   fi
 
@@ -2368,11 +2523,13 @@ cmd_doctor(){
   if [ -f "$ENV_FILE" ]; then
     printf '  %s %s vojood darad\n' "$(c_g 'OK ')" "$ENV_FILE"
     ok=$((ok+1))
+    load_env
   else
     printf '  %s %s peyda nashod (node hanooz init nashode?)\n' "$(c_y 'WARN')" "$ENV_FILE"
+    fix_hint "ratholenode set-main <domain:443>"
   fi
 
-  # 4. barresi services
+  # 4. barresi services (lane rathole + lane backhaul)
   if [ -f "$SVC_FILE" ]; then
     local svc_count; svc_count="$(grep -cE '^[^#]' "$SVC_FILE" 2>/dev/null || echo 0)"
     printf '  %s %d service dar %s\n' "$(c_g 'OK ')" "$svc_count" "$SVC_FILE"
@@ -2385,21 +2542,76 @@ cmd_doctor(){
         ok=$((ok+1))
       else
         printf '  %s backend service %s rooye 127.0.0.1:%s GVSH NEMIDAHAD! (Xray rooye in port faal nist → Connection refused)\n' "$(c_y 'WARN')" "$s_name" "$s_inb"
+        fix_hint "Xray/backend ra rooye port $s_inb check kon: ss -tulpn | grep $s_inb"
       fi
     done < "$SVC_FILE"
   else
     printf '  %s %s peyda nashod\n' "$(c_y 'WARN')" "$SVC_FILE"
   fi
-
-  # 5. barresi vaziat systemd
-  if systemctl is-active --quiet rathole-client; then
-    printf '  %s rathole-client.service faal ast\n' "$(c_g 'OK ')"
+  if svc_file_has_entries "$BH_SVC_FILE"; then
+    local bhc; bhc="$(grep -cE '^[^#]' "$BH_SVC_FILE" 2>/dev/null || echo 0)"
+    printf '  %s %d service dar %s (backhaul lane)\n' "$(c_g 'OK ')" "$bhc" "$BH_SVC_FILE"
     ok=$((ok+1))
-  else
-    printf '  %s rathole-client.service faal nist\n' "$(c_y 'WARN')"
   fi
 
-  # 6. barresi upstreamha
+  # 5. barresi vaziat carrier-e faal dar systemd
+  echo "$(c_g '== barresi service carrier-e faal ==')"
+  local tmode="${TUNNEL:-ws}"
+  if [ "$tmode" = "frp" ]; then
+    if systemctl is-active --quiet "$FRP_CLI_SVC"; then
+      printf '  %s %s faal ast (TUNNEL=frp, transport=%s)\n' "$(c_g 'OK ')" "$FRP_CLI_SVC" "${FRP_TRANSPORT:-tcp}"; ok=$((ok+1))
+    else
+      printf '  %s %s faal nist (TUNNEL=frp)\n' "$(c_r 'FAIL')" "$FRP_CLI_SVC"; bad=$((bad+1))
+      fix_hint "systemctl restart $FRP_CLI_SVC && journalctl -u $FRP_CLI_SVC -n 20"
+    fi
+  elif svc_file_has_entries "$SVC_FILE" || [ "$tmode" != "backhaul" ]; then
+    if systemctl is-active --quiet rathole-client; then
+      printf '  %s rathole-client.service faal ast (TUNNEL=%s)\n' "$(c_g 'OK ')" "$tmode"; ok=$((ok+1))
+    else
+      printf '  %s rathole-client.service faal nist (TUNNEL=%s)\n' "$(c_y 'WARN')" "$tmode"
+      fix_hint "systemctl restart rathole-client && journalctl -u rathole-client -n 20"
+    fi
+    if [ "$tmode" = "kcp" ]; then
+      if systemctl is-active --quiet rathole-kcp-client; then
+        printf '  %s rathole-kcp-client.service faal ast\n' "$(c_g 'OK ')"; ok=$((ok+1))
+      else
+        printf '  %s rathole-kcp-client.service faal nist\n' "$(c_r 'FAIL')"; bad=$((bad+1))
+        fix_hint "systemctl restart rathole-kcp-client"
+      fi
+    fi
+  fi
+  if svc_file_has_entries "$BH_SVC_FILE"; then
+    if systemctl is-active --quiet "$BH_CLI_SVC"; then
+      printf '  %s %s faal ast\n' "$(c_g 'OK ')" "$BH_CLI_SVC"; ok=$((ok+1))
+    else
+      printf '  %s %s faal nist\n' "$(c_r 'FAIL')" "$BH_CLI_SVC"; bad=$((bad+1))
+      fix_hint "systemctl restart $BH_CLI_SVC && journalctl -u $BH_CLI_SVC -n 20"
+    fi
+  fi
+  if [ -n "${GRE_NAME:-}" ]; then
+    if command -v ip >/dev/null 2>&1 && ip link show "$GRE_NAME" 2>/dev/null | grep -q "UP"; then
+      printf '  %s interface GRE (%s) UP ast\n' "$(c_g 'OK ')" "$GRE_NAME"; ok=$((ok+1))
+    else
+      printf '  %s interface GRE (%s) UP nist\n' "$(c_r 'FAIL')" "$GRE_NAME"; bad=$((bad+1))
+      fix_hint "ratholenode gre on ${GRE_REMOTE:-<IRAN_IP>}"
+    fi
+  fi
+
+  # 6. watchdog & adaptive timers
+  echo "$(c_g '== barresi watchdog va adaptive ==')"
+  if systemctl is-active --quiet rathole-watchdog.timer 2>/dev/null; then
+    printf '  %s rathole-watchdog.timer faal ast\n' "$(c_g 'OK ')"; ok=$((ok+1))
+  else
+    printf '  %s rathole-watchdog.timer khamoosh ast (tunnel-haye ghat-shode khodkar restart nemishavand)\n' "$(c_y 'WARN')"
+    fix_hint "ratholenode watchdog on"
+  fi
+  if systemctl is-active --quiet rathole-adaptive.timer 2>/dev/null; then
+    printf '  %s rathole-adaptive.timer faal ast\n' "$(c_g 'OK ')"
+  else
+    printf '  %s rathole-adaptive.timer khamoosh ast (ekhtiari)\n' "$(c_y 'INFO')"
+  fi
+
+  # 7. barresi upstreamha
   if [ -d "$UP_DIR" ]; then
     local up_count; up_count="$(find "$UP_DIR" -maxdepth 1 -name '*.env' 2>/dev/null | wc -l)"
     if [ "$up_count" -gt 0 ]; then
@@ -2407,6 +2619,8 @@ cmd_doctor(){
       ok=$((ok+1))
     fi
   fi
+
+  rth_check_kernel_health node
 
   echo
   echo "$(c_g "khlash:") OK=$ok  FAIL=$bad"
@@ -2438,8 +2652,8 @@ main(){
     migrate) cmd_migrate ;;
     fakeweb) shift; cmd_fakeweb "${1:-}" "${2:-}" ;;
     upstream) shift; cmd_upstream "$@" ;;
-    backup)  shift; cmd_backup "${1:-}" ;;
-    restore) shift; cmd_restore "${1:-}" ;;
+    backup)  shift; cmd_backup "$@" ;;
+    restore) shift; cmd_restore "$@" ;;
     control-path) shift; cmd_control_path "$@" ;;
     show)    cmd_show ;;
     status)  shift; cmd_status "${1:-}" ;;

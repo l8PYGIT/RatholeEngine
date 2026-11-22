@@ -280,7 +280,9 @@ install_backhaul(){
 # tanzimat sysctl (BBR + file limits + conntrack)
 apply_sysctl_tuning(){
   modprobe nf_conntrack 2>/dev/null || true
-  cat >/etc/sysctl.d/99-rathole-tune.conf <<'TUNE'
+  local sysctl_file="${RTH_SYSCTL_FILE:-/etc/sysctl.d/99-rathole-tune.conf}"
+  mkdir -p "$(dirname "$sysctl_file")" 2>/dev/null || true
+  cat >"$sysctl_file" <<'TUNE'
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 net.ipv4.tcp_mtu_probing=1
@@ -290,7 +292,7 @@ fs.file-max=2097152
 net.core.somaxconn=65535
 net.core.netdev_max_backlog=16384
 net.ipv4.tcp_max_syn_backlog=65535
-net.ipv4.ip_local_port_range=1024 65535
+net.ipv4.ip_local_port_range=32768 60999
 net.netfilter.nf_conntrack_max=1048576
 net.core.rmem_max=26214400
 net.core.wmem_max=26214400
@@ -298,7 +300,30 @@ net.core.rmem_default=26214400
 net.core.wmem_default=26214400
 TUNE
   sysctl --system >/dev/null 2>&1 || true
+  if [ $# -gt 0 ]; then
+    apply_reserved_ports "$@"
+  fi
   log "BBR=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)  conntrack_max=$(sysctl -n net.netfilter.nf_conntrack_max 2>/dev/null || echo n/a)"
+}
+
+# rezerv port-haye tunnel/service dar kernel ta ettesalat khuruji eshgaleshan nakonand
+apply_reserved_ports(){
+  local res_file="${RTH_RESERVED_SYSCTL_FILE:-/etc/sysctl.d/99-rathole-reserved-ports.conf}"
+  local tok csv=""
+  local -a raw=()
+  for tok in "$@"; do
+    raw+=("$tok")
+  done
+  if [ "${#raw[@]}" -gt 0 ]; then
+    csv="$(printf '%s\n' "${raw[@]}" | tr ', \t' '\n' | grep -E '^[0-9]{1,5}$' | awk '$1 >= 1 && $1 <= 65535 {print $1+0}' | sort -nu | paste -sd, -)"
+  fi
+  if [ -z "$csv" ]; then
+    rm -f "$res_file" 2>/dev/null || true
+    return 0
+  fi
+  mkdir -p "$(dirname "$res_file")" 2>/dev/null || true
+  printf 'net.ipv4.ip_local_reserved_ports=%s\n' "$csv" > "$res_file"
+  sysctl -w "net.ipv4.ip_local_reserved_ports=${csv}" >/dev/null 2>&1 || true
 }
 
 rth_valid_port(){
@@ -316,17 +341,46 @@ rth_valid_kcp_key(){
 rth_valid_noise_pattern(){
   [[ "${1:-}" =~ ^[A-Za-z0-9_]{1,80}$ ]]
 }
+rth_is_ipv4(){
+  local ip="${1:-}" a b c d
+  [[ "$ip" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+  a="${BASH_REMATCH[1]}"; b="${BASH_REMATCH[2]}"; c="${BASH_REMATCH[3]}"; d="${BASH_REMATCH[4]}"
+  (( 10#$a <= 255 && 10#$b <= 255 && 10#$c <= 255 && 10#$d <= 255 ))
+}
+rth_is_ipv6(){
+  local ip="${1:-}"
+  [[ "$ip" == *:*:* ]] && [[ "$ip" =~ ^[0-9A-Fa-f:]+$ ]] && [[ "$ip" != *:::* ]]
+}
+rth_valid_ip(){
+  rth_is_ipv4 "${1:-}" || rth_is_ipv6 "${1:-}"
+}
+rth_valid_gre_key(){
+  [[ "${1:-}" =~ ^[0-9]{1,10}$ ]] && (( 10#$1 >= 0 && 10#$1 <= 4294967295 ))
+}
+rth_valid_mtu(){
+  [[ "${1:-}" =~ ^[0-9]{3,4}$ ]] && (( 10#$1 >= 576 && 10#$1 <= 1500 ))
+}
 
-# service systemd fakeweb (web fik sadh ba python3)
+# service systemd fakeweb (server-e Nginx-namayesh-e deterministic ba python3 stdlib)
 fakeweb_service(){
-  local svc="$1" port="${2:-8081}" action="${3:-start}"
+  local svc="$1" port="${2:-8081}" action="${3:-start}" seed_file="${4:-}"
   rth_valid_port "$port" || die "port namotabar."
   command -v python3 >/dev/null 2>&1 || die "python3 nasb nist (apt install -y python3)."
   mkdir -p /var/www/rathole-fake
-  [ -f /var/www/rathole-fake/index.html ] || cat > /var/www/rathole-fake/index.html <<'HTML'
+  local fw_py="" cand
+  for cand in /usr/local/share/rathole/fakeweb.py "${BASH_SOURCE[0]%/*}/fakeweb.py"; do
+    if [ -f "$cand" ]; then fw_py="$cand"; break; fi
+  done
+  local exec_line="/usr/bin/python3 -m http.server ${port} --bind 127.0.0.1 --directory /var/www/rathole-fake"
+  if [ -n "$fw_py" ]; then
+    exec_line="/usr/bin/python3 ${fw_py} --host 127.0.0.1 --port ${port} --root /var/www/rathole-fake"
+    [ -n "$seed_file" ] && exec_line="${exec_line} --seed-file ${seed_file}"
+  else
+    [ -f /var/www/rathole-fake/index.html ] || cat > /var/www/rathole-fake/index.html <<'HTML'
 <!doctype html><html><head><meta charset="utf-8"><title>Welcome</title></head>
 <body style="font-family:sans-serif"><h1>It works!</h1><p>Default web page.</p></body></html>
 HTML
+  fi
   case "$action" in
     start)
       cat > "/etc/systemd/system/${svc}.service" <<UNIT
@@ -334,7 +388,7 @@ HTML
 Description=rathole fake web ($svc)
 After=network.target
 [Service]
-ExecStart=/usr/bin/python3 -m http.server ${port} --bind 127.0.0.1 --directory /var/www/rathole-fake
+ExecStart=${exec_line}
 Restart=always
 RestartSec=2
 [Install]
@@ -437,33 +491,197 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# GRE L3 Linux Tunnel Integration
+# GRE L3 Linux Tunnel Integration (IPv4 gre + IPv6 ip6gre, key, MSS clamp, Auto-MTU)
 # ---------------------------------------------------------------------------
-gre_setup_interface(){
-  local name="${1:-gre1}" local_ip="$2" remote_ip="$3" tunnel_ip="$4"
-  modprobe ip_gre 2>/dev/null || true
-  ip tunnel del "$name" 2>/dev/null || true
-  # dar VPS-haye NAT ke IP-e omomi rooye interface nist، local_ip baes khata mishavad
-  local dev_ip; dev_ip="$(ip route get "$remote_ip" 2>/dev/null | grep -oE 'src [0-9.]+' | awk '{print $2}')"
-  [ -n "$dev_ip" ] && local_ip="$dev_ip"
-  if [ -n "$local_ip" ] && ip addr show 2>/dev/null | grep -q "inet $local_ip/"; then
-    ip tunnel add "$name" mode gre local "$local_ip" remote "$remote_ip" ttl 255 2>/dev/null || ip tunnel add "$name" mode gre remote "$remote_ip" ttl 255 || return 1
-  else
-    ip tunnel add "$name" mode gre remote "$remote_ip" ttl 255 || return 1
-  fi
-  ip addr add "$tunnel_ip/30" dev "$name" || return 1
-  ip link set "$name" mtu 1476 up || return 1
-  iptables -t mangle -C POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o "$name" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null ||     iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o "$name" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
-  sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
-  log "GRE tunnel '$name' faal shod: $tunnel_ip/30 (remote: $remote_ip, mtu: 1476)"
+_rth_sweep_ipt_comment(){ # $1=ipt_bin $2=table $3=chain $4=comment_tag
+  local ipt="$1" tbl="$2" chain="$3" tag="$4"
+  command -v "$ipt" >/dev/null 2>&1 || return 0
+  local line
+  "$ipt" -t "$tbl" -S "$chain" 2>/dev/null | while IFS= read -r line; do
+    line="${line%$'\r'}"
+    case "$line" in
+      -A\ *)
+        local -a toks=()
+        read -ra toks <<< "${line#-A }"
+        [ "${#toks[@]}" -gt 0 ] || continue
+        local i matched=0
+        for i in "${!toks[@]}"; do
+          toks[$i]="${toks[$i]//\"/}"
+          if [ "$i" -gt 0 ] && [ "${toks[$((i-1))]}" = "--comment" ] && [ "${toks[$i]}" = "$tag" ]; then
+            matched=1
+          fi
+        done
+        [ "$matched" -eq 1 ] || continue
+        "$ipt" -t "$tbl" -D "${toks[@]}" >/dev/null 2>&1 || true
+        ;;
+    esac
+  done
 }
 
 gre_teardown_interface(){
-  local name="${1:-gre1}"
+  local name="${1:-gre1}" quiet="${2:-0}"
+  local tag="rathole-gre-${name}"
   ip link set "$name" down 2>/dev/null || true
-  ip tunnel del "$name" 2>/dev/null || true
-  iptables -t mangle -D POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o "$name" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
-  log "GRE tunnel '$name' pak shod."
+  ip link del "$name" 2>/dev/null || ip tunnel del "$name" 2>/dev/null || true
+  local ipt
+  for ipt in iptables ip6tables; do
+    _rth_sweep_ipt_comment "$ipt" filter INPUT "$tag"
+    _rth_sweep_ipt_comment "$ipt" mangle OUTPUT "$tag"
+    _rth_sweep_ipt_comment "$ipt" mangle FORWARD "$tag"
+    _rth_sweep_ipt_comment "$ipt" mangle POSTROUTING "$tag"
+    "$ipt" -t mangle -D POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o "$name" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+  done
+  [ "$quiet" = "1" ] || log "GRE tunnel '$name' pak shod."
+}
+
+gre_setup_interface(){
+  local name="${1:-gre1}" local_ip="$2" remote_ip="$3" tunnel_ip="$4" gre_key="${5:-0}" req_mtu="${6:-0}"
+  rth_valid_ip "$remote_ip" || { err "remote_ip namotabar ast: $remote_ip"; return 1; }
+  rth_valid_gre_key "$gre_key" || { err "gre_key namotabar ast (0..4294967295): $gre_key"; return 1; }
+  [ "${req_mtu:-0}" = "0" ] || rth_valid_mtu "$req_mtu" || { err "mtu namotabar ast (576..1500): $req_mtu"; return 1; }
+  gre_key=$((10#$gre_key))
+  req_mtu=$((10#${req_mtu:-0}))
+
+  local is_v6=0 mod="ip_gre" gtype="gre" ipt="iptables" overhead=24
+  if rth_is_ipv6 "$remote_ip"; then
+    is_v6=1; mod="ip6_gre"; gtype="ip6gre"; ipt="ip6tables"
+    [ "$gre_key" -gt 0 ] && overhead=48 || overhead=44
+  else
+    [ "$gre_key" -gt 0 ] && overhead=28 || overhead=24
+  fi
+  modprobe "$mod" 2>/dev/null || true
+  gre_teardown_interface "$name" 1
+
+  local route_out out_dev="" dev_ip="" base_mtu=""
+  if [ "$is_v6" -eq 1 ]; then
+    route_out="$(ip -6 route get "$remote_ip" 2>/dev/null | head -n1 || true)"
+  else
+    route_out="$(ip -4 route get "$remote_ip" 2>/dev/null | head -n1 || ip route get "$remote_ip" 2>/dev/null | head -n1 || true)"
+  fi
+  out_dev="$(printf '%s\n' "$route_out" | sed -n 's/.* dev \([^ ]*\).*/\1/p')"
+  dev_ip="$(printf '%s\n' "$route_out" | sed -n 's/.* src \([^ ]*\).*/\1/p')"
+  if [ -n "$dev_ip" ]; then
+    if [ "$is_v6" -eq 1 ] && rth_is_ipv6 "$dev_ip"; then
+      local_ip="$dev_ip"
+    elif [ "$is_v6" -eq 0 ] && rth_is_ipv4 "$dev_ip"; then
+      local_ip="$dev_ip"
+    fi
+  fi
+  if [ -n "$out_dev" ]; then
+    base_mtu="$(ip link show dev "$out_dev" 2>/dev/null | sed -n 's/.* mtu \([0-9]*\).*/\1/p' | head -n1)"
+  fi
+  [[ "$base_mtu" =~ ^[0-9]+$ ]] || base_mtu=1500
+
+  local mtu="$req_mtu"
+  if [ "${mtu:-0}" -le 0 ] 2>/dev/null; then
+    mtu=$((base_mtu - overhead))
+    [ "$mtu" -lt 576 ] && mtu=576
+  fi
+
+  local has_local=0
+  if [ -n "$local_ip" ]; then
+    if [ "$is_v6" -eq 1 ]; then
+      ip -6 addr show 2>/dev/null | grep -q "inet6 ${local_ip}/" && has_local=1
+    else
+      ip -4 addr show 2>/dev/null | grep -q "inet ${local_ip}/" && has_local=1
+    fi
+  fi
+
+  local -a add_cmd=(ip link add "$name" type "$gtype" remote "$remote_ip")
+  local -a add_cmd_nolocal=(ip link add "$name" type "$gtype" remote "$remote_ip")
+  if [ "$has_local" -eq 1 ]; then
+    add_cmd+=(local "$local_ip")
+  fi
+  if [ "$is_v6" -eq 1 ]; then
+    add_cmd+=(encaplimit none hoplimit 255)
+    add_cmd_nolocal+=(encaplimit none hoplimit 255)
+  else
+    add_cmd+=(ttl 255)
+    add_cmd_nolocal+=(ttl 255)
+  fi
+  if (( 10#$gre_key > 0 )); then
+    add_cmd+=(key "$gre_key")
+    add_cmd_nolocal+=(key "$gre_key")
+  fi
+
+  if ! "${add_cmd[@]}" 2>/dev/null; then
+    if ! "${add_cmd_nolocal[@]}" 2>/dev/null; then
+      if [ "$is_v6" -eq 0 ]; then
+        local -a tun_cmd=(ip tunnel add "$name" mode gre remote "$remote_ip" ttl 255)
+        [ "$has_local" -eq 1 ] && tun_cmd+=(local "$local_ip")
+        (( 10#$gre_key > 0 )) && tun_cmd+=(key "$gre_key")
+        "${tun_cmd[@]}" || return 1
+      else
+        return 1
+      fi
+    fi
+  fi
+
+  local tun_cidr="$tunnel_ip" inner_ip="${tunnel_ip%%/*}"
+  if [[ "$tun_cidr" != */* ]]; then
+    if rth_is_ipv6 "$inner_ip"; then tun_cidr="${inner_ip}/126"; else tun_cidr="${inner_ip}/30"; fi
+  fi
+  ip addr add "$tun_cidr" dev "$name" || return 1
+  ip link set "$name" mtu "$mtu" up || return 1
+
+  local tag="rathole-gre-${name}"
+  if command -v "$ipt" >/dev/null 2>&1; then
+    "$ipt" -C INPUT -p 47 -s "$remote_ip" -m comment --comment "$tag" -j ACCEPT 2>/dev/null || \
+      "$ipt" -I INPUT 1 -p 47 -s "$remote_ip" -m comment --comment "$tag" -j ACCEPT 2>/dev/null || true
+  fi
+  local inner_ipt="iptables"
+  rth_is_ipv6 "$inner_ip" && inner_ipt="ip6tables"
+  if command -v "$inner_ipt" >/dev/null 2>&1; then
+    local ch
+    for ch in OUTPUT FORWARD; do
+      "$inner_ipt" -t mangle -C "$ch" -p tcp --tcp-flags SYN,RST SYN -o "$name" -m comment --comment "$tag" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || \
+        "$inner_ipt" -t mangle -I "$ch" 1 -p tcp --tcp-flags SYN,RST SYN -o "$name" -m comment --comment "$tag" -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+    done
+  fi
+  sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+  [ "$is_v6" -eq 1 ] && sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
+  local key_msg=""
+  [ "$gre_key" -gt 0 ] && key_msg=", key: $gre_key"
+  log "GRE tunnel '$name' ($gtype) faal shod: $tun_cidr (remote: $remote_ip, mtu: $mtu${key_msg})"
+}
+
+gre_probe_mtu(){ # $1=iface $2=peer_tunnel_ip
+  local iface="${1:-gre1}" peer="${2:-}"
+  ip link show "$iface" >/dev/null 2>&1 || { err "GRE interface '$iface' peyda nashod."; return 1; }
+  rth_valid_ip "$peer" || { err "peer_tunnel_ip namotabar ast: $peer"; return 1; }
+  local cur_mtu; cur_mtu="$(ip link show dev "$iface" 2>/dev/null | sed -n 's/.* mtu \([0-9]*\).*/\1/p' | head -n1)"
+  [[ "$cur_mtu" =~ ^[0-9]+$ ]] || cur_mtu=1476
+  local hdr=28
+  local -a pbase=(ping -I "$iface" -M do -c 1 -W 1)
+  if rth_is_ipv6 "$peer"; then
+    hdr=48
+    pbase=(ping -6 -I "$iface" -M do -c 1 -W 1)
+  fi
+  local min_mtu=1280
+  [ "$cur_mtu" -lt "$min_mtu" ] && min_mtu="$cur_mtu"
+  local min_pay=$((min_mtu - hdr))
+  if ! "${pbase[@]}" -s "$min_pay" "$peer" >/dev/null 2>&1; then
+    warn "ping ba MTU=$min_mtu rooye '$iface' be $peer pasokh nadad; MTU taghir nakard."
+    return 1
+  fi
+  local cur_pay=$((cur_mtu - hdr))
+  if "${pbase[@]}" -s "$cur_pay" "$peer" >/dev/null 2>&1; then
+    log "MTU fali ($cur_mtu) rooye '$iface' salem ast."
+    return 0
+  fi
+  local lo="$min_mtu" hi="$((cur_mtu - 1))" best="$min_mtu" mid pay
+  while [ "$lo" -le "$hi" ]; do
+    mid=$(( (lo + hi) / 2 ))
+    pay=$((mid - hdr))
+    if "${pbase[@]}" -s "$pay" "$peer" >/dev/null 2>&1; then
+      best="$mid"
+      lo=$((mid + 1))
+    else
+      hi=$((mid - 1))
+    fi
+  done
+  ip link set "$iface" mtu "$best" || return 1
+  log "path MTU=$best rooye '$iface' (az $cur_mtu kahesh yaft)."
 }
 
 detect_ip(){
@@ -474,4 +692,153 @@ detect_ip(){
   fi
   [ -n "$ip" ] || ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   printf '%s' "$ip"
+}
+
+# ---------------------------------------------------------------------------
+# Certificate expiry, kernel health & argv-safe offsite backup hooks
+# ---------------------------------------------------------------------------
+rth_cert_days_left(){ # $1=cert_pem -> chap adad rooz (manfi agar monghazi)
+  local pem="${1:-}" end_line
+  [ -f "$pem" ] && command -v openssl >/dev/null 2>&1 || return 1
+  end_line="$(openssl x509 -enddate -noout -in "$pem" 2>/dev/null | sed 's/^notAfter=//')"
+  [ -n "$end_line" ] || return 1
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$end_line" <<'PY' 2>/dev/null
+import email.utils, datetime, sys
+dt = email.utils.parsedate_to_datetime(sys.argv[1].strip())
+if dt.tzinfo is None:
+    dt = dt.replace(tzinfo=datetime.timezone.utc)
+now = datetime.datetime.now(datetime.timezone.utc)
+print((dt - now).days)
+PY
+    return $?
+  fi
+  local exp_epoch now_epoch
+  exp_epoch="$(date -d "$end_line" +%s 2>/dev/null)" || return 1
+  now_epoch="$(date +%s)"
+  echo $(( (exp_epoch - now_epoch) / 86400 ))
+}
+
+rth_check_kernel_health(){ # $1=panel|node
+  local role="${1:-panel}" tune_cmd="ratholectl tune"
+  [ "$role" = "node" ] && tune_cmd="ratholenode tune"
+  echo "$(c_g '== barresi kernel / TCP / Path MTU ==')"
+  local pr_start=""
+  if [ -r "${RTH_PROC_PORT_RANGE:-/proc/sys/net/ipv4/ip_local_port_range}" ]; then
+    pr_start="$(awk '{print $1}' "${RTH_PROC_PORT_RANGE:-/proc/sys/net/ipv4/ip_local_port_range}" 2>/dev/null || true)"
+  else
+    pr_start="$(sysctl -n net.ipv4.ip_local_port_range 2>/dev/null | awk '{print $1}' || true)"
+  fi
+  if [[ "$pr_start" =~ ^[0-9]+$ ]]; then
+    if [ "$pr_start" -lt 10000 ]; then
+      printf '  %s ip_local_port_range az %s shoroo mishavad (khatar-e tadakhol ba port-haye service)\n' "$(c_y 'WARN')" "$pr_start"
+      printf '       %s %s\n' "$(c_y '→ rah-e hal:')" "$tune_cmd"
+    else
+      printf '  %s ip_local_port_range amn ast (start=%s)\n' "$(c_g 'OK ')" "$pr_start"
+    fi
+  fi
+  local cc=""
+  if [ -r "${RTH_PROC_CC:-/proc/sys/net/ipv4/tcp_congestion_control}" ]; then
+    cc="$(tr -d '[:space:]' < "${RTH_PROC_CC:-/proc/sys/net/ipv4/tcp_congestion_control}" 2>/dev/null || true)"
+  else
+    cc="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)"
+  fi
+  if [ -n "$cc" ]; then
+    if [ "$cc" = "bbr" ]; then
+      printf '  %s congestion control = bbr\n' "$(c_g 'OK ')"
+    else
+      printf '  %s congestion control = %s (pishnahad: bbr)\n' "$(c_y 'WARN')" "$cc"
+      printf '       %s %s\n' "$(c_y '→ rah-e hal:')" "$tune_cmd"
+    fi
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    local low_mss
+    low_mss="$(ss -tinH 2>/dev/null | grep -oE 'mss:[0-9]+' | cut -d: -f2 | awk '$1 > 0 && $1 < 1300 {print $1}' | sort -n | head -n1 || true)"
+    if [ -n "$low_mss" ]; then
+      printf '  %s socket-e faal ba snd_mss=%s moshahede shod (Path MTU koochak?)\n' "$(c_y 'WARN')" "$low_mss"
+      printf '       %s masir MTU ra ba "gre auto-mtu" ya KCP MTU barresi kon.\n' "$(c_y '→ rah-e hal:')"
+    fi
+  fi
+}
+
+rth_offsite_hook_set(){ # $1=cfg_json $2...=argv (hatman {} dashte bashad; bedoon shell)
+  local cfg="$1"; shift || true
+  command -v python3 >/dev/null 2>&1 || die "baraye hook-e offsite python3 lazem ast."
+  [ $# -ge 1 ] || die "estefade: backup offsite set <cmd> [args... {} ...]"
+  local bin="$1"
+  [ -n "$bin" ] || die "dastoor khali ast."
+  [[ ! "$bin" =~ [[:space:]\;\&\|\$\`\<\>] ]] || die "nam-e binary namotabar ast (faghat argv-e mostaghim bedoon shell)."
+  local has_ph=0 arg
+  for arg in "$@"; do
+    case "$arg" in *"{}"*) has_ph=1 ;; esac
+  done
+  [ "$has_ph" -eq 1 ] || die "dastoor bayad shamel placeholder-e '{}' baraye masir-e file backup bashad."
+  mkdir -p "$(dirname "$cfg")" 2>/dev/null || true
+  chmod 700 "$(dirname "$cfg")" 2>/dev/null || true
+  local tmp="${cfg}.tmp.$$"
+  python3 - "$tmp" "$@" <<'PY' || { rm -f "$tmp"; die "neveshtan hook-e offsite shekast khord."; }
+import json, sys
+out = sys.argv[1]
+with open(out, "w", encoding="utf-8", newline="\n") as f:
+    json.dump({"argv": sys.argv[2:]}, f)
+    f.write("\n")
+PY
+  rth_commit_config "$tmp" "$cfg"
+  chmod 600 "$cfg" 2>/dev/null || true
+  log "offsite backup hook zakhire shod ($cfg)."
+}
+
+rth_offsite_hook_show(){ # $1=cfg_json
+  local cfg="$1"
+  if [ ! -f "$cfg" ]; then
+    echo "offsite backup: $(c_y 'khamoosh')"
+    return 0
+  fi
+  command -v python3 >/dev/null 2>&1 || { echo "offsite backup: faal ($cfg)"; return 0; }
+  python3 - "$cfg" <<'PY'
+import json, shlex, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        argv = json.load(f).get("argv", [])
+    print("offsite backup: roshan ->", " ".join(shlex.quote(a) for a in argv))
+except Exception as e:
+    print("offsite backup: khata dar khandan config:", e)
+PY
+}
+
+rth_offsite_hook_off(){ # $1=cfg_json
+  local cfg="$1"
+  if [ -f "$cfg" ]; then
+    rm -f "$cfg"
+    log "offsite backup hook hazf shod."
+  else
+    warn "offsite backup az ghabl khamoosh bood."
+  fi
+}
+
+rth_offsite_hook_run(){ # $1=cfg_json $2=backup_file
+  local cfg="$1" bfile="$2"
+  [ -f "$cfg" ] || return 2
+  [ -f "$bfile" ] || { err "file backup baraye ersal peyda nashod: $bfile"; return 1; }
+  command -v python3 >/dev/null 2>&1 || { err "python3 baraye ejra-ye offsite hook nist."; return 1; }
+  python3 - "$cfg" "$bfile" <<'PY'
+import json, subprocess, sys
+cfg_path, bfile = sys.argv[1], sys.argv[2]
+with open(cfg_path, encoding="utf-8") as f:
+    data = json.load(f)
+argv = data.get("argv")
+if not isinstance(argv, list) or not argv or not all(isinstance(x, str) and x != "" for x in argv):
+    print("[!] hook-e offsite namotabar ast.", file=sys.stderr)
+    sys.exit(1)
+expanded = [a.replace("{}", bfile) for a in argv]
+try:
+    p = subprocess.run(expanded, shell=False, timeout=300)
+    sys.exit(p.returncode)
+except FileNotFoundError:
+    print(f"[!] binary peyda nashod: {expanded[0]}", file=sys.stderr)
+    sys.exit(127)
+except subprocess.TimeoutExpired:
+    print("[!] ersal offsite timeout shod (300s).", file=sys.stderr)
+    sys.exit(124)
+PY
 }

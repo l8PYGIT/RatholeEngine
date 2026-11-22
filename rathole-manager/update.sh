@@ -166,6 +166,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
         panel)
           echo /usr/local/bin/ratholectl
           echo /usr/local/share/rathole/common.sh
+          echo /usr/local/share/rathole/fakeweb.py
           echo /usr/local/share/rathole/ratholeagent.py
           echo /usr/local/share/rathole/install-agent.sh
           echo /etc/rathole-manager
@@ -185,6 +186,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
         node)
           echo /usr/local/bin/ratholenode
           echo /usr/local/share/rathole/common.sh
+          echo /usr/local/share/rathole/fakeweb.py
           echo /usr/local/share/rathole/ratholeagent.py
           echo /usr/local/share/rathole/install-agent.sh
           echo /etc/rathole
@@ -405,6 +407,11 @@ apply_update(){
     sed -i 's/\r$//' "$SCRIPT_DIR/common.sh"
     install -m 644 "$SCRIPT_DIR/common.sh" /usr/local/share/rathole/common.sh
     rm -f /usr/local/bin/common.sh
+  fi
+  if [ -f "$SCRIPT_DIR/fakeweb.py" ]; then
+    mkdir -p /usr/local/share/rathole
+    sed -i 's/\r$//' "$SCRIPT_DIR/fakeweb.py"
+    install -m 755 "$SCRIPT_DIR/fakeweb.py" /usr/local/share/rathole/fakeweb.py
   fi
 
   # agent (ratholeagent.py va install-agent.sh) agar dar baste bashad

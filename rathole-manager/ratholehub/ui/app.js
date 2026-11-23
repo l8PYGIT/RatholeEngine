@@ -2157,6 +2157,7 @@ async function renderSettingsPage(){
     </div>
     <div id="tok_list" style="margin-top:10px"><div class="empty">${t('loading')}</div></div>
    </section>
+   <section class="settings-section" style="grid-column:1 / -1"><h3>${h(t('mon_title'))}</h3><div id="mon_card"><div class="empty">${t('loading')}</div></div></section>
    <section class="settings-section" style="grid-column:1 / -1"><h3>${t('chpw')}</h3><div class="settings-form" style="max-width:460px">
     <div class="field"><label for="cpw">${t('l_curpw')}</label><input id="cpw" type="password" autocomplete="current-password"></div>
     <div class="field"><label for="npw">${t('l_newpw')}</label><input id="npw" type="password" autocomplete="new-password" placeholder="${t('pw_hint')}"></div>
@@ -2164,6 +2165,7 @@ async function renderSettingsPage(){
    </div></section>
   </div>`;
  loadTokensList();
+ loadMonitorSettings();
 }
 
 async function setup2fa(){
@@ -2238,6 +2240,95 @@ async function revokeScopedToken(id){
  const {status,j}=await api('DELETE','api/tokens/'+encodeURIComponent(id));
  if(status!==200){toast('error: '+((j&&j.error)||status));return;}
  loadTokensList();
+}
+
+async function loadMonitorSettings(){
+ const {status,j}=await api('GET','api/monitor/config');
+ const box=$('mon_card');
+ if(!box)return;
+ if(status!==200||!j){box.innerHTML=`<div class="empty">${h((j&&j.error)||String(status))}</div>`;return;}
+ const d=j;
+ const modes=['auto','direct','proxy','ssh_auto'];
+ const opts=modes.map(m=>`<option value="${h(m)}"${d.relay_mode===m?' selected':''}>${h(m)}</option>`).join('');
+ const tokBadge=d.bot_token_set
+  ?`<span class="badge b-ok">${h(t('mon_token_set'))}${d.bot_token_hint?' ('+h(d.bot_token_hint)+')':''}</span>`
+  :`<span class="badge b-warn">${h(t('mon_token_unset'))}</span>`;
+ const svcBadge=`<span class="badge ${d.service_active?'b-ok':'b-bad'}">${h(d.service_active?t('sec_2fa_on'):t('sec_2fa_off'))}</span>`;
+ box.innerHTML=`<div class="sub" style="margin-bottom:10px">${h(t('mon_desc'))}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${svcBadge} ${tokBadge}</div>
+  <div class="settings-form" style="max-width:680px">
+   <div class="field"><label><input id="mon_enabled" type="checkbox"${d.enabled?' checked':''}> ${h(t('sec_2fa_on'))}</label></div>
+   <div class="field"><label for="mon_token">${h(t('mon_bot_token'))}</label><input id="mon_token" type="password" autocomplete="off" placeholder="${h(d.bot_token_hint||'123456:ABC...')}"></div>
+   <div class="field"><label for="mon_chats">${h(t('mon_chat_ids'))}</label><input id="mon_chats" type="text" value="${h((d.allowed_chat_ids||[]).join(', '))}" placeholder="-100123456789, 987654321"></div>
+   <div class="field"><label for="mon_relay">${h(t('mon_relay_mode'))}</label><select id="mon_relay">${opts}</select></div>
+   <div class="field"><label for="mon_proxy">${h(t('mon_proxy'))}</label><input id="mon_proxy" type="text" value="${h(d.proxy||'')}" placeholder="socks5h://127.0.0.1:1080"></div>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+    <div class="field"><label for="mon_poll">${h(t('mon_poll_sec'))}</label><input id="mon_poll" type="number" min="15" max="3600" value="${h(String(d.poll_interval_sec??60))}"></div>
+    <div class="field"><label for="mon_fail">${h(t('mon_fail_thr'))}</label><input id="mon_fail" type="number" min="1" max="20" value="${h(String(d.fail_threshold??3))}"></div>
+    <div class="field"><label for="mon_rec">${h(t('mon_recover_thr'))}</label><input id="mon_rec" type="number" min="1" max="20" value="${h(String(d.recover_threshold??2))}"></div>
+    <div class="field"><label for="mon_cool">${h(t('mon_cooldown_sec'))}</label><input id="mon_cool" type="number" min="30" max="86400" value="${h(String(d.cooldown_sec??300))}"></div>
+   </div>
+   <div class="field"><label><input id="mon_actions" type="checkbox"${d.allow_remote_actions!==false?' checked':''}> ${h(t('mon_allow_actions'))}</label></div>
+   <div class="btns" style="flex-wrap:wrap">
+    <button class="g" type="button" onclick="saveMonitorConfig()">${h(t('mon_save'))}</button>
+    <button class="s" type="button" onclick="diagnoseMonitorRelay()">${h(t('mon_diagnose'))}</button>
+    <button class="gh" type="button" onclick="sendMonitorTest()">${h(t('mon_send_test'))}</button>
+   </div>
+  </div>`;
+}
+
+async function saveMonitorConfig(){
+ const rawChats=($('mon_chats')&&$('mon_chats').value||'').trim();
+ const parts=rawChats?rawChats.split(/[\s,]+/).filter(Boolean):[];
+ const chatIds=[];
+ for(const p of parts){
+  if(!/^-?[0-9]{1,20}$/.test(p)||p==='0'){toast('error: invalid chat id '+p);return;}
+  chatIds.push(Number(p));
+ }
+ const payload={
+  enabled:!!($('mon_enabled')&&$('mon_enabled').checked),
+  allowed_chat_ids:chatIds,
+  relay_mode:($('mon_relay')&&$('mon_relay').value)||'auto',
+  proxy:($('mon_proxy')&&$('mon_proxy').value||'').trim(),
+  poll_interval_sec:Number(($('mon_poll')&&$('mon_poll').value)||60),
+  fail_threshold:Number(($('mon_fail')&&$('mon_fail').value)||3),
+  recover_threshold:Number(($('mon_rec')&&$('mon_rec').value)||2),
+  cooldown_sec:Number(($('mon_cool')&&$('mon_cool').value)||300),
+  allow_remote_actions:!!($('mon_actions')&&$('mon_actions').checked),
+ };
+ const tok=($('mon_token')&&$('mon_token').value||'').trim();
+ if(tok)payload.bot_token=tok;
+ const {status,j}=await api('POST','api/monitor/config',payload);
+ if(status!==200){toast('error: '+((j&&j.error)||status));return;}
+ toast(t('done'));
+ loadMonitorSettings();
+}
+
+async function diagnoseMonitorRelay(){
+ const px=($('mon_proxy')&&$('mon_proxy').value||'').trim();
+ const body=px?{proxy:px}:{};
+ const {status,j}=await api('POST','api/monitor/diagnose-relay',body);
+ if(status!==200||!j){toast('error: '+((j&&j.error)||status));return;}
+ const dir=j.direct||{};
+ const prx=j.proxy||{};
+ const lines=[
+  'Recommended: '+(j.recommended_mode||'none')+(j.best_ssh_node?' (best node: '+j.best_ssh_node+')':''),
+  j.summary||'',
+  '',
+  'Direct: '+(dir.ok?('OK ('+dir.latency_ms+' ms)'):('FAILED ('+(dir.error||'unreachable')+')')),
+  'Proxy: '+(prx.configured?(prx.ok?('OK ('+prx.latency_ms+' ms)'):('FAILED ('+(prx.error||'unreachable')+')')):'not configured'),
+  'SSH Nodes ('+((j.ssh_nodes||[]).length)+'):',
+ ];
+ for(const n of (j.ssh_nodes||[])){
+  lines.push('  - '+n.name+' ('+n.host+'): '+(n.ok?('OK ('+n.latency_ms+' ms)'):('FAILED ('+(n.error||'error')+')')));
+ }
+ outModal(t('mon_diagnose'),lines.join('\n'));
+}
+
+async function sendMonitorTest(){
+ const {status,j}=await api('POST','api/monitor/test',{});
+ if(status!==200||!j||!j.ok){toast('error: '+((j&&j.error)||status));return;}
+ toast(t('done')+' — '+(j.via||'direct')+(j.node?' ('+j.node+')':''));
 }
 
 function outModal(title,text){var id='om_'+Math.random().toString(36).slice(2);modal('<h3>'+h(title)+'</h3><pre id="'+id+'" style="max-height:52vh;overflow:auto;white-space:pre-wrap;user-select:text;-webkit-user-select:text">'+h(text)+'</pre><div class="row" style="margin-top:10px"><button class="g" onclick="copyText(\''+id+'\')">'+t('copy_out')+'</button> <button class="gh" onclick="closeModal()">'+t('close')+'</button></div>');}

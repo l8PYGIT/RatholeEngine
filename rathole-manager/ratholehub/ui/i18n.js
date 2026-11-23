@@ -278,7 +278,23 @@ service_config:"حامل و پروتکل",service_health:"تست سلامت",ser
   audit_verify:'بررسی زنجیره لاگ',
   audit_valid:'زنجیره یکپارچه',
   audit_broken:'نقض زنجیره در خط',
-  metrics_hint:'اندپوینت پرومتئوس در /metrics (نیازمند توکن با دسترسی read) در دسترس است.'
+  metrics_hint:'اندپوینت پرومتئوس در /metrics (نیازمند توکن با دسترسی read) در دسترس است.',
+  mon_title:'مانیتور مستقل و ربات تلگرام',
+  mon_desc:'پایش مستقل ناوگان با هیسترزیس و ارسال هوشمند از طریق نودهای خارج',
+  mon_bot_token:'توکن ربات تلگرام',
+  mon_token_set:'توکن ذخیره شده',
+  mon_token_unset:'بدون توکن',
+  mon_chat_ids:'شناسه‌های چت مجاز (جدا با کاما)',
+  mon_relay_mode:'حالت ارسال تلگرام',
+  mon_proxy:'پروکسی تلگرام (اختیاری)',
+  mon_poll_sec:'بازه بررسی (ثانیه)',
+  mon_fail_thr:'آستانه خطا برای هشدار',
+  mon_recover_thr:'آستانه بازیابی',
+  mon_cooldown_sec:'فاصله بین هشدارها (ثانیه)',
+  mon_allow_actions:'اجازه دستورات عملیاتی (/restart)',
+  mon_save:'ذخیره تنظیمات مانیتور',
+  mon_diagnose:'عیب‌یابی مسیر تلگرام',
+  mon_send_test:'ارسال پیام آزمایشی'
 
  },
  en:{
@@ -560,7 +576,23 @@ service_config:"Carrier and protocol",service_health:"Health test",service_copy:
   audit_verify:'Verify chain',
   audit_valid:'Chain verified',
   audit_broken:'Chain broken at line',
-  metrics_hint:'Prometheus exposition endpoint available at /metrics (requires read scope).'
+  metrics_hint:'Prometheus exposition endpoint available at /metrics (requires read scope).',
+  mon_title:'Standalone Monitor & Telegram Bot',
+  mon_desc:'Standalone fleet monitoring with hysteresis alerts and multi-path Telegram relay',
+  mon_bot_token:'Telegram Bot Token',
+  mon_token_set:'Token saved',
+  mon_token_unset:'No token set',
+  mon_chat_ids:'Allowed Chat IDs (comma-separated)',
+  mon_relay_mode:'Telegram Relay Mode',
+  mon_proxy:'Telegram Proxy URL (optional)',
+  mon_poll_sec:'Poll Interval (sec)',
+  mon_fail_thr:'Failure Threshold',
+  mon_recover_thr:'Recovery Threshold',
+  mon_cooldown_sec:'Cooldown (sec)',
+  mon_allow_actions:'Allow Remote Actions (/restart)',
+  mon_save:'Save Monitor Settings',
+  mon_diagnose:'Diagnose Relay',
+  mon_send_test:'Send Test Alert'
 
  }
 };

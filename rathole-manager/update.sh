@@ -200,7 +200,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /etc/ratholehub
           echo /usr/local/share/rathole
           echo /etc/rathole-agent
-          _units_glob 'ratholehub.service' 'rathole-agent.service'
+          _units_glob 'ratholehub.service' 'rathole-agent.service' 'ratholemonitor.service'
           ;;
       esac
     done
@@ -336,7 +336,9 @@ health_check(){ # $@ = naghsh-ha ; return 0 = salem, 1 = kharab
         done ;;
       hub)
         systemctl is-active --quiet ratholehub || { err "health: ratholehub faal nist."; bad=1; }
-        _check_aux_unit rathole-agent || bad=1 ;;
+        for aux in rathole-agent ratholemonitor; do
+          _check_aux_unit "$aux" || bad=1
+        done ;;
     esac
   done
   return "$bad"
@@ -359,7 +361,8 @@ restart_services(){
               systemctl restart rathole-backhaul-client 2>/dev/null || true
             fi
             systemctl list-unit-files 2>/dev/null | grep -q '^rathole-agent\.service' && systemctl restart rathole-agent 2>/dev/null || true ;;
-      hub)  systemctl restart ratholehub 2>/dev/null || true ;;
+      hub)  systemctl restart ratholehub 2>/dev/null || true
+            systemctl is-enabled --quiet ratholemonitor 2>/dev/null && systemctl restart ratholemonitor 2>/dev/null || true ;;
     esac
     patterns=()
     case "$role" in
@@ -579,6 +582,24 @@ UNIT
         install -m 644 "$HUB_DIR/hubsec.py" /opt/ratholehub/hubsec.py
         log "beroozresani shod: /opt/ratholehub/hubsec.py"
       fi
+      if [ -f "$HUB_DIR/ssh_proxy.py" ]; then
+        sed -i 's/\r$//' "$HUB_DIR/ssh_proxy.py"
+        install -m 644 "$HUB_DIR/ssh_proxy.py" /opt/ratholehub/ssh_proxy.py
+      fi
+      if [ -f "$HUB_DIR/tg_relay.py" ]; then
+        sed -i 's/\r$//' "$HUB_DIR/tg_relay.py"
+        install -m 644 "$HUB_DIR/tg_relay.py" /opt/ratholehub/tg_relay.py
+        log "beroozresani shod: /opt/ratholehub/tg_relay.py"
+      fi
+      if [ -f "$HUB_DIR/monitor.py" ]; then
+        sed -i 's/\r$//' "$HUB_DIR/monitor.py"
+        install -m 755 "$HUB_DIR/monitor.py" /opt/ratholehub/monitor.py
+        log "beroozresani shod: /opt/ratholehub/monitor.py"
+      fi
+      if [ -f "$HUB_DIR/install-monitor.sh" ]; then
+        sed -i 's/\r$//' "$HUB_DIR/install-monitor.sh"
+        install -m 755 "$HUB_DIR/install-monitor.sh" /opt/ratholehub/install-monitor.sh
+      fi
       if [ -d "$HUB_DIR/ui" ]; then
         mkdir -p /opt/ratholehub/ui
         local u
@@ -595,6 +616,10 @@ UNIT
       systemctl daemon-reload 2>/dev/null || true
       systemctl restart ratholehub 2>/dev/null && log "ratholehub restart shod." || \
         warn "restart ratholehub nshd; journalctl -u ratholehub ra bebin."
+      if systemctl is-enabled --quiet ratholemonitor 2>/dev/null; then
+        systemctl restart ratholemonitor 2>/dev/null && log "ratholemonitor restart shod." || \
+          warn "restart ratholemonitor nshd; journalctl -u ratholemonitor ra bebin."
+      fi
     else
       warn "hub.py dar baste peyda nashod (ratholehub/hub.py); update hub rad shod."
     fi

@@ -18,6 +18,7 @@ CONF_PATH = os.environ.get("RATHOLEHUB_CONF", "/etc/ratholehub/config.json")
 INV_PATH  = os.environ.get("RATHOLEHUB_INV",  "/etc/ratholehub/inventory.json")
 MOCK      = os.environ.get("RATHOLEHUB_MOCK") == "1"
 AUDIT_PATH = os.environ.get("RATHOLEHUB_AUDIT", "/etc/ratholehub/audit.log")
+MON_CONF_PATH = os.environ.get("RATHOLEMON_CONF", "/etc/ratholehub/monitor.json")
 
 # ---------- tanzimat va inventory ----------
 # RLock (na Lock) ta helper-haye atomic betavanand read-modify-write ra yekja
@@ -349,6 +350,11 @@ from hubsec import (
     totp_provisioning_uri, generate_recovery_codes, consume_recovery_code,
     last_audit_hash, build_chained_audit_entry, verify_audit_chain,
     render_prometheus_metrics,
+)
+from tg_relay import diagnose_relay, TelegramRelayManager, TelegramClient, redact_secrets
+from monitor import (
+    load_monitor_config, save_monitor_config, validate_monitor_update,
+    public_monitor_config,
 )
 
 # ---------- ejra-ye az rah dvr (Agent API ya SSH) ----------
@@ -1549,6 +1555,10 @@ class Handler(BaseHTTPRequestHandler):
             if not scope_allows(info["scope"], "admin"):
                 return self._send(403, {"error": "insufficient scope", "required": "admin"})
             return self._2fa_status()
+        if p == "/api/monitor/config":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._monitor_config_get()
         if p == "/api/audit":
             q = parse_qs(urlparse(self.path).query)
             try: lim = max(1, min(500, int(q.get("limit", ["100"])[0])))
@@ -1667,6 +1677,18 @@ class Handler(BaseHTTPRequestHandler):
             if not scope_allows(info["scope"], "admin"):
                 return self._send(403, {"error": "insufficient scope", "required": "admin"})
             return self._2fa_disable(self._body_json())
+        if p == "/api/monitor/config":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._monitor_config_save(self._body_json())
+        if p == "/api/monitor/diagnose-relay":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._monitor_diagnose_relay(self._body_json())
+        if p == "/api/monitor/test":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._monitor_test(self._body_json())
 
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/action$", p)
         if m:
@@ -1907,6 +1929,141 @@ class Handler(BaseHTTPRequestHandler):
         update_config(_clear)
         audit_log(self._user(), "hub", "2fa_disable", "totp disabled", 0)
         return self._send(200, {"ok": True})
+
+    def _monitor_service_active(self, cfg):
+        if MOCK:
+            return bool(cfg.get("enabled"))
+        try:
+            r = subprocess.run(["systemctl", "is-active", "--quiet", "ratholemonitor"], timeout=3)
+            return r.returncode == 0
+        except Exception:
+            return False
+
+    def _monitor_config_get(self):
+        cur = load_monitor_config(MON_CONF_PATH)
+        pub = public_monitor_config(cur)
+        pub["service_active"] = self._monitor_service_active(cur)
+        return self._send(200, pub)
+
+    def _monitor_config_save(self, d):
+        cur = load_monitor_config(MON_CONF_PATH)
+        new_cfg, err = validate_monitor_update(cur, d)
+        if err:
+            return self._send(400, {"error": err})
+        save_monitor_config(new_cfg, MON_CONF_PATH)
+        if not MOCK and os.path.exists("/etc/systemd/system/ratholemonitor.service"):
+            try:
+                if new_cfg.get("enabled"):
+                    subprocess.run(["systemctl", "enable", "--now", "ratholemonitor"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+                    subprocess.run(["systemctl", "restart", "ratholemonitor"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+                else:
+                    subprocess.run(["systemctl", "stop", "ratholemonitor"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            except Exception:
+                pass
+        audit_log(
+            self._user(),
+            "hub",
+            "monitor_config_save",
+            "enabled=%s relay_mode=%s chats=%d" % (
+                bool(new_cfg.get("enabled")),
+                new_cfg.get("relay_mode", "auto"),
+                len(new_cfg.get("allowed_chat_ids") or []),
+            ),
+            0,
+        )
+        pub = public_monitor_config(new_cfg)
+        pub["service_active"] = self._monitor_service_active(new_cfg)
+        return self._send(200, {"ok": True, "config": pub})
+
+    def _monitor_diagnose_relay(self, d=None):
+        d = d if isinstance(d, dict) else {}
+        cur = load_monitor_config(MON_CONF_PATH)
+        px = str(d.get("proxy") if "proxy" in d else cur.get("proxy", "") or "").strip()
+        inv = get_inventory()
+        if MOCK:
+            nodes = [s for s in inv if isinstance(s, dict) and s.get("role") == "node"]
+            ssh_nodes = [
+                {
+                    "name": str(s.get("name") or "node"),
+                    "host": str(s.get("host") or ""),
+                    "ok": True,
+                    "latency_ms": round(142.0 + i * 18.0, 1),
+                    "error": "",
+                }
+                for i, s in enumerate(nodes[:5])
+            ]
+            best = ssh_nodes[0]["name"] if ssh_nodes else None
+            px_ok = bool(px)
+            rec = "ssh_auto" if best else ("proxy" if px_ok else "none")
+            summary = (
+                "Direct failed; %d/%d foreign SSH nodes reached Telegram (fastest: %s)."
+                % (len(ssh_nodes), len(ssh_nodes), best)
+                if best else "Direct failed; no SSH nodes available in inventory."
+            )
+            return self._send(200, {
+                "direct": {"ok": False, "latency_ms": 0.0, "bot_username": "", "error": "mock blocked in Iran"},
+                "proxy": {
+                    "configured": bool(px),
+                    "proxy": redact_secrets(px, [px]),
+                    "ok": px_ok,
+                    "latency_ms": 95.0 if px_ok else 0.0,
+                    "error": "",
+                },
+                "ssh_nodes": ssh_nodes,
+                "recommended_mode": rec,
+                "best_ssh_node": best,
+                "summary": summary,
+            })
+
+        cfg = get_config()
+        res = diagnose_relay(
+            cur.get("bot_token", ""),
+            inv,
+            proxy_url=px,
+            ssh_key_path=cfg.get("ssh_key_path", ""),
+            ssh_opts=cfg.get("ssh_opts") or [],
+            api_base=cur.get("api_base", "https://api.telegram.org"),
+        )
+        return self._send(200, res)
+
+    def _monitor_test(self, d=None):
+        cur = load_monitor_config(MON_CONF_PATH)
+        tok = str(cur.get("bot_token") or "").strip()
+        chats = list(cur.get("allowed_chat_ids") or [])
+        if not tok or not chats:
+            return self._send(400, {"error": "bot_token and allowed_chat_ids must be configured first"})
+        if MOCK:
+            audit_log(self._user(), "hub", "monitor_test", "via=mock sent=%d" % len(chats), 0)
+            return self._send(200, {"ok": True, "via": "mock", "node": None, "sent": len(chats)})
+
+        cfg = get_config()
+        px = str(cur.get("proxy") or "").strip()
+        relay_mgr = TelegramRelayManager(
+            relay_mode=cur.get("relay_mode", "auto"),
+            proxy_url=px,
+            inventory_fn=get_inventory,
+            ssh_key_path=cfg.get("ssh_key_path", ""),
+            ssh_opts=cfg.get("ssh_opts") or [],
+            api_base=cur.get("api_base", "https://api.telegram.org"),
+        )
+        client = TelegramClient(tok, relay_mgr)
+        try:
+            sent = 0
+            for cid in chats:
+                client.send_message(cid, "🔔 <b>RatholeEngine Monitor</b>: test delivery from Hub succeeded.", parse_mode="HTML")
+                sent += 1
+            rt = relay_mgr.active_route()
+            audit_log(self._user(), "hub", "monitor_test", "via=%s node=%s sent=%d" % (rt.get("mode"), rt.get("node") or "-", sent), 0)
+            return self._send(200, {"ok": True, "via": rt.get("mode"), "node": rt.get("node"), "sent": sent})
+        except Exception as e:
+            err_s = redact_secrets(str(e), [tok, px])
+            audit_log(self._user(), "hub", "monitor_test", "error=" + err_s[:120], 1)
+            return self._send(502, {"ok": False, "error": err_s})
+        finally:
+            relay_mgr.close()
 
     def _metrics(self):
         inv = get_inventory()

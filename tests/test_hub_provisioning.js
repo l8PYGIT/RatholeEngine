@@ -897,3 +897,61 @@ test('doLogin prompts for TOTP when required and retries with 2FA code', async (
  assert.equal(stored.get('rh_token'), 'tok_2fa_ok');
  assert.equal(shellCalled, 1);
 });
+
+test('saveMonitorConfig parses chat IDs and diagnoseMonitorRelay renders report', async () => {
+ const c = context();
+ const els = {
+  mon_enabled: { checked: true },
+  mon_chats: { value: '-100111, 222' },
+  mon_relay: { value: 'ssh_auto' },
+  mon_proxy: { value: '' },
+  mon_poll: { value: '45' },
+  mon_fail: { value: '3' },
+  mon_rec: { value: '2' },
+  mon_cool: { value: '300' },
+  mon_actions: { checked: true },
+  mon_token: { value: '' },
+ };
+ let modalOut = null;
+ let reloaded = 0;
+ Object.assign(c, {
+  $: id => els[id] || null,
+  t: key => key,
+  toast: () => {},
+  outModal: (title, text) => { modalOut = { title, text }; },
+  loadMonitorSettings: () => { reloaded += 1; },
+  api: async (method, url, body) => {
+   if (url === 'api/monitor/config') {
+    const snap = JSON.parse(JSON.stringify(body));
+    assert.deepEqual(snap.allowed_chat_ids, [-100111, 222]);
+    assert.equal(snap.relay_mode, 'ssh_auto');
+    assert.equal('bot_token' in snap, false);
+    return { status: 200, j: { ok: true } };
+   }
+   if (url === 'api/monitor/diagnose-relay') {
+    return {
+     status: 200,
+     j: {
+      recommended_mode: 'ssh_auto',
+      best_ssh_node: 'trk01',
+      summary: 'SSH node ok',
+      direct: { ok: false, error: 'timeout' },
+      proxy: { configured: false },
+      ssh_nodes: [{ name: 'trk01', host: '198.51.100.10', ok: true, latency_ms: 142 }],
+     },
+    };
+   }
+   throw new Error('unexpected url: ' + url);
+  },
+ });
+ vm.runInContext(definition('saveMonitorConfig'), c);
+ vm.runInContext(definition('diagnoseMonitorRelay'), c);
+
+ await c.saveMonitorConfig();
+ assert.equal(reloaded, 1);
+
+ await c.diagnoseMonitorRelay();
+ assert.ok(modalOut);
+ assert.ok(modalOut.text.includes('Recommended: ssh_auto (best node: trk01)'));
+ assert.ok(modalOut.text.includes('trk01 (198.51.100.10): OK (142 ms)'));
+});

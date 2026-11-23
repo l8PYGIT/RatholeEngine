@@ -955,3 +955,53 @@ test('saveMonitorConfig parses chat IDs and diagnoseMonitorRelay renders report'
  assert.ok(modalOut.text.includes('Recommended: ssh_auto (best node: trk01)'));
  assert.ok(modalOut.text.includes('trk01 (198.51.100.10): OK (142 ms)'));
 });
+
+test('adaptiveOnNode forwards chain and openEndpointsModal escapes endpoint HTML', async () => {
+ const c = context();
+ let modalArgs = null;
+ let shownHtml = '';
+ const ran = [];
+ Object.assign(c, {
+  $: () => null,
+  t: key => key,
+  toast: () => {},
+  formModal: (title, fields, cb) => { modalArgs = { title, fields, cb }; },
+  closeModal: () => {},
+  run: (srv, act, args) => { ran.push({ srv, act, args }); },
+  modal: html => { shownHtml = html; },
+  api: async (method, url, body) => {
+   assert.equal(method, 'POST');
+   assert.equal(url, 'api/servers/trk01/action');
+   assert.equal(body.action, 'endpoints_ls');
+   return {
+    status: 200,
+    j: {
+     rc: 0,
+     out: JSON.stringify({
+      primary: '5.202.4.40:443',
+      active: '5.202.4.40:443',
+      backups: ['<script>bad</script>:443'],
+      scores: { '5.202.4.40:443': { score: 99, last_ok: true, last_ms: 14 } },
+     }),
+    },
+   };
+  },
+ });
+ vm.runInContext(definition('h'), c);
+ vm.runInContext(definition('adaptiveOnNode'), c);
+ vm.runInContext(definition('openEndpointsModal'), c);
+
+ c.adaptiveOnNode('trk01');
+ assert.ok(modalArgs.fields.some(f => f.id === 'chain'));
+ assert.ok(modalArgs.fields.some(f => f.id === 'probe_candidates'));
+ modalArgs.cb({ interval: '20', failures: '3', recoveries: '4', chain: 'ws,noise,frp', probe_candidates: '1' });
+ assert.equal(ran.length, 1);
+ assert.deepEqual(JSON.parse(JSON.stringify(ran[0].args)), {
+  interval: '20', failures: '3', recoveries: '4', chain: 'ws,noise,frp', probe_candidates: '1',
+ });
+
+ await c.openEndpointsModal('trk01');
+ assert.ok(!shownHtml.includes('<script>'));
+ assert.ok(shownHtml.includes('&lt;script&gt;bad&lt;/script&gt;:443'));
+ assert.ok(shownHtml.includes('ep_score'));
+});

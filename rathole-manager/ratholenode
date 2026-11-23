@@ -29,6 +29,7 @@ CLIENT_TOML="/etc/rathole/client.toml"
 SVC="rathole-client"
 FRP_CLI_TOML="/etc/frp/frpc.toml"
 FRP_CLI_SVC="frpc"
+ENDPOINT_SCORES_FILE="${ENDPOINT_SCORES_FILE:-/etc/rathole/endpoint-scores.json}"
 
 # TAVAJOH: c_g/c_r/c_y/log/warn/err/die/need_root/kcp_profile inja DOBARE tarif NEMISHAVAND —
 # tanha manba-eshan common.sh ast (bala source shod). ghablan har se file copy dashtand va chon
@@ -41,7 +42,7 @@ if ! declare -F rth_commit_config >/dev/null 2>&1; then
   exit 1
 fi
 
-NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN FRP_REMOTE FRP_TOKEN FRP_TRANSPORT FRP_REMOTE_PORT FRP_PROXY_PROTOCOL GRE_REMOTE GRE_TUNNEL_IP GRE_NAME GRE_FAMILY GRE_KEY GRE_MTU"
+NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN ADAPTIVE_CHAIN ADAPTIVE_PROBE_CANDIDATES ADAPTIVE_AUTO_RECOVER PRIMARY_SERVER BACKUP_SERVERS FRP_REMOTE FRP_TOKEN FRP_TRANSPORT FRP_REMOTE_PORT FRP_PROXY_PROTOCOL GRE_REMOTE GRE_TUNNEL_IP GRE_NAME GRE_FAMILY GRE_KEY GRE_MTU"
 
 load_env_file(){
   local file="$1" line key val old_key
@@ -2299,6 +2300,7 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   gre on <iran_ip> [tunnel_ip] [gre_name] [--key N] [--mtu N] | off [gre_name] | status | probe <peer_ip> [gre_name] | auto-mtu <peer_ip> [gre_name]   tunnel-e L3 GRE/IP6GRE
 
   fakeweb <start|stop|rm|status> [port] web fik sabok baraye fallback inbound TLS (pishfarz 8081)
+  endpoints <add|rm|ls|test|switch> ...   modiriat adres-haye backup ba health score
   upstream add <id> <server:port> [host]      afzoodan server Iran dovom/sevom (tunnel jda)
   upstream add-svc <id> <name> <token> <inbound> | rm-svc | rm | apply | restart | ls
   upstream kcp <id> on <ip:port> <key> [profile] | off | status   kcp baraye an server Iran
@@ -2363,17 +2365,20 @@ adaptive_probe_tcp(){
 # ba 401 rad mishavad va probe ESBHTBAHAN failover mikonad.
 adaptive_probe_ws_tls(){
   local host="$1" port="${2:-443}" path="${3:-/}" xhdr="${4:-}"
-  local tls_host="${5:-$host}" trust="${6:-}" t0 t1 ms out
-  local ssl_args=(-connect "${host}:${port}" -servername "$tls_host" -verify_hostname "$tls_host" -verify_return_error -quiet)
+  local tls_host="${5:-$host}" trust="${6:-}" t0 t1 ms out rc=0
+  local -a ssl_args=(-connect "${host}:${port}" -verify_return_error -quiet)
+  if [[ "$tls_host" =~ ^[0-9.]+$ ]] || [[ "$tls_host" == *:* ]]; then
+    ssl_args+=(-verify_ip "$tls_host")
+  else
+    ssl_args+=(-servername "$tls_host" -verify_hostname "$tls_host")
+  fi
   [ -z "$trust" ] || { [ -f "$trust" ] || { echo "tls_failed:0"; return 1; }; ssl_args+=(-CAfile "$trust"); }
   t0="$(date +%s%3N 2>/dev/null || echo 0)"
   out="$(printf 'GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n%s\r\n' \
-    "$path" "$tls_host" "$xhdr" | timeout 8 openssl s_client "${ssl_args[@]}" 2>/dev/null)" || {
-    t1="$(date +%s%3N 2>/dev/null || echo "$t0")"; ms=$(( t1 - t0 ))
-    echo "tls_failed:${ms}"; return 1
-  }
+    "$path" "$tls_host" "$xhdr" | timeout 8 openssl s_client "${ssl_args[@]}" 2>/dev/null)" || rc=$?
   t1="$(date +%s%3N 2>/dev/null || echo "$t0")"; ms=$(( t1 - t0 ))
   if echo "$out" | grep -q 'HTTP/1.1 101'; then echo "healthy:${ms}"; return 0
+  elif [ "$rc" -ne 0 ]; then echo "tls_failed:${ms}"; return 1
   else echo "ws_rejected:${ms}"; return 1; fi
 }
 
@@ -2400,45 +2405,167 @@ adaptive_probe_ws_plain(){
 # probe KCP (UDP: faqat TCP-level check rooye KCP_LOCAL port)
 adaptive_probe_kcp(){
   local kcp_local="${KCP_LOCAL:-127.0.0.1:29900}"
-  local h="${kcp_local%%:*}" p="${kcp_local##*:}"
+  local h="${kcp_local%:*}" p="${kcp_local##*:}"
+  h="${h#[}"; h="${h%]}"
   adaptive_probe_tcp "$h" "$p"
+}
+
+# probe Noise (TCP handshake be listener-e Noise)
+adaptive_probe_noise(){
+  local r="${1:-${NOISE_REMOTE:-}}"
+  if [ -z "$r" ] || [ -z "${NOISE_PUBKEY:-}" ]; then
+    echo "unconfigured:0"; return 1
+  fi
+  local h="${r%:*}" p="${r##*:}"
+  h="${h#[}"; h="${h%]}"
+  adaptive_probe_tcp "$h" "$p"
+}
+
+# probe FRP (TCP baraye tcp/websocket va UDP baraye kcp/quic)
+adaptive_probe_frp(){
+  local r="${1:-${FRP_REMOTE:-}}" tr="${2:-${FRP_TRANSPORT:-tcp}}"
+  if [ -z "$r" ] || [ -z "${FRP_TOKEN:-}" ]; then
+    echo "unconfigured:0"; return 1
+  fi
+  local h="${r%:*}" p="${r##*:}"
+  h="${h#[}"; h="${h%]}"
+  case "$tr" in
+    kcp|quic)
+      if command -v python3 >/dev/null 2>&1; then
+        RTH_PRB_H="$h" RTH_PRB_P="$p" python3 -c '
+import os, socket, time
+h, p = os.environ["RTH_PRB_H"], int(os.environ["RTH_PRB_P"])
+t0 = time.monotonic()
+s = socket.socket(socket.AF_INET6 if ":" in h else socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(0.35)
+try:
+    s.connect((h, p))
+    s.send(b"\x00")
+    try:
+        s.recv(64)
+    except socket.timeout:
+        pass
+    ms = max(0, int((time.monotonic() - t0) * 1000))
+    print(f"healthy:{ms}")
+except ConnectionRefusedError:
+    ms = max(0, int((time.monotonic() - t0) * 1000))
+    print(f"udp_refused:{ms}")
+    raise SystemExit(1)
+except OSError:
+    ms = max(0, int((time.monotonic() - t0) * 1000))
+    print(f"udp_failed:{ms}")
+    raise SystemExit(1)
+finally:
+    s.close()
+' 2>/dev/null
+        return $?
+      fi
+      echo "healthy:0"; return 0 ;;
+    *)
+      adaptive_probe_tcp "$h" "$p" ;;
+  esac
+}
+
+# probe-e yekparche baraye har carrier + endpoint-e ekhtiari
+adaptive_probe_carrier(){ # $1=carrier [$2=endpoint_override]
+  local c="${1:-ws}" ep="${2:-}"
+  case "$c" in
+    ws)
+      local r="${ep:-${SERVER:-}}"
+      [ -n "$r" ] || { echo "unconfigured:0"; return 1; }
+      local h="${r%:*}" p="${r##*:}"
+      h="${h#[}"; h="${h%]}"
+      local th="${TLS_HOSTNAME:-$h}"
+      adaptive_probe_ws_tls "$h" "$p" "${CONTROL_PATH:-/}" "" "$th" "${TLS_TRUSTED_ROOT:-}" ;;
+    plain)
+      local r="${ep:-${PLAIN_REMOTE:-${SERVER:-}}}"
+      [ -n "$r" ] || { echo "unconfigured:0"; return 1; }
+      local h="${r%:*}" p="${r##*:}"
+      h="${h#[}"; h="${h%]}"
+      adaptive_probe_ws_plain "$h" "$p" "/" ;;
+    kcp)
+      adaptive_probe_kcp ;;
+    noise)
+      adaptive_probe_noise "${ep:-${NOISE_REMOTE:-}}" ;;
+    frp)
+      adaptive_probe_frp "${ep:-${FRP_REMOTE:-}}" "${FRP_TRANSPORT:-tcp}" ;;
+    backhaul)
+      local bhr="${ep:-${BH_REMOTE_ADDR:-${BH_REMOTE:-}:443}}"
+      local bhh="${bhr%:*}" bhp="${bhr##*:}"
+      bhh="${bhh#[}"; bhh="${bhh%]}"
+      case "${BH_TRANSPORT:-wssmux}" in
+        ws|wsmux) adaptive_probe_ws_plain "$bhh" "$bhp" "/channel" "Authorization: Bearer ${BH_TOKEN}"$'\r\n' ;;
+        *)        adaptive_probe_ws_tls "$bhh" "$bhp" "/channel" "Authorization: Bearer ${BH_TOKEN}"$'\r\n' ;;
+      esac ;;
+    *) echo "healthy:0"; return 0 ;;
+  esac
+}
+
+_adaptive_state_write(){ # updates/writes $ADAPTIVE_STATE safely (zero secrets)
+  local now="$1" mode="$2" cls="$3" ms="$4" fails="$5" recs="$6" sw_ts="$7" p_recs="$8" reason="$9"
+  local chain="${ADAPTIVE_CHAIN:-ws,kcp}" ep=""
+  case "$mode" in
+    frp) ep="${FRP_REMOTE:-}" ;;
+    noise) ep="${NOISE_REMOTE:-}" ;;
+    plain) ep="${PLAIN_REMOTE:-}" ;;
+    *) ep="${SERVER:-}" ;;
+  esac
+  local tmp; tmp="$(mktemp)"
+  if command -v python3 >/dev/null 2>&1; then
+    RTH_ST_NOW="$now" RTH_ST_MODE="$mode" RTH_ST_CLS="$cls" RTH_ST_MS="$ms" \
+    RTH_ST_FA="$fails" RTH_ST_RE="$recs" RTH_ST_SW="$sw_ts" RTH_ST_PR="$p_recs" \
+    RTH_ST_RS="$reason" RTH_ST_CH="$chain" RTH_ST_EP="$ep" \
+    python3 -c '
+import json, os
+d = {
+    "time": os.environ["RTH_ST_NOW"],
+    "current": os.environ["RTH_ST_MODE"],
+    "classification": os.environ["RTH_ST_CLS"],
+    "latency_ms": int(os.environ["RTH_ST_MS"] or 0),
+    "consecutive_failures": int(os.environ["RTH_ST_FA"] or 0),
+    "consecutive_recoveries": int(os.environ["RTH_ST_RE"] or 0),
+    "last_switch_ts": int(os.environ["RTH_ST_SW"] or 0),
+    "primary_recoveries": int(os.environ["RTH_ST_PR"] or 0),
+    "last_reason": os.environ["RTH_ST_RS"],
+    "chain": os.environ["RTH_ST_CH"],
+    "active_endpoint": os.environ["RTH_ST_EP"],
+}
+print(json.dumps(d))
+' > "$tmp" 2>/dev/null || printf '{"time":"%s","current":"%s","classification":"%s","latency_ms":%s,"consecutive_failures":%d,"consecutive_recoveries":%d,"last_switch_ts":%d,"primary_recoveries":%d}\n' \
+      "$now" "$mode" "$cls" "$ms" "$fails" "$recs" "$sw_ts" "$p_recs" > "$tmp"
+  else
+    printf '{"time":"%s","current":"%s","classification":"%s","latency_ms":%s,"consecutive_failures":%d,"consecutive_recoveries":%d,"last_switch_ts":%d,"primary_recoveries":%d}\n' \
+      "$now" "$mode" "$cls" "$ms" "$fails" "$recs" "$sw_ts" "$p_recs" > "$tmp"
+  fi
+  chmod 600 "$tmp"
+  mkdir -p "$(dirname "$ADAPTIVE_STATE")"
+  mv "$tmp" "$ADAPTIVE_STATE"
 }
 
 # ejra-ye probe-ha va naveshtan state (baraye sandoz bast: mock-pezir)
 adaptive_run_probe(){
   load_env
-  # TAVAHH: control channel-e rathole hamishe '/' ast va nginx ham WS-upgrade ra rooye '/' route
-  # mikonad. pas probe HATMAN bayad be '/' beravad; taen path-e digar (masalan WS_PATH-e ghadimi)
-  # fakeweb ra mibinad (na '101') va adaptive ESBHTBAHAN failover mikonad.
-  local _srv="${SERVER:-}"; local host="${_srv%%:*}" port="${_srv##*:}" mode="${TUNNEL:-ws}"
-  local tls_host="${TLS_HOSTNAME:-$host}" tls_trust="${TLS_TRUSTED_ROOT:-}"
+  local _srv="${SERVER:-}"; local host="${_srv%%:*}" mode="${TUNNEL:-ws}"
   local cls ms result
-  local failures=0 recoveries=0 last_switch_ts=0
+  local failures=0 recoveries=0 last_switch_ts=0 primary_recoveries=0 last_reason=""
   if [ -f "$ADAPTIVE_STATE" ] && command -v python3 >/dev/null 2>&1; then
     local prev
-    prev="$(ADAPTIVE_STATE="$ADAPTIVE_STATE" python3 -c 'import json,os; d=json.load(open(os.environ["ADAPTIVE_STATE"])); print(int(d.get("consecutive_failures",0)), int(d.get("consecutive_recoveries",0)), int(d.get("last_switch_ts",0)))' 2>/dev/null || echo '0 0 0')"
-    read -r failures recoveries last_switch_ts <<<"$prev"
+    prev="$(ADAPTIVE_STATE="$ADAPTIVE_STATE" python3 -c 'import json,os; d=json.load(open(os.environ["ADAPTIVE_STATE"])); print(int(d.get("consecutive_failures",0)), int(d.get("consecutive_recoveries",0)), int(d.get("last_switch_ts",0)), int(d.get("primary_recoveries",0)))' 2>/dev/null || echo '0 0 0 0')"
+    read -r failures recoveries last_switch_ts primary_recoveries <<<"$prev"
+    last_reason="$(ADAPTIVE_STATE="$ADAPTIVE_STATE" python3 -c 'import json,os; print(str(json.load(open(os.environ["ADAPTIVE_STATE"])).get("last_reason","")))' 2>/dev/null || echo '')"
   fi
 
   case "$mode" in
-    ws)   result="$(adaptive_probe_ws_tls "$host" "$port" "${CONTROL_PATH:-/}" "" "$tls_host" "$tls_trust" 2>/dev/null)" ;;
-    plain)
-      local pr="${PLAIN_REMOTE:-$SERVER}"
-      result="$(adaptive_probe_ws_plain "${pr%%:*}" "${pr##*:}" "/" 2>/dev/null)" ;;
-    kcp)  result="$(adaptive_probe_kcp 2>/dev/null)" ;;
-    # backhaul: control channel-e client rooye '/channel' hardcode ast (na '/') va nginx haman
-    # masir ra be backhaul-server proxy mikonad — pas probe bayad be '/channel' beravad.
-    # token HATMAN lazem ast vagarna backhaul ba 401 rad mikonad. TLS/direct az transport miayad.
+    ws)    result="$(adaptive_probe_carrier ws 2>/dev/null)" ;;
+    plain) result="$(adaptive_probe_carrier plain 2>/dev/null)" ;;
+    kcp)   result="$(adaptive_probe_kcp 2>/dev/null)" ;;
     backhaul)
       local bhr="${BH_REMOTE_ADDR:-${BH_REMOTE:-$host}:443}"
-      local bhh="${bhr%%:*}" bhp="${bhr##*:}"
-      case "${BH_TRANSPORT:-wssmux}" in
-        ws|wsmux) result="$(adaptive_probe_ws_plain "$bhh" "$bhp" "/channel" "Authorization: Bearer ${BH_TOKEN}"$'\r\n' 2>/dev/null)" ;;
-        *) result="$(adaptive_probe_ws_tls "$bhh" "$bhp" "/channel" "Authorization: Bearer ${BH_TOKEN}"$'\r\n' 2>/dev/null)" ;;
-      esac ;;
+      result="$(adaptive_probe_carrier backhaul "$bhr" 2>/dev/null)" ;;
+    noise) result="$(adaptive_probe_noise 2>/dev/null)" ;;
     frp)
       if systemctl is-active --quiet "$FRP_CLI_SVC" 2>/dev/null; then
-        result="healthy:0"
+        result="$(adaptive_probe_frp 2>/dev/null)"
       else
         result="dead:0"
       fi ;;
@@ -2446,6 +2573,7 @@ adaptive_run_probe(){
   esac
 
   cls="${result%%:*}"; ms="${result##*:}"
+  [[ "$ms" =~ ^[0-9]+$ ]] || ms=0
   local now; now="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo '')"
   if [ "$cls" = "healthy" ]; then
     failures=0
@@ -2453,15 +2581,11 @@ adaptive_run_probe(){
   else
     failures=$(( failures + 1 ))
     recoveries=0
+    primary_recoveries=0
   fi
 
   if [ "${ADAPTIVE_WRITE_STATE:-1}" = 1 ]; then
-    local tmp; tmp="$(mktemp)"
-    printf '{"time":"%s","current":"%s","classification":"%s","latency_ms":%s,"consecutive_failures":%d,"consecutive_recoveries":%d,"last_switch_ts":%d}\n' \
-      "$now" "$mode" "$cls" "$ms" "$failures" "$recoveries" "$last_switch_ts" > "$tmp"
-    chmod 600 "$tmp"
-    mkdir -p "$(dirname "$ADAPTIVE_STATE")"
-    mv "$tmp" "$ADAPTIVE_STATE"
+    _adaptive_state_write "$now" "$mode" "$cls" "$ms" "$failures" "$recoveries" "$last_switch_ts" "$primary_recoveries" "$last_reason"
   fi
   echo "$cls"
 }
@@ -2487,6 +2611,79 @@ adaptive_plain_allowed(){
   [ "$allow" = "1" ] && echo "yes" || echo "no"
 }
 
+adaptive_valid_chain(){
+  local csv="${1:-}" tok seen="," cnt=0
+  [[ "$csv" =~ ^(ws|noise|kcp|frp|plain)(,(ws|noise|kcp|frp|plain)){0,4}$ ]] || return 1
+  local -a parts=()
+  IFS=, read -r -a parts <<<"$csv"
+  for tok in "${parts[@]}"; do
+    case "$seen" in *",$tok,"*) return 1 ;; esac
+    seen="${seen}${tok},"
+    cnt=$((cnt + 1))
+  done
+  [ "$cnt" -ge 1 ] && [ "$cnt" -le 5 ]
+}
+
+adaptive_carrier_ready(){ # $1=carrier
+  case "${1:-}" in
+    ws)    [ -n "${SERVER:-}" ] ;;
+    kcp)   [ -n "${KCP_REMOTE:-}${KCP_LOCAL:-}" ] && systemctl is-active --quiet rathole-kcp-client 2>/dev/null ;;
+    noise) [ -n "${NOISE_REMOTE:-}" ] && [ -n "${NOISE_PUBKEY:-}" ] ;;
+    frp)   [ -n "${FRP_REMOTE:-}" ] && [ -n "${FRP_TOKEN:-}" ] && { command -v frpc >/dev/null 2>&1 || [ -f "$FRP_CLI_TOML" ]; } ;;
+    plain) [ "$(adaptive_plain_allowed)" = "yes" ] && [ -n "${PLAIN_REMOTE:-}" ] ;;
+    *)     return 1 ;;
+  esac
+}
+
+adaptive_pick_next_carrier(){ # $1=cur $2=chain_csv $3=probe_cands(0|1)
+  local cur="${1:-ws}" csv="${2:-ws,kcp}" probe_cands="${3:-0}"
+  local -a arr=() cands=()
+  local tok
+  IFS=, read -r -a arr <<<"$csv"
+  local idx=-1 i=0 n="${#arr[@]}"
+  while [ "$i" -lt "$n" ]; do
+    [ "${arr[$i]}" = "$cur" ] && { idx=$i; break; }
+    i=$((i + 1))
+  done
+  if [ "$idx" -ge 0 ]; then
+    i=$((idx + 1))
+    while [ "$i" -lt "$n" ]; do cands+=("${arr[$i]}"); i=$((i + 1)); done
+    i=0
+    while [ "$i" -lt "$idx" ]; do cands+=("${arr[$i]}"); i=$((i + 1)); done
+  else
+    for tok in "${arr[@]}"; do
+      [ "$tok" != "$cur" ] && cands+=("$tok")
+    done
+  fi
+  local c res
+  for c in "${cands[@]}"; do
+    adaptive_carrier_ready "$c" || continue
+    if [ "$probe_cands" = "1" ]; then
+      res="$(adaptive_probe_carrier "$c" 2>/dev/null || echo 'fail:0')"
+      [ "${res%%:*}" = "healthy" ] || continue
+    fi
+    echo "$c"
+    return 0
+  done
+  return 1
+}
+
+adaptive_switch_carrier(){ # $1=target_carrier
+  local target="$1"
+  if [ "$target" = "frp" ]; then
+    env_set TUNNEL frp
+    load_env
+    gen_frp_client_toml "${FRP_REMOTE%:*}" "${FRP_REMOTE##*:}" "$FRP_TOKEN" "${FRP_TRANSPORT:-tcp}" "${FRP_REMOTE_PORT:-}" || return 1
+    systemctl disable --now "$SVC" 2>/dev/null || true
+    systemctl enable "$FRP_CLI_SVC" >/dev/null 2>&1 || true
+    systemctl restart "$FRP_CLI_SVC" 2>/dev/null && log "$FRP_CLI_SVC start shod." || { warn "start-e $FRP_CLI_SVC nashod."; return 1; }
+    return 0
+  fi
+  env_set TUNNEL "$target"
+  gen_client || return 1
+  restart_svc || return 1
+}
+
 # load tanzimat adaptive (parser-e amn bedoon source/eval)
 adaptive_load_env(){
   local line key val
@@ -2497,14 +2694,26 @@ adaptive_load_env(){
       [[ "$line" == *=* ]] || { warn "khat-e namotabar dar $ADAPTIVE_ENV nadide gerefte shod."; continue; }
       key="${line%%=*}"; val="${line#*=}"
       case "$key" in
-        ADAPTIVE_ENABLED|ADAPTIVE_INTERVAL|ADAPTIVE_FAILURES|ADAPTIVE_RECOVERIES|ADAPTIVE_COOLDOWN|ALLOW_INSECURE) ;;
+        ADAPTIVE_ENABLED|ADAPTIVE_INTERVAL|ADAPTIVE_FAILURES|ADAPTIVE_RECOVERIES|ADAPTIVE_COOLDOWN|ALLOW_INSECURE)
+          if [[ "$val" =~ ^[0-9]+$ ]]; then
+            printf -v "$key" '%s' "$val"
+          else
+            warn "meghdar-e gheyre-adadi dar $ADAPTIVE_ENV baraye $key nadide gerefte shod."
+          fi ;;
+        ADAPTIVE_PROBE_CANDIDATES|ADAPTIVE_AUTO_RECOVER)
+          if [[ "$val" =~ ^[01]$ ]]; then
+            printf -v "$key" '%s' "$val"
+          else
+            warn "meghdar-e namotabar dar $ADAPTIVE_ENV baraye $key nadide gerefte shod."
+          fi ;;
+        ADAPTIVE_CHAIN)
+          if adaptive_valid_chain "$val"; then
+            ADAPTIVE_CHAIN="$val"
+          else
+            warn "chain-e namotabar dar $ADAPTIVE_ENV nadide gerefte shod."
+          fi ;;
         *) warn "kelid-e gheyre-mojaz dar $ADAPTIVE_ENV nadide gerefte shod: $key"; continue ;;
       esac
-      if [[ "$val" =~ ^[0-9]+$ ]]; then
-        printf -v "$key" '%s' "$val"
-      else
-        warn "meghdar-e gheyre-adadi dar $ADAPTIVE_ENV baraye $key nadide gerefte shod."
-      fi
     done < "$ADAPTIVE_ENV"
   fi
   ADAPTIVE_ENABLED="${ADAPTIVE_ENABLED:-0}"
@@ -2513,6 +2722,29 @@ adaptive_load_env(){
   ADAPTIVE_RECOVERIES="${ADAPTIVE_RECOVERIES:-5}"
   ADAPTIVE_COOLDOWN="${ADAPTIVE_COOLDOWN:-300}"
   ALLOW_INSECURE="${ALLOW_INSECURE:-0}"
+  ADAPTIVE_CHAIN="${ADAPTIVE_CHAIN:-ws,kcp}"
+  ADAPTIVE_PROBE_CANDIDATES="${ADAPTIVE_PROBE_CANDIDATES:-0}"
+  ADAPTIVE_AUTO_RECOVER="${ADAPTIVE_AUTO_RECOVER:-1}"
+}
+
+_adaptive_save_switch_state(){ # $1=now_ts $2=mode $3=reason $4=primary_recoveries
+  local sw_ts="$1" mode="$2" reason="$3" p_recs="$4"
+  if [ -f "$ADAPTIVE_STATE" ] && command -v python3 >/dev/null 2>&1; then
+    RTH_ST_P="$ADAPTIVE_STATE" RTH_ST_SW="$sw_ts" RTH_ST_M="$mode" RTH_ST_R="$reason" RTH_ST_PR="$p_recs" RTH_ST_EP="${SERVER:-}" python3 -c '
+import json, os
+p = os.environ["RTH_ST_P"]
+d = json.load(open(p, encoding="utf-8"))
+d["last_switch_ts"] = int(os.environ["RTH_ST_SW"])
+d["current"] = os.environ["RTH_ST_M"]
+d["last_reason"] = os.environ["RTH_ST_R"]
+d["primary_recoveries"] = int(os.environ["RTH_ST_PR"])
+d["consecutive_failures"] = 0
+if os.environ.get("RTH_ST_EP"):
+    d["active_endpoint"] = os.environ["RTH_ST_EP"]
+with open(p, "w", encoding="utf-8") as f:
+    json.dump(d, f)
+' 2>/dev/null || true
+  fi
 }
 
 # dastoor adaptive
@@ -2522,21 +2754,32 @@ cmd_adaptive(){
     on)
       need_root
       local interval="${ADAPTIVE_INTERVAL:-30}" failures="${ADAPTIVE_FAILURES:-3}" recoveries="${ADAPTIVE_RECOVERIES:-5}"
+      local cooldown="${ADAPTIVE_COOLDOWN:-300}" chain="${ADAPTIVE_CHAIN:-ws,kcp}"
+      local probe_cands="${ADAPTIVE_PROBE_CANDIDATES:-0}" allow_insec="${ALLOW_INSECURE:-0}" auto_rec="${ADAPTIVE_AUTO_RECOVER:-1}"
       while [ $# -gt 0 ]; do case "$1" in
         --interval)  interval="$2"; shift 2;;
         --failures)  failures="$2"; shift 2;;
         --recoveries) recoveries="$2"; shift 2;;
+        --cooldown)  cooldown="$2"; shift 2;;
+        --chain)     chain="$2"; shift 2;;
+        --probe-candidates) probe_cands=1; shift;;
+        --allow-insecure) allow_insec=1; shift;;
+        --no-auto-recover) auto_rec=0; shift;;
         *) shift;;
       esac; done
       echo "$interval" | grep -qE '^[0-9]+$' || die "interval bayad adad bashad."
       echo "$failures" | grep -qE '^[0-9]+$' || die "failures bayad adad bashad."
       echo "$recoveries" | grep -qE '^[0-9]+$' || die "recoveries bayad adad bashad."
+      echo "$cooldown" | grep -qE '^[0-9]+$' || die "cooldown bayad adad bashad."
+      adaptive_valid_chain "$chain" || die "chain namotabar ast (mojaz: ws,noise,kcp,frp,plain)."
       mkdir -p "$(dirname "$ADAPTIVE_ENV")"
-      printf 'ADAPTIVE_ENABLED=1\nADAPTIVE_INTERVAL=%s\nADAPTIVE_FAILURES=%s\nADAPTIVE_RECOVERIES=%s\nADAPTIVE_COOLDOWN=300\nALLOW_INSECURE=0\n' \
-        "$interval" "$failures" "$recoveries" > "$ADAPTIVE_ENV"
+      {
+        printf 'ADAPTIVE_ENABLED=1\nADAPTIVE_INTERVAL=%s\nADAPTIVE_FAILURES=%s\nADAPTIVE_RECOVERIES=%s\nADAPTIVE_COOLDOWN=%s\nALLOW_INSECURE=%s\nADAPTIVE_CHAIN=%s\nADAPTIVE_PROBE_CANDIDATES=%s\nADAPTIVE_AUTO_RECOVER=%s\n' \
+          "$interval" "$failures" "$recoveries" "$cooldown" "$allow_insec" "$chain" "$probe_cands" "$auto_rec"
+      } > "$ADAPTIVE_ENV"
       chmod 600 "$ADAPTIVE_ENV"
       # systemd timer (agar mojood bashad)
-      if command -v systemctl >/dev/null 2>&1; then
+      if command -v systemctl >/dev/null 2>&1 && [ -w /etc/systemd/system ]; then
         cat > /etc/systemd/system/rathole-adaptive.service <<UNIT
 [Unit]
 Description=rathole adaptive carrier probe
@@ -2557,7 +2800,7 @@ TIMER
         systemctl daemon-reload 2>/dev/null || true
         systemctl enable --now rathole-adaptive.timer 2>/dev/null || true
       fi
-      log "adaptive on shod (interval=${interval}s, failures=${failures}, recoveries=${recoveries})."
+      log "adaptive on shod (interval=${interval}s, failures=${failures}, recoveries=${recoveries}, chain=${chain})."
       ;;
     off)
       need_root
@@ -2572,9 +2815,9 @@ TIMER
     status)
       adaptive_load_env
       if [ "$ADAPTIVE_ENABLED" = "1" ]; then
-        log "adaptive: ROSHAN (interval=${ADAPTIVE_INTERVAL}s, failures=${ADAPTIVE_FAILURES}, recoveries=${ADAPTIVE_RECOVERIES})"
+        log "adaptive: ROSHAN (interval=${ADAPTIVE_INTERVAL}s, failures=${ADAPTIVE_FAILURES}, recoveries=${ADAPTIVE_RECOVERIES}, chain=${ADAPTIVE_CHAIN}, probe_cands=${ADAPTIVE_PROBE_CANDIDATES}, auto_recover=${ADAPTIVE_AUTO_RECOVER})"
       else
-        log "adaptive: KHAMOOSH"
+        log "adaptive: KHAMOOSH (chain=${ADAPTIVE_CHAIN})"
       fi
       if [ -f "$ADAPTIVE_STATE" ]; then
         local cls ms fails
@@ -2585,8 +2828,40 @@ TIMER
       fi
       ;;
     test)
-      local as_json=0; [ "${1:-}" = "--json" ] && as_json=1
-      load_env
+      local as_json=0 test_all=0
+      while [ $# -gt 0 ]; do case "$1" in
+        --json) as_json=1; shift ;;
+        --all)  test_all=1; shift ;;
+        *) shift ;;
+      esac; done
+      load_env; adaptive_load_env
+      if [ "$test_all" -eq 1 ]; then
+        local carriers_json="{}" c cres ccls cms
+        local -a ch_arr=()
+        IFS=, read -r -a ch_arr <<<"$ADAPTIVE_CHAIN"
+        for c in "${ch_arr[@]}"; do
+          if ! adaptive_carrier_ready "$c"; then
+            cres="not_ready:0"
+          else
+            cres="$(adaptive_probe_carrier "$c" 2>/dev/null || echo 'fail:0')"
+          fi
+          ccls="${cres%%:*}"; cms="${cres##*:}"; [[ "$cms" =~ ^[0-9]+$ ]] || cms=0
+          if command -v jq >/dev/null 2>&1; then
+            carriers_json="$(jq -c --arg k "$c" --arg cl "$ccls" --argjson ms "$cms" '.[$k] = {classification:$cl, latency_ms:$ms}' <<<"$carriers_json")"
+          fi
+        done
+        local ep_json="{}"
+        if endpoints_probe_all >/dev/null 2>&1 && [ -f "$ENDPOINT_SCORES_FILE" ]; then
+          ep_json="$(cat "$ENDPOINT_SCORES_FILE")"
+        fi
+        if [ "$as_json" -eq 1 ] && command -v jq >/dev/null 2>&1; then
+          jq -n --arg cur "${TUNNEL:-ws}" --arg ch "$ADAPTIVE_CHAIN" --argjson car "$carriers_json" --argjson ep "$ep_json" \
+            '{current:$cur, chain:$ch, carriers:$car, endpoints:$ep}'
+        else
+          echo "current=${TUNNEL:-ws} chain=$ADAPTIVE_CHAIN carriers=$carriers_json"
+        fi
+        return 0
+      fi
       adaptive_run_probe 2>/dev/null || true
       if [ "$as_json" -eq 1 ] && [ -f "$ADAPTIVE_STATE" ]; then
         cat "$ADAPTIVE_STATE"
@@ -2601,7 +2876,7 @@ print('consecutive_failures:', d.get('consecutive_failures','?'))
       fi
       ;;
     run)
-      # ejra-ye controller: switch-e carrier agar lazem bashad
+      # ejra-ye controller: switch-e carrier ya endpoint agar lazem bashad
       need_root; load_env; adaptive_load_env
       [ "$ADAPTIVE_ENABLED" = "1" ] || { warn "adaptive khamoosh ast."; exit 0; }
       local alock="${ADAPTIVE_LOCK:-/run/rathole-adaptive.lock}"
@@ -2610,50 +2885,359 @@ print('consecutive_failures:', d.get('consecutive_failures','?'))
       (
         flock -n 9 || { warn "yek controller-e digar dar hal ejrast."; exit 0; }
         cls="$(adaptive_run_probe 2>/dev/null || echo 'probe_failed')"
-        local state_vals="0 0 0" recoveries=0 last_switch_ts=0 now_ts cooldown_rem=0
+        local state_vals="0 0 0 0" recoveries=0 last_switch_ts=0 primary_recoveries=0 now_ts cooldown_rem=0
         if [ -f "$ADAPTIVE_STATE" ] && command -v python3 >/dev/null 2>&1; then
-          state_vals="$(ADAPTIVE_STATE="$ADAPTIVE_STATE" python3 -c 'import json,os; d=json.load(open(os.environ["ADAPTIVE_STATE"])); print(int(d.get("consecutive_failures",0)), int(d.get("consecutive_recoveries",0)), int(d.get("last_switch_ts",0)))' 2>/dev/null || echo '0 0 0')"
+          state_vals="$(ADAPTIVE_STATE="$ADAPTIVE_STATE" python3 -c 'import json,os; d=json.load(open(os.environ["ADAPTIVE_STATE"])); print(int(d.get("consecutive_failures",0)), int(d.get("consecutive_recoveries",0)), int(d.get("last_switch_ts",0)), int(d.get("primary_recoveries",0)))' 2>/dev/null || echo '0 0 0 0')"
         fi
-        read -r failures recoveries last_switch_ts <<<"$state_vals"
+        read -r failures recoveries last_switch_ts primary_recoveries <<<"$state_vals"
         now_ts="$(date +%s 2>/dev/null || echo 0)"
         if [ "$last_switch_ts" -gt 0 ] && [ "$now_ts" -ge "$last_switch_ts" ]; then
           local elapsed=$(( now_ts - last_switch_ts ))
           [ "$elapsed" -lt "$ADAPTIVE_COOLDOWN" ] && cooldown_rem=$(( ADAPTIVE_COOLDOWN - elapsed ))
         fi
         switch="$(adaptive_should_switch "$failures" "$ADAPTIVE_FAILURES" "$recoveries" "$cooldown_rem")"
+        local cur="${TUNNEL:-ws}"
         if [ "$switch" = "yes" ]; then
-          local cur="${TUNNEL:-ws}" next
-          case "$cur" in
-            ws)  next=kcp
-                 if ! systemctl is-active --quiet rathole-kcp-client 2>/dev/null; then
-                   warn "adaptive: rathole-kcp-client faal nist; switch be 'kcp' anjam nashod."
-                   exit 0
-                 fi ;;
-            kcp) next=ws ;;
-            *)
-              warn "adaptive: carrier '$cur' dast-saz ya kanooni ast; switch khodkar anjam nmishavad."
-              exit 0
-              ;;
-          esac
-          warn "adaptive: switch az '$cur' be '$next' (failures=$failures)"
-          env_set TUNNEL "$next"
-          gen_client
-          restart_svc
-          if [ -f "$ADAPTIVE_STATE" ] && command -v python3 >/dev/null 2>&1; then
-            ADAPTIVE_STATE="$ADAPTIVE_STATE" ADAPTIVE_SWITCH_TS="$now_ts" python3 -c '
+          local next=""
+          next="$(adaptive_pick_next_carrier "$cur" "$ADAPTIVE_CHAIN" "$ADAPTIVE_PROBE_CANDIDATES" 2>/dev/null || true)"
+          if [ -n "$next" ]; then
+            warn "adaptive: switch az '$cur' be '$next' (failures=$failures)"
+            if adaptive_switch_carrier "$next"; then
+              _adaptive_save_switch_state "$now_ts" "$next" "carrier_failover" 0
+            fi
+          elif [ -n "${BACKUP_SERVERS:-}" ]; then
+            if adaptive_failover_endpoint; then
+              load_env
+              _adaptive_save_switch_state "$now_ts" "${TUNNEL:-ws}" "endpoint_failover" 0
+            else
+              warn "adaptive: hich carrier ya backup endpoint-e salemi baraye failover peyda nashod."
+            fi
+          else
+            warn "adaptive: hich carrier-e jaygozin baraye switch amade nist ($ADAPTIVE_CHAIN)."
+            exit 0
+          fi
+        elif [ "$cls" = "healthy" ] && [ "$ADAPTIVE_AUTO_RECOVER" = "1" ] && [ "$cooldown_rem" -eq 0 ]; then
+          local primary_c="${ADAPTIVE_CHAIN%%,*}" pr_res=""
+          if [ -n "$primary_c" ] && [ "$cur" != "$primary_c" ] && adaptive_carrier_ready "$primary_c"; then
+            pr_res="$(adaptive_probe_carrier "$primary_c" 2>/dev/null || echo 'fail:0')"
+            if [ "${pr_res%%:*}" = "healthy" ]; then
+              primary_recoveries=$((primary_recoveries + 1))
+              if [ "$primary_recoveries" -ge "$ADAPTIVE_RECOVERIES" ]; then
+                log "adaptive: primary carrier '$primary_c' salem shod; bazgasht."
+                if adaptive_switch_carrier "$primary_c"; then
+                  _adaptive_save_switch_state "$now_ts" "$primary_c" "primary_carrier_recovered" 0
+                fi
+              elif [ -f "$ADAPTIVE_STATE" ] && command -v python3 >/dev/null 2>&1; then
+                RTH_ST_P="$ADAPTIVE_STATE" RTH_ST_PR="$primary_recoveries" python3 -c '
 import json, os
-p = os.environ["ADAPTIVE_STATE"]
+p = os.environ["RTH_ST_P"]
 d = json.load(open(p, encoding="utf-8"))
-d["last_switch_ts"] = int(os.environ["ADAPTIVE_SWITCH_TS"])
-d["consecutive_failures"] = 0
+d["primary_recoveries"] = int(os.environ["RTH_ST_PR"])
 with open(p, "w", encoding="utf-8") as f:
     json.dump(d, f)
 ' 2>/dev/null || true
+              fi
+            fi
+          elif [ -n "${PRIMARY_SERVER:-}" ] && [ "${SERVER:-}" != "$PRIMARY_SERVER" ]; then
+            pr_res="$(adaptive_probe_carrier "$cur" "$PRIMARY_SERVER" 2>/dev/null || echo 'fail:0')"
+            if [ "${pr_res%%:*}" = "healthy" ]; then
+              primary_recoveries=$((primary_recoveries + 1))
+              if [ "$primary_recoveries" -ge "$ADAPTIVE_RECOVERIES" ]; then
+                log "adaptive: primary endpoint '$PRIMARY_SERVER' salem shod; bazgasht."
+                if endpoints_switch_to "$PRIMARY_SERVER"; then
+                  load_env
+                  _adaptive_save_switch_state "$now_ts" "$cur" "primary_endpoint_recovered" 0
+                fi
+              elif [ -f "$ADAPTIVE_STATE" ] && command -v python3 >/dev/null 2>&1; then
+                RTH_ST_P="$ADAPTIVE_STATE" RTH_ST_PR="$primary_recoveries" python3 -c '
+import json, os
+p = os.environ["RTH_ST_P"]
+d = json.load(open(p, encoding="utf-8"))
+d["primary_recoveries"] = int(os.environ["RTH_ST_PR"])
+with open(p, "w", encoding="utf-8") as f:
+    json.dump(d, f)
+' 2>/dev/null || true
+              fi
+            fi
           fi
         fi
       ) 9>"$alock" || true
       ;;
     *) die "estefade: ratholenode adaptive on|off|status|test|run" ;;
+  esac
+}
+
+# ============ endpoints: backup address pool ba EWMA health score ============
+valid_endpoint_addr(){ # $1=host:port
+  local ep="${1:-}"
+  [[ "$ep" == *:* ]] || return 1
+  local h="${ep%:*}" p="${ep##*:}"
+  [[ "$p" =~ ^[0-9]{1,5}$ ]] || return 1
+  [ "$p" -ge 1 ] && [ "$p" -le 65535 ] || return 1
+  h="${h#[}"; h="${h%]}"
+  [ -n "$h" ] || return 1
+  [[ "$h" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$ ]] || [[ "$h" =~ ^[0-9A-Fa-f:.]{2,45}$ ]]
+}
+
+adaptive_score_update(){ # $1=addr $2=ok(0|1) $3=ms
+  local addr="$1" ok="$2" ms="${3:-0}"
+  command -v python3 >/dev/null 2>&1 || return 0
+  mkdir -p "$(dirname "$ENDPOINT_SCORES_FILE")" 2>/dev/null || true
+  RTH_SC_FILE="$ENDPOINT_SCORES_FILE" RTH_SC_ADDR="$addr" RTH_SC_OK="$ok" RTH_SC_MS="$ms" python3 -c '
+import json, os, time
+path = os.environ["RTH_SC_FILE"]
+addr = os.environ["RTH_SC_ADDR"]
+ok = os.environ["RTH_SC_OK"] == "1"
+try:
+    ms = max(0, int(os.environ.get("RTH_SC_MS", "0") or 0))
+except ValueError:
+    ms = 0
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            data = raw
+    except Exception:
+        data = {}
+cur = data.get(addr) if isinstance(data.get(addr), dict) else {}
+sample = (70.0 + max(0.0, 30.0 - min(float(ms), 600.0) / 20.0)) if ok else 0.0
+prev = cur.get("score")
+score = round(0.5 * sample + 0.5 * float(prev), 1) if prev is not None else round(sample, 1)
+data[addr] = {
+    "score": score,
+    "last_ok": ok,
+    "last_ms": ms,
+    "ok_count": int(cur.get("ok_count", 0)) + (1 if ok else 0),
+    "fail_count": int(cur.get("fail_count", 0)) + (0 if ok else 1),
+    "consecutive_fails": 0 if ok else int(cur.get("consecutive_fails", 0)) + 1,
+    "updated_at": int(time.time()),
+}
+tmp = f"{path}.tmp.{os.getpid()}"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+os.chmod(tmp, 0o600)
+os.replace(tmp, path)
+' 2>/dev/null || return 0
+}
+
+endpoints_all_list(){
+  local -a out=() bak_arr=()
+  local seen="|" x
+  for x in "${PRIMARY_SERVER:-}" "${SERVER:-}"; do
+    [ -n "$x" ] || continue
+    case "$seen" in *"|$x|"*) continue ;; esac
+    seen="${seen}${x}|"; out+=("$x")
+  done
+  if [ -n "${BACKUP_SERVERS:-}" ]; then
+    IFS=, read -r -a bak_arr <<<"${BACKUP_SERVERS:-}"
+    for x in "${bak_arr[@]}"; do
+      [ -n "$x" ] || continue
+      case "$seen" in *"|$x|"*) continue ;; esac
+      seen="${seen}${x}|"; out+=("$x")
+    done
+  fi
+  [ "${#out[@]}" -gt 0 ] && printf '%s\n' "${out[@]}"
+}
+
+endpoints_probe_target(){ # $1=endpoint
+  local ep="$1" mode="${TUNNEL:-ws}"
+  local srv_p="${SERVER##*:}" ep_h="${ep%:*}" ep_p="${ep##*:}"
+  if [ "$ep" = "${SERVER:-}" ]; then
+    case "$mode" in
+      noise) echo "${NOISE_REMOTE:-$ep}"; return 0 ;;
+      frp)   echo "${FRP_REMOTE:-$ep}"; return 0 ;;
+      plain) echo "${PLAIN_REMOTE:-$ep}"; return 0 ;;
+    esac
+  fi
+  if [ "$ep_p" = "$srv_p" ]; then
+    case "$mode" in
+      noise) [ -n "${NOISE_REMOTE:-}" ] && { echo "${ep_h}:${NOISE_REMOTE##*:}"; return 0; } ;;
+      frp)   [ -n "${FRP_REMOTE:-}" ] && { echo "${ep_h}:${FRP_REMOTE##*:}"; return 0; } ;;
+      plain) [ -n "${PLAIN_REMOTE:-}" ] && { echo "${ep_h}:${PLAIN_REMOTE##*:}"; return 0; } ;;
+    esac
+  fi
+  echo "$ep"
+}
+
+endpoints_probe_all(){
+  local mode="${TUNNEL:-ws}" ep target res cls ms ok
+  while IFS= read -r ep; do
+    [ -n "$ep" ] || continue
+    target="$(endpoints_probe_target "$ep")"
+    res="$(adaptive_probe_carrier "$mode" "$target" 2>/dev/null || echo 'fail:0')"
+    cls="${res%%:*}"; ms="${res##*:}"; [[ "$ms" =~ ^[0-9]+$ ]] || ms=0
+    ok=0; [ "$cls" = "healthy" ] && ok=1
+    adaptive_score_update "$ep" "$ok" "$ms"
+  done < <(endpoints_all_list)
+}
+
+endpoints_switch_to(){ # $1=target_addr
+  local target="${1:-}"
+  load_env
+  valid_endpoint_addr "$target" || die "adres endpoint namotabar ast: $target"
+  local old_srv="${SERVER:-}"
+  if [ -z "${PRIMARY_SERVER:-}" ] && [ -n "$old_srv" ]; then
+    env_set PRIMARY_SERVER "$old_srv"
+    PRIMARY_SERVER="$old_srv"
+  fi
+  env_set SERVER "$target"
+  local old_h="${old_srv%:*}" new_h="${target%:*}"
+  if [ -n "$old_h" ] && [ -n "$new_h" ] && [ "$old_h" != "$new_h" ]; then
+    if [ -n "${NOISE_REMOTE:-}" ] && [ "${NOISE_REMOTE%:*}" = "$old_h" ]; then
+      env_set NOISE_REMOTE "${new_h}:${NOISE_REMOTE##*:}"
+    fi
+    if [ -n "${PLAIN_REMOTE:-}" ] && [ "${PLAIN_REMOTE%:*}" = "$old_h" ]; then
+      env_set PLAIN_REMOTE "${new_h}:${PLAIN_REMOTE##*:}"
+    fi
+    if [ -n "${FRP_REMOTE:-}" ] && [ "${FRP_REMOTE%:*}" = "$old_h" ]; then
+      env_set FRP_REMOTE "${new_h}:${FRP_REMOTE##*:}"
+    fi
+  fi
+  load_env
+  if [ "${TUNNEL:-ws}" = "frp" ]; then
+    gen_frp_client_toml "${FRP_REMOTE%:*}" "${FRP_REMOTE##*:}" "$FRP_TOKEN" "${FRP_TRANSPORT:-tcp}" "${FRP_REMOTE_PORT:-}" || return 1
+    systemctl restart "$FRP_CLI_SVC" 2>/dev/null || { warn "restart $FRP_CLI_SVC nashod."; return 1; }
+  else
+    gen_client || return 1
+    restart_svc || return 1
+  fi
+  log "endpoint faal be $target taghir yaft."
+}
+
+adaptive_failover_endpoint(){
+  endpoints_probe_all >/dev/null 2>&1 || true
+  [ -f "$ENDPOINT_SCORES_FILE" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  local best="" cands
+  cands="$(endpoints_all_list | tr '\n' ',')"
+  best="$(RTH_SC_FILE="$ENDPOINT_SCORES_FILE" RTH_SC_CUR="${SERVER:-}" RTH_SC_LIST="$cands" python3 -c '
+import json, os
+data = json.load(open(os.environ["RTH_SC_FILE"], encoding="utf-8"))
+cur = os.environ.get("RTH_SC_CUR", "")
+cands = [x for x in os.environ.get("RTH_SC_LIST", "").split(",") if x and x != cur]
+best_k, best_key = "", None
+for k in cands:
+    rec = data.get(k)
+    if not isinstance(rec, dict) or not rec.get("last_ok"):
+        continue
+    key = (float(rec.get("score", 0.0)), -int(rec.get("last_ms", 999999)))
+    if best_key is None or key > best_key:
+        best_key = key
+        best_k = k
+print(best_k)
+' 2>/dev/null || true)"
+  [ -n "$best" ] || return 1
+  endpoints_switch_to "$best"
+}
+
+cmd_endpoints(){
+  local sub="${1:-ls}"; shift || true
+  case "$sub" in
+    add)
+      need_root; load_env
+      local addr="${1:-}"
+      valid_endpoint_addr "$addr" || die "adres backup bayad host:port motabar bashad (mesl 5.202.4.41:443)."
+      [ "$addr" != "${SERVER:-}" ] || die "endpoint $addr dar hal-e hazer SERVER-e asli ast."
+      local -a cur_arr=() bak_arr=()
+      local tok
+      if [ -n "${BACKUP_SERVERS:-}" ]; then
+        IFS=, read -r -a bak_arr <<<"${BACKUP_SERVERS:-}"
+        for tok in "${bak_arr[@]}"; do
+          [ -n "$tok" ] || continue
+          [ "$tok" = "$addr" ] && die "endpoint $addr ghablan dar BACKUP_SERVERS sabt shode ast."
+          cur_arr+=("$tok")
+        done
+      fi
+      [ "${#cur_arr[@]}" -lt 8 ] || die "hadaksar 8 backup endpoint mojaz ast."
+      [ -n "${PRIMARY_SERVER:-}" ] || [ -z "${SERVER:-}" ] || env_set PRIMARY_SERVER "$SERVER"
+      cur_arr+=("$addr")
+      local joined; joined="$(IFS=,; echo "${cur_arr[*]}")"
+      env_set BACKUP_SERVERS "$joined"
+      log "backup endpoint ezafe shod: $addr"
+      ;;
+    rm)
+      need_root; load_env
+      local addr="${1:-}"
+      [ -n "$addr" ] || die "estefade: ratholenode endpoints rm <host:port>"
+      local -a kept=() bak_arr=()
+      local found=0 tok
+      if [ -n "${BACKUP_SERVERS:-}" ]; then
+        IFS=, read -r -a bak_arr <<<"${BACKUP_SERVERS:-}"
+        for tok in "${bak_arr[@]}"; do
+          [ -n "$tok" ] || continue
+          if [ "$tok" = "$addr" ]; then found=1; else kept+=("$tok"); fi
+        done
+      fi
+      [ "$found" -eq 1 ] || die "endpoint $addr dar BACKUP_SERVERS peyda nashod."
+      local joined; joined="$(IFS=,; echo "${kept[*]}")"
+      env_set BACKUP_SERVERS "$joined"
+      log "backup endpoint hazf shod: $addr"
+      ;;
+    ls)
+      load_env
+      local as_json=0; [ "${1:-}" = "--json" ] && as_json=1
+      local b_csv="${BACKUP_SERVERS:-}"
+      if [ "$as_json" -eq 1 ]; then
+        RTH_EP_PRI="${PRIMARY_SERVER:-${SERVER:-}}" RTH_EP_ACT="${SERVER:-}" RTH_EP_BAK="$b_csv" RTH_SC_FILE="$ENDPOINT_SCORES_FILE" python3 -c '
+import json, os
+scores = {}
+p = os.environ["RTH_SC_FILE"]
+if os.path.exists(p):
+    try: scores = json.load(open(p, encoding="utf-8"))
+    except Exception: scores = {}
+baks = [x for x in os.environ.get("RTH_EP_BAK", "").split(",") if x]
+print(json.dumps({
+    "primary": os.environ.get("RTH_EP_PRI", ""),
+    "active": os.environ.get("RTH_EP_ACT", ""),
+    "backups": baks,
+    "scores": scores,
+}))
+'
+        return 0
+      fi
+      echo "  primary : ${PRIMARY_SERVER:-${SERVER:-unset}}"
+      echo "  active  : ${SERVER:-unset}"
+      echo "  backups : ${BACKUP_SERVERS:-(none)}"
+      ;;
+    test)
+      load_env
+      local as_json=0; [ "${1:-}" = "--json" ] && as_json=1
+      endpoints_probe_all
+      local cands; cands="$(endpoints_all_list | tr '\n' ',')"
+      RTH_EP_PRI="${PRIMARY_SERVER:-${SERVER:-}}" RTH_EP_ACT="${SERVER:-}" RTH_EP_LIST="$cands" RTH_SC_FILE="$ENDPOINT_SCORES_FILE" RTH_JSON="$as_json" python3 -c '
+import json, os
+p = os.environ["RTH_SC_FILE"]
+scores = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+cands = [x for x in os.environ.get("RTH_EP_LIST", "").split(",") if x]
+rows = []
+for a in cands:
+    s = scores.get(a) if isinstance(scores.get(a), dict) else {}
+    rows.append({
+        "addr": a,
+        "score": float(s.get("score", 0.0)),
+        "last_ok": bool(s.get("last_ok", False)),
+        "last_ms": int(s.get("last_ms", 0)),
+        "ok_count": int(s.get("ok_count", 0)),
+        "fail_count": int(s.get("fail_count", 0)),
+    })
+rows.sort(key=lambda r: (r["last_ok"], r["score"], -r["last_ms"]), reverse=True)
+if os.environ.get("RTH_JSON") == "1":
+    print(json.dumps({"active": os.environ.get("RTH_EP_ACT", ""), "primary": os.environ.get("RTH_EP_PRI", ""), "results": rows}))
+else:
+    for r in rows:
+        print("  %-24s ok=%s score=%s rtt=%sms" % (r["addr"], r["last_ok"], r["score"], r["last_ms"]))
+'
+      ;;
+    switch)
+      need_root
+      local addr="${1:-}"
+      [ -n "$addr" ] || die "estefade: ratholenode endpoints switch <host:port>"
+      endpoints_switch_to "$addr"
+      ;;
+    *) die "estefade: ratholenode endpoints <add|rm|ls|test|switch>" ;;
   esac
 }
 
@@ -2825,6 +3409,7 @@ main(){
     status)  shift; cmd_status "${1:-}" ;;
     update)  shift; cmd_update "${1:-}" ;;
     adaptive) shift; cmd_adaptive "$@" ;;
+    endpoints) shift; cmd_endpoints "$@" ;;
     agent)   shift; cmd_agent "$@" ;;
     logs)    shift
              if [ "${1:-}" = all ]; then shift; cmd_logs_all "$@"; else cmd_logs "${1:-50}"; fi ;;

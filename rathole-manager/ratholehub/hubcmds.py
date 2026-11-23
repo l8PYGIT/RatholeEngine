@@ -52,6 +52,7 @@ RE_MTU      = re.compile(r"^[0-9]{3,4}\Z")
 RE_PP_TOGGLE = re.compile(r"^(on|off|status)\Z")
 RE_PP_VER    = re.compile(r"^(v1|v2|off|status)\Z")
 RE_COUNT     = re.compile(r"^(?:[1-9]|1[0-9]|20)\Z")
+RE_CHAIN     = re.compile(r"^(?:ws|noise|kcp|frp|plain)(?:,(?:ws|noise|kcp|frp|plain)){0,4}\Z")
 
 
 def _valid_ip(val):
@@ -76,6 +77,7 @@ _INT_OK_KEYS = frozenset({
     "port", "inbound", "api_port", "remote_port", "lines",
     "interval", "failures", "recoveries", "value", "gre_key", "mtu", "count", "rev",
 })
+_BOOL_OK_KEYS = frozenset({"probe_candidates", "allow_insecure"})
 
 class _SafeArgs(dict):
     # wrapper baraye dict: vorodi-haye gheyre-string (list/dict/bool/int baraye esm) be '\x00'
@@ -86,6 +88,12 @@ class _SafeArgs(dict):
             return default
         if isinstance(v, str):
             return v
+        if key in _BOOL_OK_KEYS:
+            if type(v) is bool:
+                return "1" if v else "0"
+            if type(v) is int and v in (0, 1):
+                return str(v)
+            return "\x00"
         if key in _INT_OK_KEYS and type(v) is int:
             return str(v)
         return "\x00"
@@ -688,17 +696,42 @@ def build_node_cmd(action, a):
         uid = a.get("id", "")
         if not RE_ID.match(uid): return None
         return ["ratholenode", "upstream", "rm", uid]
-    # ---- adaptive filtering (Task 8) ----
+    # ---- adaptive filtering (Task 8 + M5) ----
     if action == "adaptive_off":    return ["ratholenode", "adaptive", "off"]
     if action == "adaptive_status": return ["ratholenode", "adaptive", "status"]
     if action == "adaptive_test":   return ["ratholenode", "adaptive", "test", "--json"]
+    if action == "adaptive_test_all": return ["ratholenode", "adaptive", "test", "--all", "--json"]
     if action == "adaptive_run":    return ["ratholenode", "adaptive", "run"]
     if action == "adaptive_on":
         iv  = str(a.get("interval", "30") or "30")
         fa  = str(a.get("failures", "3") or "3")
         rec = str(a.get("recoveries", "5") or "5")
         if not RE_PORT.match(iv) or not RE_PORT.match(fa) or not RE_PORT.match(rec): return None
-        return ["ratholenode", "adaptive", "on", "--interval", iv, "--failures", fa, "--recoveries", rec]
+        cmd = ["ratholenode", "adaptive", "on", "--interval", iv, "--failures", fa, "--recoveries", rec]
+        chain = str(a.get("chain", "") or "").strip()
+        if chain:
+            parts = chain.split(",")
+            if not RE_CHAIN.match(chain) or len(set(parts)) != len(parts): return None
+            cmd.extend(["--chain", chain])
+        pc = str(a.get("probe_candidates", "") or "").strip().lower()
+        if pc in ("1", "true", "yes"):
+            cmd.append("--probe-candidates")
+        elif pc not in ("", "0", "false", "no"):
+            return None
+        ai = str(a.get("allow_insecure", "") or "").strip().lower()
+        if ai in ("1", "true", "yes"):
+            cmd.append("--allow-insecure")
+        elif ai not in ("", "0", "false", "no"):
+            return None
+        return cmd
+    # ---- backup endpoints ba health score (M5) ----
+    if action == "endpoints_ls":     return ["ratholenode", "endpoints", "ls", "--json"]
+    if action == "endpoints_test":   return ["ratholenode", "endpoints", "test", "--json"]
+    if action in ("endpoints_add", "endpoints_rm", "endpoints_switch"):
+        addr = a.get("addr", "")
+        if not RE_IPPORT.match(addr): return None
+        sub = action.split("_", 1)[1]
+        return ["ratholenode", "endpoints", sub, addr]
     return None
 
 
@@ -726,6 +759,7 @@ WRITE_ACTIONS = {
 
     "watchdog_on", "watchdog_off", "migrate", "deploy",
     "adaptive_on", "adaptive_off", "adaptive_run",
+    "endpoints_add", "endpoints_rm", "endpoints_switch",
 
 }
 

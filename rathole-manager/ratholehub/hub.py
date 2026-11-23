@@ -973,6 +973,25 @@ def mock_run(server, cmd_args):
         }), "err": ""}
     if cmd_args[:2] == ["ratholectl", "undo"]:
         return {"rc": 0, "out": "[DRY-RUN] pish-namayesh undo" if "--dry-run" in cmd_args else "state be revision bazgasht.", "err": ""}
+    if cmd_args == ["ratholenode", "endpoints", "ls", "--json"]:
+        return {"rc": 0, "out": json.dumps({
+            "primary": "rp01.l1t.ir:443", "active": "rp01.l1t.ir:443",
+            "backups": ["5.202.4.41:443"],
+            "scores": {
+                "rp01.l1t.ir:443": {"score": 98.5, "last_ok": True, "last_ms": 18, "ok_count": 5, "fail_count": 0},
+                "5.202.4.41:443": {"score": 94.0, "last_ok": True, "last_ms": 34, "ok_count": 3, "fail_count": 0},
+            },
+        }), "err": ""}
+    if cmd_args == ["ratholenode", "endpoints", "test", "--json"]:
+        return {"rc": 0, "out": json.dumps({
+            "active": "rp01.l1t.ir:443", "primary": "rp01.l1t.ir:443",
+            "results": [
+                {"addr": "rp01.l1t.ir:443", "score": 98.5, "last_ok": True, "last_ms": 18, "ok_count": 6, "fail_count": 0},
+                {"addr": "5.202.4.41:443", "score": 94.0, "last_ok": True, "last_ms": 34, "ok_count": 4, "fail_count": 0},
+            ],
+        }), "err": ""}
+    if cmd_args[:3] in (["ratholenode", "endpoints", "add"], ["ratholenode", "endpoints", "rm"], ["ratholenode", "endpoints", "switch"]) and len(cmd_args) >= 4:
+        return {"rc": 0, "out": f"endpoints {cmd_args[2]}: {cmd_args[3]}", "err": ""}
     if j.startswith("ratholenode set SERVER "):
         return {"rc": 0, "out": "tanzim shod: SERVER = %s\n[mock] tunnel-e asli be-ruz shod." % cmd_args[-1], "err": ""}
     return {"rc": 0, "out": "[mock] %s → %s" % (role, j), "err": ""}
@@ -1204,6 +1223,8 @@ def parse_node_ls(text):
 # faqat field-haye motalab-e shenakhte-shode ra bar-migardanad.
 _ADAPTIVE_ALLOWED_KEYS = frozenset({
     "time", "current", "classification", "latency_ms", "consecutive_failures",
+    "consecutive_recoveries", "last_switch_ts", "chain", "active_endpoint",
+    "primary_recoveries", "last_reason",
 })
 
 def parse_adaptive_state(raw):

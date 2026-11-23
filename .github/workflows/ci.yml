@@ -88,6 +88,9 @@ jobs:
       - name: M3 state.json revision history & undo tests
         run: bash tests/test_m3_state_history.sh
 
+      - name: M5 adaptive fallback chain & backup endpoint tests
+        run: bash tests/test_m5_adaptive_and_endpoints.sh
+
       - name: adaptive probe + controller tests
         run: |
           bash tests/test_adaptive.sh

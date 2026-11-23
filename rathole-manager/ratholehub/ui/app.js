@@ -1217,6 +1217,7 @@ function renderNode(n,ov){
     <button class="gh" onclick="run('${n}','watchdog_status')">${t('wd_status')}</button>
     <button class="gh" onclick="run('${n}','adaptive_status')">${t('adaptive_status')}</button>
     <button class="gh" onclick="run('${n}','adaptive_test')">${t('adaptive_test')}</button>
+    <button class="gh" onclick="openEndpointsModal('${h(n)}')">${h(t('ep_title'))}</button>
     <button class="gh" onclick="run('${n}','migrate')">${t('migrate')}</button>
    </div>
  </div></details>`;
@@ -2695,11 +2696,81 @@ function fakewebStart(n){formModal(t('t_fw'),[
 function wdOn(n){formModal(t('t_wd'),[
   {id:'interval',label:t('l_wd_iv'),val:'60',req:1}],
   v=>{closeModal();run(n,'watchdog_on',{interval:v.interval||'60'});});}
-function adaptiveOnNode(n){formModal(t('t_adaptive_node'),[
+function adaptiveOnNode(n){
+ formModal(t('t_adaptive_node'),[
   {id:'interval',label:t('l_adaptive_iv'),val:'30',req:1},
   {id:'failures',label:t('l_adaptive_fa'),val:'3',req:1},
-  {id:'recoveries',label:t('l_adaptive_re'),val:'5',req:1}],
-  v=>{closeModal();run(n,'adaptive_on',{interval:v.interval||'30',failures:v.failures||'3',recoveries:v.recoveries||'5'});});}
+  {id:'recoveries',label:t('l_adaptive_re'),val:'5',req:1},
+  {id:'chain',label:t('l_adaptive_chain'),val:'ws,kcp',ph:'ws,noise,kcp,frp'},
+  {id:'probe_candidates',label:t('l_adaptive_probe_cands'),type:'select',val:'0',opts:[{v:'0',t:'Off'},{v:'1',t:'On'}]}
+ ],v=>{
+  closeModal();
+  const args={interval:v.interval||'30',failures:v.failures||'3',recoveries:v.recoveries||'5'};
+  if(v.chain)args.chain=v.chain;
+  if(v.probe_candidates==='1')args.probe_candidates='1';
+  run(n,'adaptive_on',args);
+ });
+}
+
+async function openEndpointsModal(n){
+ const {status,j}=await api('POST','api/servers/'+encodeURIComponent(n)+'/action',{action:'endpoints_ls',args:{}});
+ if(status!==200||!j||j.rc!==0){toast('error: '+((j&&(j.err||j.error))||status));return;}
+ let d={};
+ try{d=JSON.parse(j.out||'{}')||{};}catch(_e){d={};}
+ const active=String(d.active||'');
+ const primary=String(d.primary||'');
+ const backups=Array.isArray(d.backups)?d.backups:[];
+ const scores=(d.scores&&typeof d.scores==='object')?d.scores:{};
+ const list=[];
+ [active,primary,...backups].forEach(x=>{if(x&&!list.includes(x))list.push(x);});
+ const rows=list.map(addr=>{
+  const sc=scores[addr]||{};
+  const okCls=sc.last_ok===false?'b-bad':'b-ok';
+  const scoreTxt=sc.score!=null?(String(sc.score)+(sc.last_ms!=null?' · '+String(sc.last_ms)+'ms':'')):'-';
+  const tags=[addr===active?'active':'',addr===primary?'primary':''].filter(Boolean).join(', ');
+  const swBtn=addr!==active?`<button class="s" type="button" data-ep-act="switch" data-ep-addr="${h(addr)}">${h(t('ep_switch'))}</button>`:'';
+  const rmBtn=backups.includes(addr)?`<button class="gh" type="button" data-ep-act="rm" data-ep-addr="${h(addr)}">${h(t('remove'))}</button>`:'';
+  return `<div class="sec-token-row"><div><span class="mono">${h(addr)}</span>${tags?' <span class="badge b-info">'+h(tags)+'</span>':''} <span class="badge ${okCls}">${h(t('ep_score'))}: ${h(scoreTxt)}</span></div><div class="btns">${swBtn}${rmBtn}</div></div>`;
+ }).join('')||`<div class="empty">-</div>`;
+ modal(`<div id="ep_box"><h3>${h(t('ep_title'))} · ${h(n)}</h3><div class="btns" style="margin-bottom:10px"><button class="g" type="button" data-ep-act="add">${h(t('ep_add'))}</button><button class="s" type="button" data-ep-act="test">${h(t('ep_test'))}</button></div>${rows}<div class="modal-actions"><button class="gh" type="button" onclick="closeModal()">${h(t('close'))}</button></div></div>`);
+ const box=$('ep_box');
+ if(!box)return;
+ box.querySelectorAll('[data-ep-act]').forEach(btn=>{
+  btn.onclick=()=>{
+   const act=btn.getAttribute('data-ep-act');
+   const addr=btn.getAttribute('data-ep-addr')||'';
+   if(act==='add')addEndpointModal(n);
+   else if(act==='test')testEndpointsAction(n);
+   else if(act==='switch')switchEndpointAction(n,addr);
+   else if(act==='rm')removeEndpointAction(n,addr);
+  };
+ });
+}
+
+function addEndpointModal(n){
+ formModal(t('ep_add'),[{id:'addr',label:t('ep_addr'),ph:'5.202.4.41:443',req:1}],async v=>{
+  closeModal();
+  await run(n,'endpoints_add',{addr:v.addr});
+  openEndpointsModal(n);
+ });
+}
+
+async function testEndpointsAction(n){
+ await run(n,'endpoints_test',{});
+ openEndpointsModal(n);
+}
+
+async function switchEndpointAction(n,addr){
+ if(!addr)return;
+ await run(n,'endpoints_switch',{addr});
+ openEndpointsModal(n);
+}
+
+async function removeEndpointAction(n,addr){
+ if(!addr)return;
+ await run(n,'endpoints_rm',{addr});
+ openEndpointsModal(n);
+}
 function kcpOnIran(n){formModal(t('t_kcp_iran'),[
   {id:'port',label:t('l_udp'),val:'443',req:1},
   {id:'profile',label:t('l_profile'),type:'select',val:'balanced',opts:PROF}],

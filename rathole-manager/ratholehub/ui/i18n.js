@@ -294,7 +294,15 @@ service_config:"حامل و پروتکل",service_health:"تست سلامت",ser
   mon_allow_actions:'اجازه دستورات عملیاتی (/restart)',
   mon_save:'ذخیره تنظیمات مانیتور',
   mon_diagnose:'عیب‌یابی مسیر تلگرام',
-  mon_send_test:'ارسال پیام آزمایشی'
+  mon_send_test:'ارسال پیام آزمایشی',
+  l_adaptive_chain:'زنجیره جایگزینی حامل',
+  l_adaptive_probe_cands:'بررسی سلامت پیش از سوییچ',
+  ep_title:'آدرس‌های پشتیبان',
+  ep_add:'افزودن آدرس پشتیبان',
+  ep_test:'تست همه آدرس‌ها',
+  ep_addr:'آدرس (host:port)',
+  ep_score:'امتیاز سلامت',
+  ep_switch:'سوییچ'
 
  },
  en:{
@@ -592,7 +600,15 @@ service_config:"Carrier and protocol",service_health:"Health test",service_copy:
   mon_allow_actions:'Allow Remote Actions (/restart)',
   mon_save:'Save Monitor Settings',
   mon_diagnose:'Diagnose Relay',
-  mon_send_test:'Send Test Alert'
+  mon_send_test:'Send Test Alert',
+  l_adaptive_chain:'Carrier Fallback Chain',
+  l_adaptive_probe_cands:'Probe Candidates Before Switch',
+  ep_title:'Backup Endpoints',
+  ep_add:'Add Backup Endpoint',
+  ep_test:'Test All Endpoints',
+  ep_addr:'Address (host:port)',
+  ep_score:'Health Score',
+  ep_switch:'Switch'
 
  }
 };

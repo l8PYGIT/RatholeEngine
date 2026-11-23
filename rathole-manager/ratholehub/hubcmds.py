@@ -74,7 +74,7 @@ def _valid_mtu(val):
 
 _INT_OK_KEYS = frozenset({
     "port", "inbound", "api_port", "remote_port", "lines",
-    "interval", "failures", "recoveries", "value", "gre_key", "mtu", "count",
+    "interval", "failures", "recoveries", "value", "gre_key", "mtu", "count", "rev",
 })
 
 class _SafeArgs(dict):
@@ -421,6 +421,16 @@ def build_iran_cmd(action, a):
         cnt = str(a.get("count", "5") or "5")
         if not RE_COUNT.match(cnt): return None
         return ["ratholectl", "test", name, "--count", cnt, "--json"]
+    if action == "state_history":
+        return ["ratholectl", "history", "--json"]
+    if action == "state_undo":
+        rev = str(a.get("rev", "1") or "1")
+        if not RE_COUNT.match(rev): return None
+        return ["ratholectl", "undo", rev]
+    if action == "state_undo_dry_run":
+        rev = str(a.get("rev", "1") or "1")
+        if not RE_COUNT.match(rev): return None
+        return ["ratholectl", "undo", "--dry-run", rev]
     return None
 
 def build_node_cmd(action, a):
@@ -706,7 +716,7 @@ WRITE_ACTIONS = {
     "frp_on", "frp_off", "frp_node_on", "frp_node_off", "frp_proxy_protocol",
     "gre_on", "gre_off", "gre_auto_mtu", "game_proxy_protocol",
 
-    "backup", "enable", "regen_full", "regen",
+    "backup", "state_undo", "enable", "regen_full", "regen",
     # node
     "control_path_set", "control_path_clear", "add_svc", "rm_svc", "add_bh_svc", "rm_bh_svc", "kcp_on", "kcp_off", "apply", "restart", "set_server", "set_main",
     "upstream_add", "upstream_add_svc", "upstream_rm", "upstream_rm_svc",

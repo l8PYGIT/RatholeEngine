@@ -339,9 +339,12 @@ function shell(){
    <div class="login-brand"><span class="brand-mark">${icon('brand')}</span><div><div class="brand-name">rathole<span>hub</span></div></div></div>
    <div class="login-body"><h1 id="login_title">${t('login_title')}</h1><p class="login-sub">${h(t('login_sub'))}</p>
     <div class="field"><label for="pw">${t('pw_ph')}</label><div class="login-actions"><div class="pw-wrap"><input id="pw" type="password" autocomplete="current-password" aria-describedby="msg"><button id="pw_eye" class="pw-eye" type="button" onclick="togglePwVis()" title="${h(t('pw_show'))}" aria-label="${h(t('pw_show'))}">${icon('eye')}</button></div><button class="g" type="button" onclick="doLogin()">${t('login_btn')}</button></div></div>
+    <div id="totp_wrap" class="field" style="display:none"><label for="totp">${t('sec_2fa_code')}</label><input id="totp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="${h(t('totp_ph'))}" aria-describedby="msg"></div>
     <div id="msg" class="form-message" role="alert"></div>
    </div></section></main>`;
-  const p=$('pw'); if(p)p.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();}); return;}
+  const p=$('pw'); if(p)p.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  const tp=$('totp'); if(tp)tp.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  return;}
  document.body.classList.remove('login');
  const sbCollapsed=localStorage.getItem('rh_sb_collapsed')==='1';
  const sbTxt=t(sbCollapsed?'sb_expand':'sb_collapse');
@@ -378,9 +381,28 @@ function pollByPage(){
  else if(ROUTE.page==='dashboard'||ROUTE.page==='routing'){SERVERS.forEach(s=>loadOv(s.name));}
  if(ROUTE.page==='dashboard')loadHubStatus();
 }
-async function doLogin(){const {status,j}=await api('POST','api/login',{password:$('pw').value});
- if(status===200){$('pw').setAttribute('aria-invalid','false');TOKEN=j.token;localStorage.setItem('rh_token',TOKEN);if(!location.hash)location.hash='#/dashboard';shell();}
- else{$('pw').setAttribute('aria-invalid','true');$('msg').textContent=t('pw_wrong');$('pw').focus();}}
+async function doLogin(){
+ const totpEl=$('totp'), tw=$('totp_wrap');
+ const body={password:$('pw').value};
+ const totpVal=totpEl?(totpEl.value||'').trim():'';
+ if(totpVal)body.totp=totpVal;
+ const {status,j}=await api('POST','api/login',body);
+ if(status===200){
+  $('pw').setAttribute('aria-invalid','false');
+  if(totpEl)totpEl.setAttribute('aria-invalid','false');
+  TOKEN=j.token;localStorage.setItem('rh_token',TOKEN);
+  if(!location.hash)location.hash='#/dashboard';
+  shell();
+ }else if(status===401&&j&&j.totp_required){
+  if(tw){tw.style.display='';if('hidden' in tw)tw.hidden=false;}
+  if(totpEl){totpEl.setAttribute('aria-invalid',j.error==='bad totp'?'true':'false');totpEl.focus();}
+  $('msg').textContent=(j.error==='bad totp')?t('totp_wrong'):t('totp_hint');
+ }else{
+  $('pw').setAttribute('aria-invalid','true');
+  $('msg').textContent=t('pw_wrong');
+  $('pw').focus();
+ }
+}
 function fnd(n){return SERVERS.find(s=>s.name===n)||{};}
 function setDot(n,cls){const d=$('dot_'+n); if(d)d.className='dot '+cls;}
 
@@ -2071,10 +2093,18 @@ function bindGraphDrag(w){
 // ---------- safhe: audit / settings (ghablan modal boodand) ----------
 async function renderAuditPage(){
  const pg=$('page'); if(!pg)return;
- pg.innerHTML=`<div class="ptitle"><h2>${t('audit')}</h2></div>
+ pg.innerHTML=`<div class="ptitle"><h2>${t('audit')}</h2><span id="audit_chain_badge"></span></div>
   <div class="filter-bar"><div class="search-box">${icon('search')}<input type="search" data-tbl-filter="audit_tbl" placeholder="${h(t('flt_search_audit'))}" aria-label="${h(t('flt_search_audit'))}"></div></div>
   <section class="card" style="margin-top:0"><div class="cbody" id="auditbody"><div class="empty">${t('loading')}</div></div></section>`;
- const {j}=await api('GET','api/audit?limit=100');
+ const [audRes,verRes]=await Promise.all([api('GET','api/audit?limit=100'),api('GET','api/audit/verify')]);
+ const badge=$('audit_chain_badge');
+ if(badge&&verRes&&verRes.status===200&&verRes.j){
+  const v=verRes.j;
+  badge.innerHTML=v.ok
+   ?('<span class="badge b-ok">'+h(t('audit_valid'))+' ('+h(String(v.chained||0))+'/'+h(String(v.total||0))+')</span>')
+   :('<span class="badge b-bad">'+h(t('audit_broken'))+' #'+h(String(v.broken_line??'?'))+'</span>');
+ }
+ const j=audRes?audRes.j:[];
  const box=$('auditbody'); if(!box)return;
  const rows=(j||[]);
  if(!rows.length){box.innerHTML=`<div class="empty">${t('no_audit')}</div>`;return;}
@@ -2110,13 +2140,104 @@ async function renderSettingsPage(){
    <section class="settings-section"><h3>${t('t_settings')}</h3><div class="settings-kv">
     <span class="k">${t('l_apitoken')}</span><span class="mono">${h(c.api_token_hint||'')}</span>
     <span class="k">${t('l_listen')}</span><span class="mono">${h(c.listen_host||'')}:${h(c.listen_port||'')}</span>
-   </div><div class="modal-actions"><button class="s" type="button" onclick="rotTok()">${t('rot_tok')}</button></div></section>
+   </div><div class="sub" style="margin-top:8px">${h(t('metrics_hint'))}</div><div class="modal-actions"><button class="s" type="button" onclick="rotTok()">${t('rot_tok')}</button></div></section>
+   <section class="settings-section"><h3>${h(t('sec_2fa_title'))}</h3>
+    <div class="settings-kv">
+     <span class="k">${h(t('sec_2fa_title'))}</span>
+     <span class="badge ${c.totp_enabled?'b-ok':'b-bad'}">${h(c.totp_enabled?t('sec_2fa_on'):t('sec_2fa_off'))}</span>
+    </div>
+    <div class="modal-actions">${c.totp_enabled
+     ?`<button class="s" type="button" onclick="disable2faModal()">${h(t('sec_2fa_disable'))}</button>`
+     :`<button class="g" type="button" onclick="setup2fa()">${h(t('sec_2fa_setup'))}</button>`}</div>
+   </section>
+   <section class="settings-section" style="grid-column:1 / -1">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+     <h3 style="margin:0">${h(t('sec_tokens_title'))}</h3>
+     <button class="g" type="button" onclick="createScopedTokenModal()">${h(t('sec_token_create'))}</button>
+    </div>
+    <div id="tok_list" style="margin-top:10px"><div class="empty">${t('loading')}</div></div>
+   </section>
    <section class="settings-section" style="grid-column:1 / -1"><h3>${t('chpw')}</h3><div class="settings-form" style="max-width:460px">
     <div class="field"><label for="cpw">${t('l_curpw')}</label><input id="cpw" type="password" autocomplete="current-password"></div>
     <div class="field"><label for="npw">${t('l_newpw')}</label><input id="npw" type="password" autocomplete="new-password" placeholder="${t('pw_hint')}"></div>
     <div class="btns"><button class="g" type="button" onclick="savePw()">${t('save_pw')}</button></div>
    </div></section>
   </div>`;
+ loadTokensList();
+}
+
+async function setup2fa(){
+ const {status,j}=await api('POST','api/2fa/setup',{});
+ if(status!==200||!j){toast('error: '+((j&&j.error)||status));return;}
+ modal(`<h3>${h(t('sec_2fa_title'))}</h3>
+  <div class="row"><label>${h(t('sec_2fa_secret'))}</label><code class="mono" style="user-select:all">${h(j.secret||'')}</code></div>
+  <div class="sub mono" style="word-break:break-all;margin:6px 0">${h(j.otpauth_uri||'')}</div>
+  <div class="row"><label for="tfa_code">${h(t('sec_2fa_code'))}</label><input id="tfa_code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" autofocus></div>
+  <div class="modal-actions">
+   <button class="gh" type="button" onclick="closeModal()">${h(t('cancel'))}</button>
+   <button class="g" type="button" onclick="enable2faSubmit()">${h(t('save'))}</button>
+  </div>`);
+}
+
+async function enable2faSubmit(){
+ const el=$('tfa_code');
+ const code=el?(el.value||'').trim():'';
+ const {status,j}=await api('POST','api/2fa/enable',{code});
+ if(status!==200||!j){toast('error: '+((j&&j.error)||status));return;}
+ const codes=(j.recovery_codes||[]).map(x=>'<code>'+h(x)+'</code>').join('');
+ modal(`<h3>${h(t('sec_2fa_recovery'))}</h3>
+  <p class="sub">${h(t('sec_2fa_recovery_note'))}</p>
+  <div class="code-grid">${codes}</div>
+  <div class="modal-actions"><button class="g" type="button" onclick="closeModal()">${h(t('close'))}</button></div>`);
+ renderSettingsPage();
+}
+
+function disable2faModal(){
+ formModal(t('sec_2fa_disable'),[
+  {id:'password',label:t('l_curpw'),type:'password',req:1},
+  {id:'code',label:t('sec_2fa_code'),type:'text',ph:t('totp_ph'),req:1}
+ ],async v=>{
+  const {status,j}=await api('POST','api/2fa/disable',{password:v.password,code:v.code});
+  if(status!==200){toast('error: '+((j&&j.error)||status));return;}
+  closeModal();
+  renderSettingsPage();
+ });
+}
+
+async function loadTokensList(){
+ const {status,j}=await api('GET','api/tokens');
+ const box=$('tok_list');
+ if(!box)return;
+ if(status!==200){box.innerHTML=`<div class="empty">${h((j&&j.error)||String(status))}</div>`;return;}
+ const toks=(j&&Array.isArray(j.tokens))?j.tokens:[];
+ if(!toks.length){box.innerHTML=`<div class="empty">${h(t('sec_no_tokens'))}</div>`;return;}
+ box.innerHTML=toks.map(tok=>`<div class="sec-token-row">
+  <div><strong>${h(tok.name||'')}</strong> <span class="badge b-info">${h(tok.scope||'read')}</span> <span class="mono sub">${h(tok.prefix||'')}…</span></div>
+  <button class="s" type="button" data-tok-id="${h(tok.id||'')}">${h(t('sec_token_revoke'))}</button>
+ </div>`).join('');
+ box.querySelectorAll('[data-tok-id]').forEach(b=>{
+  b.onclick=()=>revokeScopedToken(b.getAttribute('data-tok-id'));
+ });
+}
+
+function createScopedTokenModal(){
+ formModal(t('sec_token_create'),[
+  {id:'name',label:t('sec_token_name'),type:'text',req:1},
+  {id:'scope',label:t('sec_token_scope'),type:'select',val:'read',opts:[{v:'read',t:'read'},{v:'operate',t:'operate'},{v:'admin',t:'admin'}]}
+ ],async v=>{
+  const {status,j}=await api('POST','api/tokens',{name:v.name,scope:v.scope});
+  if(status!==201){toast('error: '+((j&&j.error)||status));return;}
+  closeModal();
+  outModal(t('sec_token_create'),t('sec_token_created_note')+'\n\n'+((j&&j.token)||''));
+  loadTokensList();
+ });
+}
+
+async function revokeScopedToken(id){
+ if(!id||!confirm(t('sec_token_revoke')+' '+id+'?'))return;
+ const {status,j}=await api('DELETE','api/tokens/'+encodeURIComponent(id));
+ if(status!==200){toast('error: '+((j&&j.error)||status));return;}
+ loadTokensList();
 }
 
 function outModal(title,text){var id='om_'+Math.random().toString(36).slice(2);modal('<h3>'+h(title)+'</h3><pre id="'+id+'" style="max-height:52vh;overflow:auto;white-space:pre-wrap;user-select:text;-webkit-user-select:text">'+h(text)+'</pre><div class="row" style="margin-top:10px"><button class="g" onclick="copyText(\''+id+'\')">'+t('copy_out')+'</button> <button class="gh" onclick="closeModal()">'+t('close')+'</button></div>');}

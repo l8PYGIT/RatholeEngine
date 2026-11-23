@@ -29,6 +29,11 @@ _LOGIN_FAILS = {}
 _LOGIN_MAX = 5            # hdaksr tlashe namvfgh
 _LOGIN_WINDOW = 300       # pnjrhi sanihai
 _login_lock = threading.Lock()
+_metrics_lock = threading.Lock()
+_OVERVIEW_CACHE = {}
+_LAST_DRIFT_SUMMARY = None
+_LOGIN_FAILS_TOTAL = 0
+_HTTP_REQS = {"GET": 0, "POST": 0, "PUT": 0, "DELETE": 0}
 
 def _prune_login_fails(now):
     # Prune expired entries to prevent memory leaks from scan traffic
@@ -48,6 +53,7 @@ def login_allowed(ip):
         return len(fails) < _LOGIN_MAX
 
 def login_record_fail(ip):
+    global _LOGIN_FAILS_TOTAL
     now = time.time()
     with _login_lock:
         fails = [t for t in _LOGIN_FAILS.get(ip, []) if now - t < _LOGIN_WINDOW]
@@ -55,6 +61,8 @@ def login_record_fail(ip):
         _LOGIN_FAILS[ip] = fails
         if len(_LOGIN_FAILS) > 500:
             _prune_login_fails(now)
+    with _metrics_lock:
+        _LOGIN_FAILS_TOTAL += 1
 
 def login_reset(ip):
     with _login_lock:
@@ -220,16 +228,15 @@ def _public_server(s):
     return out
 
 def audit_log(user, server, action, cmd, rc):
-    # sbte append-only az har amliate nvshtari baraye rdgiri.
+    # sbte append-only ba SHA-256 hash chain az har amliate nvshtari baraye rdgiri va tashkhis-e dastkari.
     try:
-        line = json.dumps({
-            "ts": int(time.time()), "user": user, "server": server,
-            "action": action, "cmd": cmd, "rc": rc,
-        }, ensure_ascii=False)
         d = os.path.dirname(AUDIT_PATH)
         if d:
             os.makedirs(d, exist_ok=True)
         with _lock:
+            prev = last_audit_hash(AUDIT_PATH)
+            entry = build_chained_audit_entry(user, server, action, cmd, rc, prev)
+            line = json.dumps(entry, ensure_ascii=False)
             fd = os.open(AUDIT_PATH, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
             with os.fdopen(fd, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
@@ -336,6 +343,13 @@ from hubcmds import (  # noqa: F401  (nam-ha dar sartasar-e hub estefade mishava
     RE_COUNT, build_iran_cmd, build_node_cmd, build_cmd, WRITE_ACTIONS, _diag,
 )
 from hubdiag import compute_fleet_drift, synthesize_link_test
+from hubsec import (
+    SCOPES, scope_allows, create_scoped_token, public_token_view,
+    resolve_auth, check_csrf, generate_totp_secret, verify_totp,
+    totp_provisioning_uri, generate_recovery_codes, consume_recovery_code,
+    last_audit_hash, build_chained_audit_entry, verify_audit_chain,
+    render_prometheus_metrics,
+)
 
 # ---------- ejra-ye az rah dvr (Agent API ya SSH) ----------
 def _norm_agent_url(url):
@@ -946,6 +960,13 @@ def mock_run(server, cmd_args):
             "endpoint": "rp01.l1t.ir:443",
             "service": {"name": "rathole-client", "active": True, "status": "yes"},
         }), "err": ""}
+    if cmd_args == ["ratholectl", "history", "--json"]:
+        return {"rc": 0, "out": json.dumps({
+            "dir": "/etc/rathole-manager/history", "count": 1,
+            "revisions": [{"rev": 1, "id": "rev-mock-001", "ts": "20261123T150000Z", "domain": "rp01.l1t.ir", "node_count": 7, "nodes": ["trk01"]}],
+        }), "err": ""}
+    if cmd_args[:2] == ["ratholectl", "undo"]:
+        return {"rc": 0, "out": "[DRY-RUN] pish-namayesh undo" if "--dry-run" in cmd_args else "state be revision bazgasht.", "err": ""}
     if j.startswith("ratholenode set SERVER "):
         return {"rc": 0, "out": "tanzim shod: SERVER = %s\n[mock] tunnel-e asli be-ruz shod." % cmd_args[-1], "err": ""}
     return {"rc": 0, "out": "[mock] %s → %s" % (role, j), "err": ""}
@@ -1237,15 +1258,8 @@ def check_session(cfg, token):
         return False
 
 def authed(cfg, headers, cookies):
-    # Bearer token (baraye API kharji) ya kvki nshst (baraye UI)
-    cfg_tok = cfg.get("api_token") or ""
-    if not cfg_tok:
-        return False
-    auth = headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        return hmac.compare_digest(auth[7:].strip(), cfg_tok)
-    tok = cookies.get("rhsession", "")
-    return check_session(cfg, tok)
+    # Bearer token (legacy ya scoped) ya kvki nshst (baraye UI)
+    return resolve_auth(cfg, headers, cookies, check_session) is not None
 
 
 def collect_server_overview(s):
@@ -1390,6 +1404,15 @@ def collect_server_overview(s):
                 ov["main_tunnel"] = "kcp"
             elif not ov.get("main_tunnel"):
                 ov["main_tunnel"] = (ups.get("main") or {}).get("tunnel", ov["kcp"].get("mode", "ws"))
+    if name:
+        with _metrics_lock:
+            _OVERVIEW_CACHE[name] = {
+                "role": role,
+                "reachable": ov.get("reachable", True),
+                "nodes": list(ov.get("nodes") or []),
+                "services": list(ov.get("services") or []),
+                "backhaul_services": list(ov.get("backhaul_services") or []),
+            }
     return ov
 
 
@@ -1459,8 +1482,29 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass  # sakt
 
+    def _record_http(self, method):
+        with _metrics_lock:
+            _HTTP_REQS[method] = _HTTP_REQS.get(method, 0) + 1
+
+    def _auth(self, cfg, required_scope="read", mutating=False):
+        info = resolve_auth(cfg, self.headers, self._cookies(), check_session)
+        if not info:
+            self._send(401, {"error": "unauthorized"})
+            return None
+        if mutating:
+            ok_csrf, csrf_err = check_csrf(self.headers, info)
+            if not ok_csrf:
+                self._send(403, {"error": csrf_err})
+                return None
+        if not scope_allows(info["scope"], required_scope):
+            self._send(403, {"error": "insufficient scope", "required": required_scope, "granted": info["scope"]})
+            return None
+        self._auth_info = info
+        return info
+
     # ---- GET ----
     def do_GET(self):
+        self._record_http("GET")
         cfg = get_config()
         path = urlparse(self.path).path
         if path == "/" or path == "/hub/" or path == "/hub":
@@ -1480,20 +1524,38 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         if path in ("/api/health", "/hub/api/health"):
             return self._send(200, {"ok": True, "mock": MOCK})
-        p = path.replace("/hub", "", 1) if path.startswith("/hub/api") else path
-        if not authed(cfg, self.headers, self._cookies()):
-            return self._send(401, {"error": "unauthorized"})
+        if path in ("/metrics", "/hub/metrics"):
+            p = "/metrics"
+        else:
+            p = path.replace("/hub", "", 1) if path.startswith("/hub/api") else path
+        info = self._auth(cfg, required_scope="read")
+        if not info:
+            return
+        if p == "/metrics":
+            return self._metrics()
         if p == "/api/servers":
             return self._send(200, [_public_server(s) for s in get_inventory()])
         if p == "/api/hubstatus":
             return self._send(200, hub_status())
         if p == "/api/config":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
             return self._config_view()
+        if p == "/api/tokens":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._tokens_list()
+        if p == "/api/2fa/status":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._2fa_status()
         if p == "/api/audit":
             q = parse_qs(urlparse(self.path).query)
             try: lim = max(1, min(500, int(q.get("limit", ["100"])[0])))
             except Exception: lim = 100
             return self._send(200, read_audit(lim))
+        if p == "/api/audit/verify":
+            return self._send(200, verify_audit_chain(AUDIT_PATH))
         if p == "/api/fleet/drift":
             return self._fleet_drift()
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/status$", p)
@@ -1508,29 +1570,29 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/details$", p)
         if m:
             return self._details(m.group(1))
-        m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/frpconnect$", p)
-        if m:
-            return self._frpconnect(m.group(1))
-        m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/kcpconnect$", p)
-        if m:
-            return self._kcpconnect(m.group(1))
-        m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/noiseconnect$", p)
-        if m:
-            return self._noiseconnect(m.group(1))
-        m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/backhaulconnect$", p)
-        if m:
-            return self._backhaulconnect(m.group(1))
+        for pat, fn in (
+            (r"^/api/servers/([A-Za-z0-9_-]+)/frpconnect$", self._frpconnect),
+            (r"^/api/servers/([A-Za-z0-9_-]+)/kcpconnect$", self._kcpconnect),
+            (r"^/api/servers/([A-Za-z0-9_-]+)/noiseconnect$", self._noiseconnect),
+            (r"^/api/servers/([A-Za-z0-9_-]+)/backhaulconnect$", self._backhaulconnect),
+            (r"^/api/servers/([A-Za-z0-9_-]+)/mainconnect$", self._mainconnect),
+        ):
+            m = re.match(pat, p)
+            if m:
+                if not scope_allows(info["scope"], "operate"):
+                    return self._send(403, {"error": "insufficient scope", "required": "operate"})
+                return fn(m.group(1))
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/nodeconnect/([A-Za-z0-9_-]+)$", p)
         if m:
+            if not scope_allows(info["scope"], "operate"):
+                return self._send(403, {"error": "insufficient scope", "required": "operate"})
             return self._nodeconnect(m.group(1), m.group(2))
-        m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/mainconnect$", p)
-        if m:
-            return self._mainconnect(m.group(1))
         return self._send(404, {"error": "not found"})
 
 
     # ---- POST/DELETE ----
     def do_POST(self):
+        self._record_http("POST")
         cfg = get_config()
         path = urlparse(self.path).path
         p = path.replace("/hub", "", 1) if path.startswith("/hub/api") else path
@@ -1541,6 +1603,31 @@ class Handler(BaseHTTPRequestHandler):
             data = self._body_json()
             pw = str(data.get("password", ""))
             if _verify_password(pw, cfg.get("admin_password_sha256", "")):
+                totp_cfg = cfg.get("totp") if isinstance(cfg.get("totp"), dict) else {}
+                if totp_cfg.get("enabled") and totp_cfg.get("secret"):
+                    code = str(data.get("totp") or data.get("code") or "").strip()
+                    if not code:
+                        return self._send(401, {"error": "totp_required", "totp_required": True})
+                    sec = totp_cfg["secret"]
+                    step = verify_totp(sec, code, last_step=totp_cfg.get("last_step"))
+                    if step is not None:
+                        def _set_step(c):
+                            if isinstance(c.get("totp"), dict):
+                                c["totp"]["last_step"] = step
+                            return c
+                        update_config(_set_step)
+                    else:
+                        ok_rec, rem_hashes = consume_recovery_code(totp_cfg.get("recovery_hashes") or [], code)
+                        if ok_rec:
+                            def _use_rec(c):
+                                if isinstance(c.get("totp"), dict):
+                                    c["totp"]["recovery_hashes"] = rem_hashes
+                                return c
+                            update_config(_use_rec)
+                            audit_log("admin@" + ip, "hub", "2fa_recovery_used", "remaining=%d" % len(rem_hashes), 0)
+                        else:
+                            login_record_fail(ip)
+                            return self._send(401, {"error": "bad totp", "totp_required": True})
                 login_reset(ip)
                 tok = make_session_token(cfg)
                 return self._send(200, {"ok": True, "token": cfg["api_token"]},
@@ -1548,43 +1635,78 @@ class Handler(BaseHTTPRequestHandler):
             login_record_fail(ip)
             return self._send(401, {"error": "bad password"})
 
-        if not authed(cfg, self.headers, self._cookies()):
-            return self._send(401, {"error": "unauthorized"})
+        info = self._auth(cfg, required_scope="read", mutating=True)
+        if not info:
+            return
 
         if p == "/api/servers":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
             return self._add_server(self._body_json())
         if p == "/api/provision":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
             return self._provision(self._body_json())
         if p == "/api/config":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
             return self._config_save(self._body_json())
+        if p == "/api/tokens":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._token_create(self._body_json())
+        if p == "/api/2fa/setup":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._2fa_setup()
+        if p == "/api/2fa/enable":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._2fa_enable(self._body_json())
+        if p == "/api/2fa/disable":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._2fa_disable(self._body_json())
 
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/action$", p)
         if m:
-            return self._action(m.group(1), self._body_json())
+            d = self._body_json()
+            act = str(d.get("action", ""))
+            req_scope = "operate" if (act in WRITE_ACTIONS or act == "deploy") else "read"
+            if not scope_allows(info["scope"], req_scope):
+                return self._send(403, {"error": "insufficient scope", "required": req_scope})
+            return self._action(m.group(1), d)
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/link-test$", p)
         if m:
             return self._link_test(m.group(1), self._body_json())
         if p == "/api/ip-tls/prepare":
+            if not scope_allows(info["scope"], "operate"):
+                return self._send(403, {"error": "insufficient scope", "required": "operate"})
             return self._prepare_ip_tls(self._body_json())
         return self._send(404, {"error": "not found"})
 
     def do_PUT(self):
+        self._record_http("PUT")
         cfg = get_config()
         p = urlparse(self.path).path
         p = p.replace("/hub", "", 1) if p.startswith("/hub/api") else p
-        if not authed(cfg, self.headers, self._cookies()):
-            return self._send(401, {"error": "unauthorized"})
+        if not self._auth(cfg, required_scope="admin", mutating=True):
+            return
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)$", p)
         if m:
             return self._edit_server(m.group(1), self._body_json())
         return self._send(404, {"error": "not found"})
 
     def do_DELETE(self):
+        self._record_http("DELETE")
         cfg = get_config()
         p = urlparse(self.path).path
         p = p.replace("/hub", "", 1) if p.startswith("/hub/api") else p
-        if not authed(cfg, self.headers, self._cookies()):
-            return self._send(401, {"error": "unauthorized"})
+        if not self._auth(cfg, required_scope="admin", mutating=True):
+            return
+        m_tok = re.match(r"^/api/tokens/(tok_[a-f0-9]{12})$", p)
+        if m_tok:
+            return self._token_revoke(m_tok.group(1))
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)$", p)
         if m:
             name = m.group(1)
@@ -1607,8 +1729,12 @@ class Handler(BaseHTTPRequestHandler):
         return peer_ip
 
     def _user(self):
-        # hvite tghribi baraye audit: IP klaint (psht nginx, X-Real-IP faghat az loopback).
-        return self._client_ip()
+        # hvite user + IP klaint baraye audit
+        info = getattr(self, "_auth_info", None)
+        ip = self._client_ip()
+        if isinstance(info, dict) and info.get("principal"):
+            return "%s@%s" % (info["principal"], ip)
+        return ip
 
     def _add_server(self, d):
         name = str(d.get("name", "")); role = str(d.get("role", ""))
@@ -1669,8 +1795,141 @@ class Handler(BaseHTTPRequestHandler):
             "ssh_opts": cfg.get("ssh_opts"),
             "insecure": cfg.get("_insecure", False),
             "api_token_hint": (tok[:4] + "…" + tok[-4:]) if len(tok) >= 8 else "(unset)",
+            "totp_enabled": bool((cfg.get("totp") or {}).get("enabled")),
+            "scoped_tokens_count": len(cfg.get("tokens") or []),
             "mock": MOCK,
         })
+
+    def _tokens_list(self):
+        cfg = get_config()
+        toks = [public_token_view(x) for x in (cfg.get("tokens") or []) if isinstance(x, dict)]
+        return self._send(200, {"tokens": toks})
+
+    def _token_create(self, d):
+        if not isinstance(d, dict):
+            return self._send(400, {"error": "invalid body"})
+        name = str(d.get("name", "") or "")
+        scope = str(d.get("scope", "read") or "read")
+        exp_at = None
+        if d.get("expires_days") not in (None, ""):
+            try:
+                days = int(d["expires_days"])
+                if not 1 <= days <= 3650:
+                    return self._send(400, {"error": "expires_days must be 1..3650"})
+                exp_at = int(time.time()) + days * 86400
+            except Exception:
+                return self._send(400, {"error": "invalid expires_days"})
+        try:
+            raw_tok, rec = create_scoped_token(name, scope, expires_at=exp_at)
+        except ValueError as e:
+            return self._send(400, {"error": str(e)})
+        def _add_tok(c):
+            toks = list(c.get("tokens") or [])
+            toks.append(rec)
+            c["tokens"] = toks
+            return c
+        update_config(_add_tok)
+        audit_log(self._user(), "hub", "token_create", "name=%s scope=%s" % (rec["name"], rec["scope"]), 0)
+        return self._send(201, {"ok": True, "token": raw_tok, "record": public_token_view(rec)})
+
+    def _token_revoke(self, tok_id):
+        removed = {"flag": False}
+        def _rm_tok(c):
+            toks = list(c.get("tokens") or [])
+            kept = [x for x in toks if x.get("id") != tok_id]
+            removed["flag"] = len(kept) < len(toks)
+            c["tokens"] = kept
+            return c
+        update_config(_rm_tok)
+        if not removed["flag"]:
+            return self._send(404, {"error": "token not found"})
+        audit_log(self._user(), "hub", "token_revoke", "id=%s" % tok_id, 0)
+        return self._send(200, {"ok": True})
+
+    def _2fa_status(self):
+        cfg = get_config()
+        t = cfg.get("totp") if isinstance(cfg.get("totp"), dict) else {}
+        return self._send(200, {
+            "enabled": bool(t.get("enabled")),
+            "recovery_remaining": len(t.get("recovery_hashes") or []),
+        })
+
+    def _2fa_setup(self):
+        sec = generate_totp_secret()
+        def _set_pending(c):
+            c["totp_pending_secret"] = sec
+            return c
+        update_config(_set_pending)
+        return self._send(200, {"ok": True, "secret": sec, "otpauth_uri": totp_provisioning_uri(sec)})
+
+    def _2fa_enable(self, d):
+        code = str((d or {}).get("code", "") or "")
+        cfg = get_config()
+        pending = cfg.get("totp_pending_secret") or ""
+        if not pending:
+            return self._send(400, {"error": "2fa setup not initiated"})
+        step = verify_totp(pending, code)
+        if step is None:
+            return self._send(400, {"error": "invalid verification code"})
+        plain_codes, rec_hashes = generate_recovery_codes(8)
+        def _activate(c):
+            c["totp"] = {
+                "enabled": True,
+                "secret": pending,
+                "recovery_hashes": rec_hashes,
+                "last_step": step,
+            }
+            c.pop("totp_pending_secret", None)
+            return c
+        update_config(_activate)
+        audit_log(self._user(), "hub", "2fa_enable", "totp+recovery=8", 0)
+        return self._send(200, {"ok": True, "recovery_codes": plain_codes})
+
+    def _2fa_disable(self, d):
+        d = d if isinstance(d, dict) else {}
+        cfg = get_config()
+        t = cfg.get("totp") if isinstance(cfg.get("totp"), dict) else {}
+        if not t.get("enabled"):
+            return self._send(400, {"error": "2fa not enabled"})
+        pw = str(d.get("password", "") or "")
+        if not _verify_password(pw, cfg.get("admin_password_sha256", "")):
+            return self._send(403, {"error": "bad password"})
+        code = str(d.get("code", "") or "")
+        ok_code = verify_totp(t.get("secret", ""), code, last_step=t.get("last_step")) is not None
+        if not ok_code:
+            ok_code, _ = consume_recovery_code(t.get("recovery_hashes") or [], code)
+        if not ok_code:
+            return self._send(401, {"error": "invalid totp or recovery code"})
+        def _clear(c):
+            c.pop("totp", None)
+            c.pop("totp_pending_secret", None)
+            return c
+        update_config(_clear)
+        audit_log(self._user(), "hub", "2fa_disable", "totp disabled", 0)
+        return self._send(200, {"ok": True})
+
+    def _metrics(self):
+        inv = get_inventory()
+        inv_counts = {"iran": 0, "node": 0}
+        for s in inv:
+            r = s.get("role")
+            inv_counts["iran" if r == "iran" else "node"] += 1
+        audit_res = verify_audit_chain(AUDIT_PATH)
+        with _metrics_lock:
+            cache_snap = dict(_OVERVIEW_CACHE)
+            drift_snap = dict(_LAST_DRIFT_SUMMARY) if isinstance(_LAST_DRIFT_SUMMARY, dict) else None
+            fails_tot = int(_LOGIN_FAILS_TOTAL)
+            reqs_snap = dict(_HTTP_REQS)
+        body = render_prometheus_metrics({
+            "uptime_seconds": max(0, int(time.time() - _HUB_START)),
+            "inventory_counts": inv_counts,
+            "overview_cache": cache_snap,
+            "drift_summary": drift_snap,
+            "audit_total": audit_res.get("total", 0),
+            "login_failures_total": fails_tot,
+            "http_requests_by_method": reqs_snap,
+        })
+        return self._send(200, body, ctype="text/plain; version=0.0.4; charset=utf-8")
 
     def _config_save(self, d):
         # tghiire ramz admin va/ya chrkhshe token API az dakhl panel.
@@ -2048,6 +2307,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, collect_server_overview(s))
 
     def _fleet_drift(self):
+        global _LAST_DRIFT_SUMMARY
         inv = get_inventory()
         ovs = {}
         if inv:
@@ -2059,7 +2319,10 @@ class Handler(BaseHTTPRequestHandler):
                         ovs[sname] = fut.result()
                     except Exception as e:
                         ovs[sname] = {"server": sname, "reachable": False, "error": str(e)}
-        return self._send(200, compute_fleet_drift(inv, ovs, hub_version=hub_manager_version()))
+        res = compute_fleet_drift(inv, ovs, hub_version=hub_manager_version())
+        with _metrics_lock:
+            _LAST_DRIFT_SUMMARY = dict(res.get("summary") or {})
+        return self._send(200, res)
 
     def _link_test(self, name, d):
         s = self._find(name)

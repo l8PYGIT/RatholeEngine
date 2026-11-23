@@ -574,6 +574,11 @@ UNIT
         install -m 644 "$HUB_DIR/hubdiag.py" /opt/ratholehub/hubdiag.py
         log "beroozresani shod: /opt/ratholehub/hubdiag.py"
       fi
+      if [ -f "$HUB_DIR/hubsec.py" ]; then
+        sed -i 's/\r$//' "$HUB_DIR/hubsec.py"
+        install -m 644 "$HUB_DIR/hubsec.py" /opt/ratholehub/hubsec.py
+        log "beroozresani shod: /opt/ratholehub/hubsec.py"
+      fi
       if [ -d "$HUB_DIR/ui" ]; then
         mkdir -p /opt/ratholehub/ui
         local u

@@ -840,3 +840,60 @@ test('M2 UI: serviceHealth & nodeLinkTest use link-test with doctor fallback, an
  assert.ok(dirtyHtml.includes('&lt;script&gt;'));
  assert.ok(dirtyHtml.includes('drift-sev-error'));
 });
+
+test('doLogin prompts for TOTP when required and retries with 2FA code', async () => {
+ const c = context();
+ const mkEl = (val = '') => {
+  const el = {
+   value: val,
+   style: { display: 'none' },
+   hidden: true,
+   textContent: '',
+   focused: false,
+   attrs: {},
+   setAttribute(k, v) { this.attrs[k] = v; },
+   focus() { this.focused = true; },
+  };
+  return el;
+ };
+ const els = { pw: mkEl('secret'), totp: mkEl(''), totp_wrap: mkEl(''), msg: mkEl('') };
+ const stored = new Map();
+ let shellCalled = 0;
+ let apiCalls = 0;
+ Object.assign(c, {
+  $: id => els[id] || null,
+  t: key => key,
+  TOKEN: '',
+  location: { hash: '' },
+  localStorage: { setItem: (k, v) => stored.set(k, v) },
+  shell: () => { shellCalled += 1; },
+  api: async (method, url, body) => {
+   apiCalls += 1;
+   assert.equal(method, 'POST');
+   assert.equal(url, 'api/login');
+   const snap = JSON.parse(JSON.stringify(body));
+   if (!snap.totp) {
+    assert.deepEqual(snap, { password: 'secret' });
+    return { status: 401, j: { error: 'totp_required', totp_required: true } };
+   }
+   assert.deepEqual(snap, { password: 'secret', totp: '123456' });
+   return { status: 200, j: { ok: true, token: 'tok_2fa_ok' } };
+  },
+ });
+ vm.runInContext(definition('doLogin'), c);
+
+ await c.doLogin();
+ assert.equal(apiCalls, 1);
+ assert.equal(els.totp_wrap.style.display, '');
+ assert.equal(els.totp_wrap.hidden, false);
+ assert.equal(els.msg.textContent, 'totp_hint');
+ assert.equal(els.totp.focused, true);
+ assert.equal(shellCalled, 0);
+
+ els.totp.value = '123456';
+ await c.doLogin();
+ assert.equal(apiCalls, 2);
+ assert.equal(c.TOKEN, 'tok_2fa_ok');
+ assert.equal(stored.get('rh_token'), 'tok_2fa_ok');
+ assert.equal(shellCalled, 1);
+});

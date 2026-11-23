@@ -23,6 +23,8 @@ rth_mktempd(){ mktemp -d "$@"; }
 
 
 STATE="/etc/rathole-manager/state.json"
+STATE_HIST_DIR=""
+RTH_HISTORY_MAX="${RTH_HISTORY_MAX:-20}"
 SERVER_TOML="/etc/rathole/server.toml"
 NOISE_TOML="/etc/rathole/noise-server.toml"
 NGINX_CONF="/etc/nginx/conf.d/rathole.conf"
@@ -255,6 +257,7 @@ cmd_restore(){
 
   mkdir -p "$(dirname "$STATE")"
   chmod 700 "$(dirname "$STATE")"
+  state_snapshot
   rth_commit_config "$st" "$STATE"
   chmod 600 "$STATE"
   rm -rf "$tmp"
@@ -1310,7 +1313,159 @@ print_node_install(){
 }
 
 # ---------- abzarhaye taghir dar tvl zman ----------
-state_set(){ # $1=jqpath $2=value $3=type(str|num)
+state_snapshot(){
+  [ "${RTH_SKIP_HISTORY:-0}" = "1" ] && return 0
+  [ -s "$STATE" ] || return 0
+  local hdir="${STATE_HIST_DIR:-$(dirname "$STATE")/history}"
+  mkdir -p "$hdir" 2>/dev/null || return 0
+  chmod 700 "$hdir" 2>/dev/null || true
+  local latest="" f
+  for f in "$hdir"/rev-*.json; do
+    [ -f "$f" ] && latest="$f"
+  done
+  if [ -n "$latest" ] && cmp -s "$STATE" "$latest" 2>/dev/null; then
+    return 0
+  fi
+  local ts seq=1 out=""
+  ts="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || date +%s)"
+  if [ -n "$latest" ]; then
+    local lbase lts lseq
+    lbase="$(basename "$latest" .json)"
+    lts="${lbase#rev-}"; lts="${lts%-*}"
+    lseq="${lbase##*-}"
+    if [[ "$lseq" =~ ^[0-9]+$ ]] && [[ "$ts" = "$lts" || "$ts" < "$lts" ]]; then
+      ts="$lts"
+      seq=$((10#$lseq + 1))
+    fi
+  fi
+  while :; do
+    out="$(printf '%s/rev-%s-%06d.json' "$hdir" "$ts" "$seq")"
+    [ ! -e "$out" ] && break
+    seq=$((seq + 1))
+  done
+  (umask 077 && cp "$STATE" "$out" 2>/dev/null) || return 0
+  chmod 600 "$out" 2>/dev/null || true
+  local max="${RTH_HISTORY_MAX:-20}"
+  [[ "$max" =~ ^[0-9]+$ ]] && [ "$max" -ge 1 ] || max=20
+  local -a all=()
+  for f in "$hdir"/rev-*.json; do
+    [ -f "$f" ] && all+=("$f")
+  done
+  local n="${#all[@]}" drop=0 i=0
+  if [ "$n" -gt "$max" ]; then
+    drop=$((n - max))
+    while [ "$i" -lt "$drop" ]; do
+      rm -f "${all[$i]}" 2>/dev/null || true
+      i=$((i + 1))
+    done
+  fi
+}
+
+cmd_history(){
+  need_bin jq; ensure_state
+  local as_json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) as_json=1; shift ;;
+      *) die "estefade: ratholectl history [--json]" ;;
+    esac
+  done
+  local hdir="${STATE_HIST_DIR:-$(dirname "$STATE")/history}"
+  local -a all=() revs=()
+  local f i
+  for f in "$hdir"/rev-*.json; do
+    [ -f "$f" ] && all+=("$f")
+  done
+  for (( i=${#all[@]}-1; i>=0; i-- )); do
+    revs+=("${all[$i]}")
+  done
+  if [ "$as_json" -eq 1 ]; then
+    if [ "${#revs[@]}" -eq 0 ]; then
+      jq -n --arg d "$hdir" '{dir:$d, count:0, revisions:[]}'
+      return 0
+    fi
+    local rev_idx=1 items="[]" entry bname dom ncnt nodes_json ts_str
+    for f in "${revs[@]}"; do
+      bname="$(basename "$f" .json)"
+      ts_str="${bname#rev-}"; ts_str="${ts_str%-*}"
+      dom="$(jq -r '.domain // "-"' "$f" 2>/dev/null || echo '?')"
+      ncnt="$(jq '.nodes | length' "$f" 2>/dev/null || echo 0)"
+      nodes_json="$(jq -c '[.nodes[]?.name]' "$f" 2>/dev/null || echo '[]')"
+      entry="$(jq -n --argjson rev "$rev_idx" --arg id "$bname" --arg ts "$ts_str" --arg dom "$dom" --argjson nc "${ncnt:-0}" --argjson nd "$nodes_json" \
+        '{rev:$rev, id:$id, ts:$ts, domain:$dom, node_count:$nc, nodes:$nd}')"
+      items="$(jq -c --argjson e "$entry" '. + [$e]' <<< "$items")"
+      rev_idx=$((rev_idx + 1))
+    done
+    jq -n --arg d "$hdir" --argjson r "$items" '{dir:$d, count:($r|length), revisions:$r}'
+    return 0
+  fi
+  echo "$(c_g "==== tarikhche state.json ($hdir) ====")"
+  if [ "${#revs[@]}" -eq 0 ]; then
+    echo "  (hich snapshot-e ghabli sabt nashode ast)"
+    return 0
+  fi
+  local rev_idx=1 bname dom ncnt nodes_s
+  for f in "${revs[@]}"; do
+    bname="$(basename "$f" .json)"
+    dom="$(jq -r '.domain // "-"' "$f" 2>/dev/null || echo '?')"
+    ncnt="$(jq '.nodes | length' "$f" 2>/dev/null || echo 0)"
+    nodes_s="$(jq -r '[.nodes[]?.name] | join(",")' "$f" 2>/dev/null || echo '')"
+    printf '  rev %-2d  %s  domain=%s  nodes=%s%s\n' "$rev_idx" "$bname" "$dom" "$ncnt" "${nodes_s:+ ($nodes_s)}"
+    rev_idx=$((rev_idx + 1))
+  done
+  echo "  $(c_y 'baraye bazgasht:') ratholectl undo [--dry-run] [rev]"
+}
+
+cmd_undo(){
+  need_bin jq; ensure_state
+  local rev=1 dry_run=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run|--test) dry_run=1; shift ;;
+      *) rev="$1"; shift ;;
+    esac
+  done
+  [[ "$rev" =~ ^[0-9]+$ ]] && (( 10#$rev >= 1 && 10#$rev <= 100 )) || die "shomare revision namotabar ast: $rev"
+  rev=$((10#$rev))
+  local hdir="${STATE_HIST_DIR:-$(dirname "$STATE")/history}"
+  local -a all=() revs=()
+  local f i
+  for f in "$hdir"/rev-*.json; do
+    [ -f "$f" ] && all+=("$f")
+  done
+  for (( i=${#all[@]}-1; i>=0; i-- )); do
+    revs+=("${all[$i]}")
+  done
+  [ "${#revs[@]}" -ge "$rev" ] || die "revision $rev vojood nadarad (tedad mojood: ${#revs[@]})."
+  local target="${revs[$((rev - 1))]}"
+  [ -s "$target" ] && jq -e . "$target" >/dev/null 2>&1 || die "file revision kharab ast: $target"
+
+  if [ "$dry_run" -eq 1 ]; then
+    local c_dom t_dom c_cnt t_cnt c_nds t_nds
+    c_dom="$(jq -r '.domain // "-"' "$STATE" 2>/dev/null)"
+    t_dom="$(jq -r '.domain // "-"' "$target" 2>/dev/null)"
+    c_cnt="$(jq '.nodes | length' "$STATE" 2>/dev/null || echo 0)"
+    t_cnt="$(jq '.nodes | length' "$target" 2>/dev/null || echo 0)"
+    c_nds="$(jq -r '[.nodes[]?.name] | join(",")' "$STATE" 2>/dev/null)"
+    t_nds="$(jq -r '[.nodes[]?.name] | join(",")' "$target" 2>/dev/null)"
+    echo "$(c_g '[DRY-RUN] pish-namayesh undo (hich taghiri eemal nashod):')"
+    echo "  target       : $(basename "$target") (rev $rev)"
+    echo "  live         : domain=$c_dom  nodes=$c_cnt${c_nds:+ ($c_nds)}"
+    echo "  restore-to   : domain=$t_dom  nodes=$t_cnt${t_nds:+ ($t_nds)}"
+    return 0
+  fi
+
+  need_root
+  local tmp; tmp="$(rth_mktemp)" || die "sakht-e file-e movaghat nashod."
+  cp "$target" "$tmp" || { rm -f "$tmp"; die "khandan revision shekast khord."; }
+  state_snapshot
+  RTH_SKIP_HISTORY=1 rth_commit_config "$tmp" "$STATE"
+  chmod 600 "$STATE" 2>/dev/null || true
+  log "state be revision $rev ($(basename "$target")) bazgasht (ghabl az an snapshot gerefte shod)."
+  regenerate || return 1
+}
+
+state_set(){ # $1=jqpath $2=value $3=type(str|num|bool)
   # BEHRANI: ghablan khorooji-e jq check nemishod va `mv` BI-GHARAR anjam mishod — pas har
   # shekast-e jq (state-e kharab, jq-path-e ghalat, disk-e por) state.json ra ba yek file-e
   # KHALI jaygozin mikard va HAMEYE node/token/port az beyn miraft. chon script ba `set -uo
@@ -1319,11 +1474,19 @@ state_set(){ # $1=jqpath $2=value $3=type(str|num)
   if [ "${3:-str}" = num ]; then
     echo "$2" | grep -qE '^[0-9]+$' || die "meghdar bayad adad bashad: $2"
     jq "$1 = ($2)" "$STATE" > "$tmp" || die "jq shekast khord؛ state dast-nakhorde mand."
+  elif [ "${3:-str}" = bool ]; then
+    [ "$2" = "true" ] || [ "$2" = "false" ] || die "meghdar bayad true/false bashad: $2"
+    jq --argjson v "$2" "$1 = \$v" "$STATE" > "$tmp" || die "jq shekast khord؛ state dast-nakhorde mand."
   else
     jq --arg v "$2" "$1 = \$v" "$STATE" > "$tmp" || die "jq shekast khord؛ state dast-nakhorde mand."
   fi
   # file-e khali ya nim-kare HARGEZ nabayad jaygozin-e state shavad.
   [ -s "$tmp" ] || die "khorooji-e jq khali bood؛ state dast-nakhorde mand."
+  if [ -f "$STATE" ] && cmp -s "$tmp" "$STATE" 2>/dev/null; then
+    rm -f "$tmp"
+    return 0
+  fi
+  state_snapshot
   rth_commit_config "$tmp" "$STATE"
 }
 
@@ -1331,6 +1494,11 @@ state_jq(){ # $@=jq args (ba "$STATE" dar enteha)
   local tmp; tmp="$(rth_mktemp)" || die "sakht-e file-e movaghat nashod."
   jq "$@" "$STATE" > "$tmp" || { rm -f "$tmp"; die "jq shekast khord؛ state dast-nakhorde mand."; }
   [ -s "$tmp" ] || { rm -f "$tmp"; die "khorooji-e jq khali bood؛ state dast-nakhorde mand."; }
+  if [ -f "$STATE" ] && cmp -s "$tmp" "$STATE" 2>/dev/null; then
+    rm -f "$tmp"
+    return 0
+  fi
+  state_snapshot
   rth_commit_config "$tmp" "$STATE"
 }
 
@@ -3735,6 +3903,8 @@ dstvrha:
   backup [--offsite] [file]    sakht backup az state (nodeha/tokenha)
   backup offsite <set <argv... {}>|show|off|test [file]>   ersal khodkar-e backup be maghsad-e bironi (bedoon shell)
   restore [--test] <file>      restore az backup + baztolid (--test = barresi bedoon taghir)
+  history [--json]             namayesh tarikhche-ye taghirat-e state.json
+  undo [--dry-run] [rev]       bazgasht-e state.json be noskhe-ye ghabli (pishfarz rev=1) + regen
   token <name>                 chap dstvr nasb node (curl yek-khatti + install-node.sh)
   doctor                       barresi slamt system va tmaiz sait fik/rthvl
   logs [n] [--bundle]          log-e HAME chiz (service-ha + nginx + config-ha + doctor) — token-ha redact mishavand; --bundle = file-e .txt.gz baraye scp
@@ -3875,6 +4045,8 @@ main(){
     regen)  regenerate ;;
     backup) cmd_backup "$@" ;;
     restore) cmd_restore "$@" ;;
+    history) cmd_history "$@" ;;
+    undo)   cmd_undo "$@" ;;
     token)  print_node_install "${1:-}" ;;
     test)   cmd_test "$@" ;;
     doctor) cmd_doctor ;;

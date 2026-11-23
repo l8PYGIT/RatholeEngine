@@ -842,3 +842,342 @@ except subprocess.TimeoutExpired:
     sys.exit(124)
 PY
 }
+
+# ---------------------------------------------------------------------------
+# Link Test / Bidirectional Probe Helpers (M2)
+# ---------------------------------------------------------------------------
+rth_gre_peer_ip(){ # $1=local_tunnel_ip (masalan 10.10.10.1 ya fd00::1/126) -> peer host IP
+  local tip="${1:-}"
+  [ -n "$tip" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$tip" <<'PY' 2>/dev/null || true
+import ipaddress, sys
+raw = sys.argv[1].strip()
+if not raw:
+    sys.exit(0)
+if "/" in raw:
+    iface = ipaddress.ip_interface(raw)
+else:
+    addr = ipaddress.ip_address(raw)
+    iface = ipaddress.ip_interface("%s/%d" % (addr, 30 if addr.version == 4 else 126))
+hosts = list(iface.network.hosts())
+cands = [h for h in hosts if h != iface.ip]
+if not cands:
+    cands = [a for a in iface.network if a != iface.ip]
+if cands:
+    print(str(cands[0]))
+PY
+}
+
+rth_link_probe(){
+  command -v python3 >/dev/null 2>&1 || { echo '{"ok":false,"verdict":"failed","detail":"python3 missing"}'; return 1; }
+  python3 - "$@" <<'PY'
+import argparse
+import base64
+import json
+import math
+import os
+import re
+import socket
+import ssl
+import subprocess
+import sys
+import time
+
+
+def _stats(rtts):
+    if not rtts:
+        return None, None
+    s = sorted(rtts)
+    idx = min(len(s) - 1, max(0, int(math.ceil(0.95 * len(s))) - 1))
+    rtt = {
+        "min": round(s[0], 2),
+        "avg": round(sum(s) / len(s), 2),
+        "max": round(s[-1], 2),
+        "p95": round(s[idx], 2),
+    }
+    if len(rtts) >= 2:
+        jit = sum(abs(rtts[i] - rtts[i - 1]) for i in range(1, len(rtts))) / (len(rtts) - 1)
+    else:
+        jit = 0.0
+    return rtt, round(jit, 2)
+
+
+def _format_host_hdr(val):
+    if ":" in val and not val.startswith("["):
+        return "[%s]" % val
+    return val
+
+
+def _ws_request(path, host_hdr):
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    p = path if path.startswith("/") else "/" + path
+    return (
+        "GET %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: %s\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n" % (p, host_hdr, key)
+    ).encode("ascii")
+
+
+def _parse_http_status(data):
+    first = data.split(b"\r\n", 1)[0].split(b"\n", 1)[0].decode("ascii", errors="replace")
+    parts = first.split(" ", 2)
+    if len(parts) >= 2 and parts[1].isdigit():
+        return int(parts[1])
+    return None
+
+
+def _run_icmp(host, count, timeout):
+    clean = host.strip("[]")
+    cmd = ["ping"]
+    if ":" in clean:
+        cmd.append("-6")
+    w_sec = max(1, int(round(timeout)))
+    cmd.extend(["-c", str(count), "-W", str(w_sec), clean])
+    try:
+        proc = subprocess.run(
+            cmd, shell=False, capture_output=True, text=True, timeout=max(5, count * w_sec + 4)
+        )
+    except FileNotFoundError:
+        return [], "ping_missing"
+    except subprocess.TimeoutExpired:
+        return [], "ping_timeout"
+    vals = [float(x) for x in re.findall(r"time=([0-9]+(?:\.[0-9]+)?)\s*ms", proc.stdout or "")]
+    err = None if vals else ((proc.stderr or proc.stdout or "no_icmp_reply").strip().splitlines()[-1][:120] if (proc.stderr or proc.stdout or "").strip() else "no_icmp_reply")
+    return vals, err
+
+
+def _probe_backends(raw_json):
+    out = []
+    if not raw_json:
+        return out
+    try:
+        items = json.loads(raw_json)
+    except Exception:
+        return out
+    if not isinstance(items, list):
+        return out
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        try:
+            port = int(it.get("port"))
+        except Exception:
+            continue
+        name = str(it.get("name", ""))
+        lane = str(it.get("lane", "rathole"))
+        t0 = time.monotonic()
+        up = False
+        rtt = None
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1.5):
+                rtt = round((time.monotonic() - t0) * 1000.0, 2)
+                up = True
+        except OSError:
+            up = False
+        out.append({"name": name, "lane": lane, "port": port, "up": up, "rtt_ms": rtt})
+    return out
+
+
+def _probe_gre(iface, peer, count):
+    if not iface or not peer:
+        return None
+    g_cnt = max(1, min(int(count), 4))
+    clean = peer.strip("[]")
+    cmd = ["ping"]
+    if ":" in clean:
+        cmd.append("-6")
+    cmd.extend(["-I", iface, "-c", str(g_cnt), "-W", "2", clean])
+    try:
+        proc = subprocess.run(cmd, shell=False, capture_output=True, text=True, timeout=max(6, g_cnt * 2 + 4))
+        vals = [float(x) for x in re.findall(r"time=([0-9]+(?:\.[0-9]+)?)\s*ms", proc.stdout or "")]
+    except Exception:
+        vals = []
+    rtt, jit = _stats(vals)
+    loss = round(((g_cnt - len(vals)) / float(g_cnt)) * 100.0, 1)
+    return {
+        "iface": iface,
+        "peer_ip": clean,
+        "up": len(vals) > 0,
+        "ok_count": len(vals),
+        "samples": g_cnt,
+        "loss_pct": loss,
+        "rtt_ms": rtt,
+        "jitter_ms": jit,
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--mode", required=True, choices=["http_ws", "tls_direct", "ws_tls", "ws_plain", "bh_tls", "tcp", "icmp"])
+    ap.add_argument("--host", required=True)
+    ap.add_argument("--port", type=int, default=0)
+    ap.add_argument("--count", type=int, default=5)
+    ap.add_argument("--timeout", type=float, default=3.0)
+    ap.add_argument("--path", default="/")
+    ap.add_argument("--sni", default="")
+    ap.add_argument("--trusted-root", default="")
+    ap.add_argument("--insecure-tls", action="store_true")
+    ap.add_argument("--backends-json", default="")
+    ap.add_argument("--gre-iface", default="")
+    ap.add_argument("--gre-peer", default="")
+    args = ap.parse_args()
+
+    mode = args.mode
+    host = args.host.strip("[]")
+    port = int(args.port)
+    count = max(1, min(20, int(args.count)))
+    timeout = max(0.5, min(10.0, float(args.timeout)))
+    sni = (args.sni or host).strip("[]")
+    host_hdr = _format_host_hdr(sni)
+
+    rtts = []
+    listener_up = False
+    open_no_http_count = 0
+    http_status = None
+    tls_version = None
+    last_err = None
+
+    if mode == "icmp":
+        rtts, last_err = _run_icmp(host, count, timeout)
+        listener_up = len(rtts) > 0
+    else:
+        for idx in range(count):
+            t0 = time.monotonic()
+            sock = None
+            try:
+                sock = socket.create_connection((host, port), timeout=timeout)
+                sock.settimeout(timeout)
+                listener_up = True
+
+                if mode == "tcp":
+                    rtts.append((time.monotonic() - t0) * 1000.0)
+                elif mode == "tls_direct":
+                    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    with ctx.wrap_socket(sock, server_hostname=sni) as ssock:
+                        sock = None
+                        tls_version = ssock.version()
+                    rtts.append((time.monotonic() - t0) * 1000.0)
+                elif mode in ("http_ws", "ws_plain", "ws_tls", "bh_tls"):
+                    conn = sock
+                    if mode in ("ws_tls", "bh_tls"):
+                        if args.insecure_tls:
+                            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                            ctx.check_hostname = False
+                            ctx.verify_mode = ssl.CERT_NONE
+                        elif args.trusted_root:
+                            ctx = ssl.create_default_context(cafile=args.trusted_root)
+                        else:
+                            ctx = ssl.create_default_context()
+                        conn = ctx.wrap_socket(sock, server_hostname=sni)
+                        sock = None
+                        conn.settimeout(timeout)
+                        tls_version = conn.version()
+                    try:
+                        conn.sendall(_ws_request(args.path, host_hdr))
+                        data = conn.recv(2048)
+                    finally:
+                        try:
+                            conn.close()
+                        except OSError:
+                            pass
+                        sock = None
+                    if not data:
+                        last_err = "remote_closed"
+                    elif data.startswith(b"HTTP/"):
+                        code = _parse_http_status(data)
+                        http_status = code
+                        if mode in ("ws_tls", "ws_plain"):
+                            if code == 101:
+                                rtts.append((time.monotonic() - t0) * 1000.0)
+                            else:
+                                last_err = "http_%s" % (code if code is not None else "bad")
+                        elif mode == "bh_tls":
+                            if code in (101, 400, 401, 403, 426):
+                                rtts.append((time.monotonic() - t0) * 1000.0)
+                            else:
+                                last_err = "http_%s" % (code if code is not None else "bad")
+                        else:
+                            if code in (502, 503, 504):
+                                last_err = "http_%d" % code
+                            else:
+                                rtts.append((time.monotonic() - t0) * 1000.0)
+                    else:
+                        if mode in ("ws_tls", "ws_plain", "bh_tls"):
+                            last_err = "non_http_reply"
+                        else:
+                            rtts.append((time.monotonic() - t0) * 1000.0)
+            except ConnectionRefusedError:
+                last_err = "refused"
+            except ConnectionResetError:
+                last_err = "remote_closed"
+            except socket.timeout:
+                if mode == "http_ws" and listener_up:
+                    open_no_http_count += 1
+                    last_err = "open_no_http"
+                else:
+                    last_err = "timeout"
+            except ssl.SSLError as e:
+                last_err = "tls_error:%s" % (getattr(e, "reason", None) or str(e))[:80]
+            except OSError as e:
+                last_err = "os_error:%s" % str(e)[:80]
+            finally:
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+            if idx + 1 < count:
+                time.sleep(0.05)
+
+    ok_count = len(rtts)
+    loss_pct = round(((count - ok_count) / float(count)) * 100.0, 1)
+    rtt_ms, jitter_ms = _stats(rtts)
+    detail = None
+    if ok_count > 0:
+        if loss_pct >= 10.0 or (jitter_ms or 0.0) >= 30.0 or rtt_ms["avg"] >= 250.0:
+            verdict = "degraded"
+        else:
+            verdict = "healthy"
+        ok = True
+    elif mode == "http_ws" and open_no_http_count == count:
+        verdict = "open_no_http"
+        ok = True
+        loss_pct = 0.0
+        detail = "TCP tunnel open (non-HTTP backend did not reply to WS probe)"
+    else:
+        verdict = "failed"
+        ok = False
+        detail = last_err or "probe failed"
+
+    payload = {
+        "ok": ok,
+        "verdict": verdict,
+        "probe_mode": mode,
+        "host": host,
+        "port": port if mode != "icmp" else None,
+        "count": count,
+        "ok_count": ok_count,
+        "loss_pct": loss_pct,
+        "rtt_ms": rtt_ms,
+        "jitter_ms": jitter_ms,
+        "listener_up": listener_up,
+        "http_status": http_status,
+        "tls_version": tls_version,
+        "detail": detail,
+        "backends": _probe_backends(args.backends_json),
+        "gre": _probe_gre(args.gre_iface, args.gre_peer, count) if (args.gre_iface and args.gre_peer) else None,
+    }
+    print(json.dumps(payload, separators=(",", ":")))
+
+
+if __name__ == "__main__":
+    main()
+PY
+}

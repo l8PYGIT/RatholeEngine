@@ -41,8 +41,8 @@ jobs:
 
       - name: python py_compile (hub.py + fakeweb.py)
         run: |
-          python3 -m py_compile rathole-manager/ratholehub/hub.py rathole-manager/ratholehub/hubcmds.py rathole-manager/fakeweb.py
-          echo "hub.py, hubcmds.py & fakeweb.py compile OK"
+          python3 -m py_compile rathole-manager/ratholehub/hub.py rathole-manager/ratholehub/hubcmds.py rathole-manager/ratholehub/hubdiag.py rathole-manager/fakeweb.py
+          echo "hub.py, hubcmds.py, hubdiag.py & fakeweb.py compile OK"
 
       - name: manager regression tests
         run: |
@@ -81,6 +81,9 @@ jobs:
 
       - name: M1 network, GRE, proxy-protocol, doctor & backup dry-run tests
         run: bash tests/test_m1_network_and_backup.sh
+
+      - name: M2 bidirectional link-test CLI tests
+        run: bash tests/test_m2_linktest.sh
 
       - name: adaptive probe + controller tests
         run: |

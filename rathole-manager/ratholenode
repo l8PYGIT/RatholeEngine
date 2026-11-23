@@ -403,6 +403,170 @@ cmd_status(){
   printf '  %s: %s\n' "$unit" "$(_unit_active "$unit")"
   [ -n "$gre_name" ] && printf '  GRE (%s): %s\n' "$gre_name" "$gre_active"
 }
+
+_split_host_port(){ # $1=endpoint $2=default_port -> sets _HP_HOST _HP_PORT
+  local ep="$1" def_port="${2:-443}"
+  _HP_HOST=""; _HP_PORT="$def_port"
+  if [[ "$ep" == \[*\]* ]]; then
+    _HP_HOST="${ep%%]*}"; _HP_HOST="${_HP_HOST#\[}"
+    local rest="${ep#*]}"
+    rest="${rest#:}"
+    [ -n "$rest" ] && _HP_PORT="$rest"
+  elif [[ "$ep" == *:*:* ]]; then
+    _HP_HOST="$ep"
+  elif [[ "$ep" == *:* ]]; then
+    _HP_HOST="${ep%%:*}"
+    local p="${ep##*:}"
+    [ -n "$p" ] && _HP_PORT="$p"
+  else
+    _HP_HOST="$ep"
+  fi
+}
+
+cmd_test(){
+  local count=5 as_json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) as_json=1; shift ;;
+      --count) count="${2:-}"; shift 2 || die "--count meghdar lazem darad." ;;
+      --count=*) count="${1#*=}"; shift ;;
+      -h|--help) echo "estefade: ratholenode test [--count N] [--json]"; return 0 ;;
+      *) die "flag/argument nashenakhte: $1" ;;
+    esac
+  done
+  [[ "$count" =~ ^[0-9]+$ ]] && (( 10#$count >= 1 && 10#$count <= 20 )) || die "count bayad bein 1 ta 20 bashad."
+  count=$((10#$count))
+
+  load_env
+  local mode="${TUNNEL:-ws}" ep="${SERVER:-}" unit="$SVC" pmode="ws_tls"
+  local sni="${TLS_HOSTNAME:-}" trust="${TLS_TRUSTED_ROOT:-}" cp="${CONTROL_PATH:-/}"
+  local def_port=443 insecure=0
+  case "$mode" in
+    plain)
+      ep="${PLAIN_REMOTE:-$SERVER}"; def_port=8880; pmode="ws_plain" ;;
+    noise)
+      ep="${NOISE_REMOTE:-$SERVER}"; def_port=2334; pmode="tcp" ;;
+    kcp)
+      ep="${KCP_REMOTE:-$SERVER}"; def_port=443; pmode="icmp" ;;
+    frp)
+      unit="$FRP_CLI_SVC"; ep="${FRP_REMOTE:-$SERVER}"; def_port=7000
+      case "${FRP_TRANSPORT:-tcp}" in kcp|quic) pmode="icmp" ;; *) pmode="tcp" ;; esac ;;
+    backhaul)
+      unit="$BH_CLI_SVC"
+      ep="${BH_REMOTE_ADDR:-${BH_REMOTE:+${BH_REMOTE}:443}}"
+      [ -n "$ep" ] || ep="${SERVER:-}"
+      def_port=443
+      case "${BH_TRANSPORT:-wssmux}" in ws|wsmux) pmode="tcp" ;; *) pmode="bh_tls"; cp="/channel" ;; esac ;;
+    *)
+      mode="ws"; ep="${SERVER:-}"; def_port=443; pmode="ws_tls" ;;
+  esac
+
+  local _HP_HOST="" _HP_PORT=""
+  _split_host_port "$ep" "$def_port"
+  local target_host="$_HP_HOST" target_port="$_HP_PORT"
+  [ -n "$target_host" ] || die "endpoint dar node.env khali ast."
+  [ -n "$sni" ] || sni="$target_host"
+
+  if [ "$pmode" = "bh_tls" ] && [ -z "$trust" ] && rth_valid_ip "$target_host"; then
+    insecure=1
+  fi
+  if [ "${ALLOW_INSECURE:-0}" = "1" ] && { [ "$pmode" = "ws_tls" ] || [ "$pmode" = "bh_tls" ]; }; then
+    insecure=1
+  fi
+
+  local bjson="[]"
+  if command -v python3 >/dev/null 2>&1; then
+    bjson="$(python3 - "$SVC_FILE" "$BH_SVC_FILE" <<'PY' 2>/dev/null || echo '[]'
+import json, os, sys
+items = []
+for path, lane in ((sys.argv[1], "rathole"), (sys.argv[2], "backhaul")):
+    if not path or not os.path.isfile(path):
+        continue
+    with open(path, encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            parts = s.split("|")
+            if len(parts) >= 3 and parts[2].strip().isdigit():
+                items.append({"name": parts[0].strip(), "lane": lane, "port": int(parts[2].strip())})
+print(json.dumps(items, separators=(",", ":")))
+PY
+)"
+  fi
+
+  local -a pargs=(--mode "$pmode" --host "$target_host" --port "$target_port" --count "$count" --path "$cp" --sni "$sni" --backends-json "$bjson")
+  [ -n "$trust" ] && pargs+=(--trusted-root "$trust")
+  [ "$insecure" -eq 1 ] && pargs+=(--insecure-tls)
+  if [ -n "${GRE_NAME:-}" ] && [ -n "${GRE_TUNNEL_IP:-}" ]; then
+    local gpeer; gpeer="$(rth_gre_peer_ip "$GRE_TUNNEL_IP")"
+    [ -n "$gpeer" ] && pargs+=(--gre-iface "$GRE_NAME" --gre-peer "$gpeer")
+  fi
+
+  local raw svc_active="unknown" kcp_local_up="null"
+  svc_active="$(_unit_active "$unit")"
+  if [ "$mode" = "kcp" ]; then
+    local _kh="" _kp=""
+    _split_host_port "${KCP_LOCAL:-127.0.0.1:29900}" 29900
+    _kh="$_HP_HOST"; _kp="$_HP_PORT"
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "$_kh" "$_kp" <<'PY' >/dev/null 2>&1 && kcp_local_up="true" || kcp_local_up="false"
+import socket, sys
+with socket.create_connection((sys.argv[1], int(sys.argv[2])), timeout=1.0):
+    pass
+PY
+    fi
+  fi
+  raw="$(rth_link_probe "${pargs[@]}")"
+
+  local enriched
+  enriched="$(NODE_MODE="$mode" NODE_EP="${target_host}:${target_port}" NODE_UNIT="$unit" NODE_UACT="$svc_active" KCP_LUP="$kcp_local_up" \
+    python3 -c 'import json,os,sys
+d = json.load(sys.stdin)
+uact = os.environ["NODE_UACT"]
+d.update({
+    "role": "node",
+    "transport": os.environ["NODE_MODE"],
+    "endpoint": os.environ["NODE_EP"],
+    "service": {"name": os.environ["NODE_UNIT"], "active": uact == "yes", "status": uact},
+})
+kl = os.environ["KCP_LUP"]
+if kl in ("true", "false"):
+    d["kcp_local_up"] = (kl == "true")
+print(json.dumps(d, separators=(",", ":")))' <<< "$raw")"
+
+  if [ "$as_json" -eq 1 ]; then
+    printf '%s\n' "$enriched"
+    return 0
+  fi
+
+  python3 -c 'import json,sys
+d = json.load(sys.stdin)
+r = d.get("rtt_ms") or {}
+ok_v = bool(d.get("ok"))
+verd = str(d.get("verdict") or "?")
+loss = d.get("loss_pct", 0)
+jit = d.get("jitter_ms")
+jit_s = "-" if jit is None else str(jit)
+r_avg = r.get("avg", "-")
+r_p95 = r.get("p95", "-")
+det = str(d.get("detail") or "")
+svc = d.get("service") or {}
+print(f"──── Link Test: node → {d.get(\"endpoint\")} ({d.get(\"transport\")}) ────")
+print(f"  service    : {svc.get(\"name\", \"?\")} ({svc.get(\"status\", \"?\")})")
+if ok_v:
+    print(f"  verdict    : {verd}   (loss={loss}%  avg={r_avg}ms  p95={r_p95}ms  jitter={jit_s}ms)")
+else:
+    print(f"  verdict    : {verd}   (loss={loss}%  {det})")
+for b in d.get("backends") or []:
+    st = "UP" if b.get("up") else "DOWN"
+    print(f"  backend    : {b.get(\"name\")} ({b.get(\"lane\")}, 127.0.0.1:{b.get(\"port\")}) -> {st}")
+g = d.get("gre")
+if g:
+    gr = (g.get("rtt_ms") or {}).get("avg", "-")
+    print(f"  GRE ({g.get(\"iface\")} -> {g.get(\"peer_ip\")}) : up={g.get(\"up\")} loss={g.get(\"loss_pct\")}% avg={gr}ms")
+sys.exit(0 if ok_v else 1)' <<< "$enriched"
+}
 cmd_logs(){ journalctl -u "$SVC" -n "${1:-50}" --no-pager || true; }
 
 # ---------- logs all: jam-avari-ye HAME chiz baraye eshkal-zodai ----------
@@ -2149,6 +2313,7 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   backup offsite <set <argv... {}>|show|off|test [file]>   ersal khodkar-e backup be maghsad-e bironi (bedoon shell)
   restore [--test] <file>        restore tanzimat node (--test = barresi bedoon taghir)
   update [beta|stable|vX.Y.Z]    beroozresani-e kamel az GitHub (snapshot + rollback-e khodkar). 'beta' = akharin pre-release؛ tag = noskhe-ye khas
+  test [--count N] [--json]      test-e masir carrier/RTT/jitter/loss + backend-haye mahalli + GRE
   doctor                         barresi-ye salamat node va poshtibanei core az control_path
   control-path show              masir-e jari (pishfarz: /)
   control-path set <masir>       tanzim masir-e makhfi (masalan: /_rh/abc123...) + restart + rollback-e khodkar
@@ -2637,6 +2802,7 @@ main(){
     set)     shift; cmd_set "${1:-}" "${2:-}" ;;
     set-main) shift; cmd_set_main "${1:-}" "${2:-}" "${3:-}" ;;
     check)   cmd_check ;;
+    test)    shift; cmd_test "$@" ;;
     doctor)  cmd_doctor ;;
     tune)    cmd_tune ;;
     kcp)     shift; cmd_kcp "$@" ;;

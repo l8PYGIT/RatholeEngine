@@ -1841,6 +1841,95 @@ cmd_status(){
   echo "$(c_y '════════════════════════════════════════════════')"
 }
 
+# ---------- link test: barresi-ye daghigh-e masir (E2E RTT / jitter / loss) ----------
+cmd_test(){
+  need_bin jq; ensure_state
+  local name="" count=5 as_json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) as_json=1; shift ;;
+      --count) count="${2:-}"; shift 2 || die "--count meghdar lazem darad." ;;
+      --count=*) count="${1#*=}"; shift ;;
+      -h|--help) echo "estefade: ratholectl test <name> [--count N] [--json]"; return 0 ;;
+      -*) die "flag nashenakhte: $1" ;;
+      *) [ -z "$name" ] && name="$1" || die "argument-e ezafi: $1"; shift ;;
+    esac
+  done
+  [ -n "$name" ] || die "estefade: ratholectl test <name> [--count N] [--json]"
+  [[ "$count" =~ ^[0-9]+$ ]] && (( 10#$count >= 1 && 10#$count <= 20 )) || die "count bayad bein 1 ta 20 bashad."
+  count=$((10#$count))
+
+  local node_json
+  node_json="$(jq -c --arg n "$name" '.nodes[] | select(.name == $n)' "$STATE" 2>/dev/null | head -n1)"
+  [ -n "$node_json" ] || die "node '$name' peyda nashod."
+
+  local port inbound transport sni domain unit svc_active="unknown"
+  port="$(printf '%s' "$node_json" | jq -r '.port // empty')"
+  inbound="$(printf '%s' "$node_json" | jq -r '.inbound_port // empty')"
+  transport="$(printf '%s' "$node_json" | jq -r '.transport // "ws"')"
+  sni="$(printf '%s' "$node_json" | jq -r '.sni // empty')"
+  domain="$(jq -r '.domain // ""' "$STATE" 2>/dev/null)"
+  case "$transport" in
+    noise) unit="$NOISE_SVC" ;;
+    backhaul) unit="$BH_SVC" ;;
+    frp|frp_gre) unit="$FRP_SVC" ;;
+    *) unit="$RATHOLE_SVC" ;;
+  esac
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl is-active --quiet "$unit" 2>/dev/null && svc_active="yes" || svc_active="no"
+  fi
+
+  local raw=""
+  if [ -n "$sni" ]; then
+    raw="$(rth_link_probe --mode tls_direct --host 127.0.0.1 --port "$port" --count "$count" --sni "$sni")"
+  else
+    local sni_hdr="${domain:-127.0.0.1}"
+    [ "$sni_hdr" = "null" ] && sni_hdr="127.0.0.1"
+    raw="$(rth_link_probe --mode http_ws --host 127.0.0.1 --port "$port" --count "$count" --path "/${name}" --sni "$sni_hdr")"
+  fi
+
+  local enriched
+  enriched="$(printf '%s' "$raw" | jq -c \
+    --arg node "$name" --arg tr "$transport" --argjson port "${port:-0}" \
+    --argjson inb "${inbound:-0}" --arg sni "$sni" --arg uname "$unit" --arg uact "$svc_active" \
+    '. + {role:"panel", node:$node, transport:$tr, port:$port, inbound_port:$inb, sni:(if $sni=="" then null else $sni end), service:{name:$uname, active:($uact=="yes"), status:$uact}}')"
+
+  if [ "$as_json" -eq 1 ]; then
+    printf '%s\n' "$enriched"
+    return 0
+  fi
+
+  local ok_v verdict loss jit r_min r_avg r_max r_p95 detail l_up
+  ok_v="$(printf '%s' "$enriched" | jq -r '.ok')"
+  verdict="$(printf '%s' "$enriched" | jq -r '.verdict')"
+  loss="$(printf '%s' "$enriched" | jq -r '.loss_pct')"
+  jit="$(printf '%s' "$enriched" | jq -r '.jitter_ms // "-"')"
+  r_min="$(printf '%s' "$enriched" | jq -r '.rtt_ms.min // "-"')"
+  r_avg="$(printf '%s' "$enriched" | jq -r '.rtt_ms.avg // "-"')"
+  r_max="$(printf '%s' "$enriched" | jq -r '.rtt_ms.max // "-"')"
+  r_p95="$(printf '%s' "$enriched" | jq -r '.rtt_ms.p95 // "-"')"
+  detail="$(printf '%s' "$enriched" | jq -r '.detail // empty')"
+  l_up="$(printf '%s' "$enriched" | jq -r '.listener_up')"
+
+  echo "$(c_y "──── Link Test: $name (panel → node) ────")"
+  printf '  transport  : %s   (listen=127.0.0.1:%s, node-inbound=%s)\n' "$transport" "$port" "$inbound"
+  printf '  service    : %s (%s)\n' "$unit" "$svc_active"
+  if [ "$ok_v" = "true" ]; then
+    printf '  verdict    : %s   (loss=%s%%  jitter=%sms)\n' "$(c_g "$verdict")" "$loss" "$jit"
+    [ "$r_avg" != "-" ] && printf '  RTT (ms)   : min=%s  avg=%s  max=%s  p95=%s\n' "$r_min" "$r_avg" "$r_max" "$r_p95"
+    [ -n "$detail" ] && echo "  note       : $detail"
+    return 0
+  fi
+  printf '  verdict    : %s   (loss=%s%%)\n' "$(c_r "$verdict")" "$loss"
+  [ -n "$detail" ] && echo "  detail     : $detail"
+  if [ "$l_up" != "true" ]; then
+    echo "  $(c_y '→ rah-e hal:') service '$unit' rooye port $port goosh nemidahad -> ratholectl doctor"
+  else
+    echo "  $(c_y '→ rah-e hal:') tunnel baste/half-open ast; rooye node ejra kon: ratholenode test"
+  fi
+  return 1
+}
+
 # ---------- grftn gvahi + tanzim damnh (ghir-taamoli, baraye panel) ----------
 # estefade: ratholectl cert <domain> [email]   (email khali = bedoon email sabt mishavad)
 cmd_ip_cert(){
@@ -3631,6 +3720,7 @@ dstvrha:
   set <key> <value>            taghir tanzimat srasri (domain/fullchain/key/nginx-conf/fake-port/sub-port/control-port/sub-path/hub-path)
   info                         namayesh damnh/gvahi/enghza va damnhhai SNI (baraye panel)
   status [--json]              dashboard-e kamel: port-ha/halat-ha/service-ha/node-ha (mesl-e panel-e VPN)
+  test <name> [--count N] [--json]   test-e do-tarafeh masir/RTT/jitter/loss be yek node
   paths                        namayesh masir-e hameye config-ha va file-ha (ba alamat-e vojood)
   cert <domain> [email]        grftn gvahi Let's Encrypt + tanzim damnh asli (ghir-taamoli)
   ip-cert <IPv4> [days]        WSS rooye IP ba gvahi self-signed-e IP-SAN (domain-e asli hefz mishavad)
@@ -3786,6 +3876,7 @@ main(){
     backup) cmd_backup "$@" ;;
     restore) cmd_restore "$@" ;;
     token)  print_node_install "${1:-}" ;;
+    test)   cmd_test "$@" ;;
     doctor) cmd_doctor ;;
     logs)   cmd_logs "$@" ;;
     tune)   cmd_tune ;;

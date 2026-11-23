@@ -51,6 +51,7 @@ RE_GRE_KEY  = re.compile(r"^[0-9]{1,10}\Z")
 RE_MTU      = re.compile(r"^[0-9]{3,4}\Z")
 RE_PP_TOGGLE = re.compile(r"^(on|off|status)\Z")
 RE_PP_VER    = re.compile(r"^(v1|v2|off|status)\Z")
+RE_COUNT     = re.compile(r"^(?:[1-9]|1[0-9]|20)\Z")
 
 
 def _valid_ip(val):
@@ -73,7 +74,7 @@ def _valid_mtu(val):
 
 _INT_OK_KEYS = frozenset({
     "port", "inbound", "api_port", "remote_port", "lines",
-    "interval", "failures", "recoveries", "value", "gre_key", "mtu",
+    "interval", "failures", "recoveries", "value", "gre_key", "mtu", "count",
 })
 
 class _SafeArgs(dict):
@@ -414,6 +415,12 @@ def build_iran_cmd(action, a):
         return ["ratholectl", "regen"]
     if action == "hub_status":
         return ["ratholectl", "hub", "status"]
+    if action == "link_test":
+        name = a.get("name", "")
+        if not RE_NAME.match(name): return None
+        cnt = str(a.get("count", "5") or "5")
+        if not RE_COUNT.match(cnt): return None
+        return ["ratholectl", "test", name, "--count", cnt, "--json"]
     return None
 
 def build_node_cmd(action, a):
@@ -545,6 +552,10 @@ def build_node_cmd(action, a):
         path = str(a.get("path", "") or "")
         if not RE_PATH.match(path): return None
         return ["ratholenode", "restore", "--test", path]
+    if action == "link_test":
+        cnt = str(a.get("count", "5") or "5")
+        if not RE_COUNT.match(cnt): return None
+        return ["ratholenode", "test", "--count", cnt, "--json"]
     if action == "migrate":     return ["ratholenode", "migrate"]
 
     if action == "tune":        return ["ratholenode", "tune"]

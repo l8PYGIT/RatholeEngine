@@ -767,3 +767,76 @@ test('More-menu body portaling, mobile sidebar stacking, dialog/diag animations 
  assert.equal(diag.open,false);
  assert.equal(diag.dataset.closing,undefined);
 });
+
+test('M2 UI: serviceHealth & nodeLinkTest use link-test with doctor fallback, and renderDriftPanel escapes HTML', async () => {
+ const modCalls=[], toasts=[], domMap={driftpanel:{innerHTML:''}};
+ const c={
+  $:id=>domMap[id]||null,
+  h:t=>String(t==null?'':t).replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])),
+  t:k=>k,
+  toast:x=>toasts.push(x),
+  modal:html=>modCalls.push(html),
+  outModal:(title,txt)=>modCalls.push({out:true,title,txt}),
+  closeModal:()=>{},
+  loadOv:async()=>{},
+  apiCalls:[],
+  api:async(method,url,body)=>{
+   c.apiCalls.push({method,url,body});
+   if(url.endsWith('/link-test')&&c.nextLinkTest)return c.nextLinkTest(url,body);
+   if(url.endsWith('/action')&&body&&body.action==='doctor')return {status:200,j:{rc:0,out:'DOCTOR OK',err:''}};
+   return {status:200,j:{rc:0,out:''}};
+  }
+ };
+ vm.createContext(c);
+ vm.runInContext(
+  'var _LT_CB={retest:null,doc:null};\n'+
+  ['_ltVerdictBadge','_ltSideCard','renderLinkTestModal','runServerDoctor','serviceHealth','nodeLinkTest','renderDriftPanel']
+   .map(fn=>definition(fn)).join('\n'),
+  c
+ );
+
+ // 1. Bidirectional healthy link-test modal
+ c.nextLinkTest=()=>({status:200,j:{
+  ok:true, verdict:'healthy', diagnosis_code:'healthy', diagnosis:'Bidirectional link healthy',
+  iran_to_node:{ok:true,verdict:'healthy',probe_mode:'http_ws',port:1005,loss_pct:0,jitter_ms:1.2,rtt_ms:{min:10,avg:14.5,max:20,p95:19},http_status:101},
+  node_to_iran:{ok:true,verdict:'healthy',probe_mode:'ws_tls',endpoint:'rp01.example:443',loss_pct:0,jitter_ms:1.0,rtt_ms:{min:11,avg:13.0,max:16,p95:15},backends:[{name:'trk01',port:8444,up:true}]}
+ }});
+ await c.serviceHealth('iran1','trk01','node1');
+ assert.equal(c.apiCalls[0].url,'api/servers/iran1/link-test');
+ assert.equal(c.apiCalls[0].body.node,'trk01');
+ assert.equal(c.apiCalls[0].body.peer,'node1');
+ assert.ok(typeof modCalls.at(-1)==='string' && modCalls.at(-1).includes('14.5 ms'));
+
+ c.apiCalls.length=0;
+ await c.nodeLinkTest('de01');
+ assert.equal(c.apiCalls[0].url,'api/servers/de01/link-test');
+ assert.equal(c.apiCalls[0].body.count,5);
+
+ // 2. Fallback to doctor when unsupported: true or 404
+ c.apiCalls.length=0;
+ c.nextLinkTest=()=>({status:200,j:{ok:false,unsupported:true}});
+ await c.serviceHealth('iran1','trk01','node1');
+ assert.ok(c.apiCalls.some(x=>x.url==='api/servers/iran1/action'&&x.body.action==='doctor'));
+ assert.equal(modCalls.at(-1).out,true);
+ assert.equal(modCalls.at(-1).txt,'DOCTOR OK');
+
+ c.apiCalls.length=0;
+ c.nextLinkTest=()=>({status:404,j:{error:'not found'}});
+ await c.serviceHealth('iran1','trk01','node1');
+ assert.ok(c.apiCalls.some(x=>x.url==='api/servers/iran1/action'&&x.body.action==='doctor'));
+
+ // 3. renderDriftPanel XSS escaping and clean vs issue rendering
+ const cleanHtml=c.renderDriftPanel({hub_version:'2.1.1',summary:{clean:true,total:0},items:[]});
+ assert.ok(cleanHtml.includes('drift_clean'));
+ assert.equal(domMap.driftpanel.innerHTML,cleanHtml);
+
+ const evil='<script>alert(1)</script>"\'';
+ const dirtyHtml=c.renderDriftPanel({
+  hub_version:'2.1.1',
+  summary:{clean:false,total:1},
+  items:[{severity:'error',kind:'carrier_mismatch',server:evil,peer:'n1',service:'s<1>',expected:'ws',actual:'frp',message:'bad '+evil}]
+ });
+ assert.ok(!dirtyHtml.includes('<script>'));
+ assert.ok(dirtyHtml.includes('&lt;script&gt;'));
+ assert.ok(dirtyHtml.includes('drift-sev-error'));
+});

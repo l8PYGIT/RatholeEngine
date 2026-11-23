@@ -593,10 +593,11 @@ function renderDashboard(){
  const pg=$('page'); if(!pg)return;
  const dirty=Boolean(DASH_FILTER.q||DASH_FILTER.role!=='all'||DASH_FILTER.status!=='all');
  pg.innerHTML=`<div class="ptitle"><h2>${t('nav_dash')}</h2><span class="page-count">${SERVERS.length}</span><span class="ptitle-spacer"></span>
-   <div class="page-actions"><button class="g" id="updall" type="button" onclick="updateAll()">${icon('download')}${t('upd_all')}</button>
+   <div class="page-actions"><button class="gh" id="driftbtn" type="button" onclick="checkFleetDrift()">${icon('shield')}${t('drift_check')}</button><button class="g" id="updall" type="button" onclick="updateAll()">${icon('download')}${t('upd_all')}</button>
    <div class="vswitch" role="group" aria-label="${h(t('view'))}"><button id="vg" type="button" class="${VIEW==='grid'?'on':''}" aria-pressed="${VIEW==='grid'}" onclick="setView('grid')">${icon('grid')}${t('view_grid')}</button>
    <button id="vl" type="button" class="${VIEW==='list'?'on':''}" aria-pressed="${VIEW==='list'}" onclick="setView('list')">${icon('list')}${t('view_list')}</button></div></div></div>
   <div id="updpanel"></div>
+  <div id="driftpanel"></div>
   <div class="kpi-grid" id="kpi_grid"></div>
   <section class="status-strip" id="hubstrip" aria-label="${h(t('hub_box'))}"></section>
   <details class="diag-sec server-panel" id="add_srv_details">
@@ -1155,7 +1156,7 @@ function renderNode(n,ov){
      <button class="s" onclick="applyNodePreset('${n}','backhaul')">${t('preset_bh')}</button>
    </div>
    <div class="btns"><span class="sub">${t('carrier')}</span>${carrierSelect(n,ov)}
-   <button class="s" onclick="run('${n}','restart')">${t('restart_tunnel')}</button></div>
+   <button class="gh" type="button" data-lt-node="${h(n)}" onclick="nodeLinkTest(this.dataset.ltNode)">${t('link_test')}</button><button class="s" onclick="run('${n}','restart')">${t('restart_tunnel')}</button></div>
    <div class="sub" style="margin-top:4px">${h(t('carrier_hint'))}</div>${connSummary(ov,'node')}
    <div class="btns" style="margin-top:8px"><span class="sub">${t('watchdog')}</span>
    ${toggleAction(!!(((ov.status||{}).watchdog||{}).enabled),`<button class="g" onclick="wdOn('${n}')">${t('wd_on')}</button>`,`<button class="r" onclick="run('${n}','watchdog_off')">${t('wd_off')}</button>`)}
@@ -1391,7 +1392,7 @@ function serviceMenu(side,server,name){
 function serviceControl(iran,name,action,next,peerName){
  if(['configure','copy'].includes(action)&&iranNodeMode(OVS[iran],name)==='game'){toast(t('service_game_hint'));return;}
  if(action==='configure')return quickCarrierModal(iran,name,next||iranNodeMode(OVS[iran],name),peerName);
- if(action==='health')return serviceHealth(iran,name);
+ if(action==='health')return serviceHealth(iran,name,peerName);
  if(action==='copy')return copyServiceConfig(iran,name);
  if(action==='remove')return removeServicePair(iran,name,peerName);
  const peer=findNodeServer(name,peerName);
@@ -1406,14 +1407,155 @@ function nodeServiceAction(server,name,action,next){
  formModal(t('l_iran_srv'),[{id:'iran',label:t('l_iran_srv'),type:'select',val:matches[0].name,opts:matches.map(s=>({v:s.name,t:s.name}))}],v=>{closeModal();apply(v.iran);});
 }
 
-async function serviceHealth(iran,name){
- toast(t('service_testing')+' '+name);
+let _LT_CB={retest:null,doc:null};
+
+function _ltVerdictBadge(verdict){
+ if(verdict==='healthy'||verdict==='open_no_http')return `<span class="badge b-ok">${h(t('lt_healthy'))}</span>`;
+ if(verdict==='degraded')return `<span class="badge b-warn">${h(t('lt_degraded'))}</span>`;
+ return `<span class="badge b-bad">${h(t('lt_failed'))}</span>`;
+}
+
+function _ltSideCard(title,side){
+ if(!side){
+  return `<div class="lt-card"><h4><span>${h(title)}</span><span class="badge">-</span></h4><div class="sub">${h(t('lt_no_peer'))}</div></div>`;
+ }
+ const r=side.rtt_ms||{};
+ const avgS=(r.avg!=null)?(r.avg+' ms'):'-';
+ const jitS=(side.jitter_ms!=null)?(side.jitter_ms+' ms'):'-';
+ const lossS=(side.loss_pct!=null)?(side.loss_pct+'%'):'-';
+ const rangeS=(r.min!=null&&r.max!=null)?`min ${r.min} / p95 ${r.p95!=null?r.p95:r.max} / max ${r.max} ms`:'';
+ const backs=(side.backends||[]).map(b=>{
+  const cls=b.up?'b-ok':'b-bad';
+  const st=b.up?'UP':'DOWN';
+  return `<span class="badge ${cls} mono">${h(b.name)}:${h(b.port)} ${st}</span>`;
+ }).join('');
+ const gre=side.gre?`<div class="sub">${h(t('lt_gre_underlay'))}: <span class="badge ${side.gre.up?'b-ok':'b-bad'}">${h(side.gre.iface)} → ${h(side.gre.peer_ip)} (${side.gre.up?'UP':'DOWN'}${(side.gre.rtt_ms&&side.gre.rtt_ms.avg!=null)?', '+side.gre.rtt_ms.avg+' ms':''})</span></div>`:'';
+ return `<div class="lt-card">
+  <h4><span>${h(title)}</span>${_ltVerdictBadge(side.verdict)}</h4>
+  <div class="lt-metrics">
+   <div class="lt-metric"><span class="k">${h(t('lt_rtt'))}</span><span class="v">${h(avgS)}</span></div>
+   <div class="lt-metric"><span class="k">${h(t('lt_jitter'))}</span><span class="v">${h(jitS)}</span></div>
+   <div class="lt-metric"><span class="k">${h(t('lt_loss'))}</span><span class="v">${h(lossS)}</span></div>
+  </div>
+  ${rangeS?`<div class="sub mono">${h(rangeS)}</div>`:''}
+  ${side.endpoint||side.port?`<div class="sub mono">${h(side.probe_mode||'')} · ${h(side.endpoint||('127.0.0.1:'+side.port))}${side.http_status?' · HTTP '+h(side.http_status):''}${side.tls_version?' · '+h(side.tls_version):''}</div>`:''}
+  ${side.detail?`<div class="sub">${h(side.detail)}</div>`:''}
+  ${gre}
+  ${backs?`<div><div class="sub" style="margin-bottom:4px">${h(t('lt_backends'))}:</div><div class="lt-backends">${backs}</div></div>`:''}
+ </div>`;
+}
+
+function renderLinkTestModal(title,data,retestFn,doctorFn){
+ _LT_CB={retest:retestFn||null,doc:doctorFn||null};
+ const body=`<h3>${h(title)}</h3>
+  <div class="lt-summary">
+   <div class="lt-summary-top">${_ltVerdictBadge(data.verdict)}<span class="mono" style="font-size:12px">${h(data.diagnosis_code||'')}</span></div>
+   <div style="font-size:13px">${h(data.diagnosis||'')}</div>
+  </div>
+  <div class="lt-grid">
+   ${_ltSideCard(t('lt_iran_to_node'),data.iran_to_node)}
+   ${_ltSideCard(t('lt_node_to_iran'),data.node_to_iran)}
+  </div>
+  <div class="modal-actions">
+   <button class="gh" type="button" onclick="_LT_CB.retest&&_LT_CB.retest()">${h(t('lt_retest'))}</button>
+   <button class="gh" type="button" onclick="_LT_CB.doc&&_LT_CB.doc()">${h(t('lt_full_doctor'))}</button>
+   <button class="s" type="button" onclick="closeModal()">${h(t('close'))}</button>
+  </div>`;
+ modal(body);
+}
+
+async function runServerDoctor(srv,label){
+ toast(t('service_testing')+' '+label);
  try{
-  const {status,j}=await api('POST','api/servers/'+iran+'/action',{action:'doctor',args:{}});
+  const {status,j}=await api('POST','api/servers/'+srv+'/action',{action:'doctor',args:{}});
   if(status<200||status>=300||!j)throw new Error((j&&j.error)||'HTTP '+status);
-  outModal(t('service_health')+' · '+name,((j.out||'')+'\n'+(j.err||'')).trim()||('rc='+j.rc));
+  outModal(t('service_health')+' · '+label,((j.out||'')+'\n'+(j.err||'')).trim()||('rc='+j.rc));
+  await loadOv(srv);
+ }catch(e){outModal(t('service_health'),e.message);}
+}
+
+async function serviceHealth(iran,name,peerName){
+ toast(t('lt_running')+' '+name);
+ try{
+  const {status,j}=await api('POST','api/servers/'+iran+'/link-test',{node:name,peer:peerName||'',count:5});
+  if(status===404||(j&&j.unsupported)){
+   return await runServerDoctor(iran,name);
+  }
+  if(status<200||status>=300||!j)throw new Error((j&&j.error)||'HTTP '+status);
+  renderLinkTestModal(t('service_health')+' · '+name,j,
+   ()=>serviceHealth(iran,name,peerName),
+   ()=>runServerDoctor(iran,name));
   await loadOv(iran);
  }catch(e){outModal(t('service_health'),e.message);}
+}
+
+async function nodeLinkTest(n){
+ toast(t('lt_running')+' '+n);
+ try{
+  const {status,j}=await api('POST','api/servers/'+n+'/link-test',{count:5});
+  if(status===404||(j&&j.unsupported)){
+   return await runServerDoctor(n,n);
+  }
+  if(status<200||status>=300||!j)throw new Error((j&&j.error)||'HTTP '+status);
+  renderLinkTestModal(t('link_test')+' · '+n,j,
+   ()=>nodeLinkTest(n),
+   ()=>runServerDoctor(n,n));
+ }catch(e){outModal(t('link_test'),e.message);}
+}
+
+function closeDriftPanel(){
+ const p=$('driftpanel');
+ if(p)p.innerHTML='';
+}
+
+function renderDriftPanel(data){
+ const sum=(data&&data.summary)||{};
+ const items=(data&&data.items)||[];
+ const clean=Boolean(sum.clean||(items.length===0));
+ const headBadge=clean
+  ?`<span class="badge b-ok">${h(t('drift_clean'))}</span>`
+  :`<span class="badge b-warn">${h(sum.total||items.length)} ${h(t('drift_issues'))}</span>`;
+ const rows=items.map(it=>{
+  const sev=it.severity==='error'?'error':(it.severity==='warning'?'warning':'info');
+  const sCls=sev==='error'?'b-bad':(sev==='warning'?'b-warn':'b-info');
+  const diff=(it.expected||it.actual)
+   ?`<div class="drift-item-diff">${it.expected?`<span>${h(t('drift_expected'))}: <code class="mono">${h(it.expected)}</code></span>`:''}${it.actual?`<span>${h(t('drift_actual'))}: <code class="mono">${h(it.actual)}</code></span>`:''}</div>`
+   :'';
+  const openBtn=it.server?`<button class="gh" type="button" data-drift-srv="${h(it.server)}" onclick="nav('#/server/'+this.dataset.driftSrv)">${h(it.server)}</button>`:'';
+  const peerBadge=it.peer?`<span class="badge">${h(it.peer)}</span>`:'';
+  const svcBadge=it.service?`<span class="badge b-ws mono">${h(it.service)}</span>`:'';
+  return `<div class="drift-item drift-sev-${sev}">
+   <div class="drift-item-top"><span class="badge ${sCls}">${h(sev.toUpperCase())}</span><span class="badge mono">${h(it.kind||'')}</span>${openBtn}${peerBadge}${svcBadge}</div>
+   <div class="drift-item-msg">${h(it.message||'')}</div>
+   ${diff}
+  </div>`;
+ }).join('');
+ const html=`<div class="card drift-panel"><div class="cbody">
+  <div class="drift-head">
+   <div class="drift-head-meta"><strong>${h(t('drift_title'))}</strong>${headBadge}${data&&data.hub_version?`<span class="sub mono">Hub ${h(data.hub_version)}</span>`:''}</div>
+   <button class="gh" type="button" onclick="closeDriftPanel()">${h(t('close'))}</button>
+  </div>
+  <div class="drift-note">${h(t('drift_readonly_note'))}</div>
+  ${rows?`<div class="drift-list">${rows}</div>`:''}
+ </div></div>`;
+ const p=$('driftpanel');
+ if(p)p.innerHTML=html;
+ return html;
+}
+
+async function checkFleetDrift(){
+ const p=$('driftpanel'), btn=$('driftbtn');
+ if(btn)btn.disabled=true;
+ if(p)p.innerHTML=`<div class="card drift-panel"><div class="cbody">${h(t('drift_checking'))}</div></div>`;
+ try{
+  const {status,j}=await api('GET','api/fleet/drift');
+  if(status<200||status>=300||!j)throw new Error((j&&j.error)||'HTTP '+status);
+  renderDriftPanel(j);
+ }catch(e){
+  if(p)p.innerHTML=`<div class="card drift-panel"><div class="cbody"><span class="badge b-bad">${h(e.message)}</span></div></div>`;
+ }finally{
+  if(btn)btn.disabled=false;
+ }
 }
 
 async function copyServiceConfig(iran,name){

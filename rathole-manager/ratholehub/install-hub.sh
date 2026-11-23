@@ -24,6 +24,7 @@ install -m755 "$SCRIPT_DIR/hub.py" "$APP_DIR/hub.py"
 # hubcmds.py (naghshe-ye action→argv، bakhsh-e amniati) va asset-haye UI joda hastand
 # va HATMAN bayad kenar-e hub.py nasb shavand، vagarna hub bala nemiayad / UI khali ast.
 install -m644 "$SCRIPT_DIR/hubcmds.py" "$APP_DIR/hubcmds.py"
+install -m644 "$SCRIPT_DIR/hubdiag.py" "$APP_DIR/hubdiag.py"
 [ -f "$SCRIPT_DIR/ssh_proxy.py" ] && install -m644 "$SCRIPT_DIR/ssh_proxy.py" "$APP_DIR/ssh_proxy.py"
 mkdir -p "$APP_DIR/ui"
 for f in index.html app.css app.js i18n.js vazirmatn.woff2; do

@@ -956,6 +956,7 @@
   }
   .b-ok { border-color: color-mix(in srgb, var(--success) 32%, transparent); background: var(--success-soft); color: var(--success); }
   .b-bad { border-color: color-mix(in srgb, var(--danger) 32%, transparent); background: var(--danger-soft); color: var(--danger); }
+  .b-warn { border-color: color-mix(in srgb, var(--warning) 32%, transparent); background: var(--warning-soft); color: var(--warning); }
   .b-info { border-color: color-mix(in srgb, var(--info) 32%, transparent); background: var(--info-soft); color: var(--info); }
   .b-kcp { border-color: color-mix(in srgb, var(--info) 28%, transparent); background: var(--info-soft); color: var(--info); }
   .b-ws { border-color: var(--border); background: color-mix(in srgb, var(--text-faint) 15%, transparent); color: var(--text-muted); }
@@ -1732,6 +1733,57 @@
     gap: 10px;
   }
   .carrier-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+
+  /* M2: Fleet Drift Panel & Bidirectional Link Test Modal */
+  .drift-panel { margin-bottom: 14px; }
+  .drift-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin-bottom: 10px; }
+  .drift-head-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .drift-note { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+  .drift-list { display: grid; gap: 8px; }
+  .drift-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-inline-start: 3px solid var(--info);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+  }
+  .drift-item.drift-sev-error { border-inline-start-color: var(--danger); background: color-mix(in srgb, var(--danger-soft) 35%, var(--surface-2)); }
+  .drift-item.drift-sev-warning { border-inline-start-color: var(--warning); background: color-mix(in srgb, var(--warning-soft) 30%, var(--surface-2)); }
+  .drift-item.drift-sev-info { border-inline-start-color: var(--info); }
+  .drift-item-top { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+  .drift-item-msg { font-size: 13px; color: var(--text); }
+  .drift-item-diff { font-size: 11.5px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 10px; }
+
+  .lt-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+  }
+  .lt-summary-top { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .lt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .lt-card {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--glass-card);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .lt-card h4 { margin: 0; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .lt-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .lt-metric { padding: 6px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); }
+  .lt-metric .k { display: block; font-size: 10.5px; color: var(--text-muted); }
+  .lt-metric .v { display: block; font-size: 13px; font-weight: 700; font-family: var(--mono); }
+  .lt-backends { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 
   @supports (corner-shape: squircle) {
     .scard, .kpi-card, .card, .spage .sec, .mbox, .cmdk-box, .login-panel, .brand-mark, .carrier-card {

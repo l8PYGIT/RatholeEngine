@@ -333,8 +333,9 @@ def hub_status():
 from hubcmds import (  # noqa: F401  (nam-ha dar sartasar-e hub estefade mishavand)
     RE_NAME, RE_HOST, RE_PORT, RE_PROFILE, RE_IPPORT, RE_KEY, RE_B64, RE_ID, RE_PW,
     RE_EMAIL, RE_PATH, RE_SLUG, RE_HEADER, RE_BH_SRV, RE_BH_CLI, RE_BH_TOK, RE_CHAN,
-    build_iran_cmd, build_node_cmd, build_cmd, WRITE_ACTIONS, _diag,
+    RE_COUNT, build_iran_cmd, build_node_cmd, build_cmd, WRITE_ACTIONS, _diag,
 )
+from hubdiag import compute_fleet_drift, synthesize_link_test
 
 # ---------- ejra-ye az rah dvr (Agent API ya SSH) ----------
 def _norm_agent_url(url):
@@ -904,6 +905,47 @@ def mock_run(server, cmd_args):
         return {"rc": 0, "out": "GRE tunnel: roshan  interface: gre1 (tunnel: 10.10.10.1/30, peer: 198.51.100.5)\n  link status: UP", "err": ""}
     if j == "ratholenode gre status":
         return {"rc": 0, "out": "GRE tunnel: roshan  interface: gre1 (tunnel: 10.10.10.2/30, peer: 5.202.4.40)\n  link status: UP", "err": ""}
+    if cmd_args[:2] == ["ratholectl", "test"]:
+        nm = cmd_args[2] if len(cmd_args) >= 3 else "trk01"
+        cnt = 5
+        for i, tok in enumerate(cmd_args):
+            if tok == "--count" and i + 1 < len(cmd_args) and cmd_args[i + 1].isdigit():
+                cnt = int(cmd_args[i + 1])
+        port_map = {"trk01": 1005, "trk02": 1006, "gamenodetrk": 1007, "noisenode": 1008, "plainnode": 1009, "frpnode": 1010, "grenode": 1011}
+        tr_map = {"trk01": "backhaul", "trk02": "kcp", "gamenodetrk": "ws", "noisenode": "noise", "plainnode": "plain", "frpnode": "frp", "grenode": "gre"}
+        is_game = (nm == "gamenodetrk")
+        return {"rc": 0, "out": json.dumps({
+            "ok": True, "verdict": "healthy", "probe_mode": "tls_direct" if is_game else "http_ws",
+            "host": "127.0.0.1", "port": port_map.get(nm, 1005),
+            "count": cnt, "ok_count": cnt, "loss_pct": 0.0,
+            "rtt_ms": {"min": 14.2, "avg": 18.4, "max": 24.1, "p95": 23.0},
+            "jitter_ms": 2.3, "listener_up": True,
+            "http_status": None if is_game else 101,
+            "tls_version": "TLSv1.3" if is_game else None,
+            "detail": None, "backends": [], "gre": None,
+            "role": "panel", "node": nm, "transport": tr_map.get(nm, "ws"),
+            "inbound_port": 8444, "sni": "gmtrk.l1t.ir" if is_game else None,
+            "service": {"name": "rathole-backhaul-server" if nm == "trk01" else "rathole-server", "active": True, "status": "yes"},
+        }), "err": ""}
+    if cmd_args[:2] == ["ratholenode", "test"]:
+        cnt = 5
+        for i, tok in enumerate(cmd_args):
+            if tok == "--count" and i + 1 < len(cmd_args) and cmd_args[i + 1].isdigit():
+                cnt = int(cmd_args[i + 1])
+        snm = server.get("name", "trk01")
+        inb_map = {"trk01": 8444, "trk02": 8445, "noisenode": 8447, "gamenodetrk": 2101, "plainnode": 8449, "frpnode": 8450, "grenode": 8451}
+        return {"rc": 0, "out": json.dumps({
+            "ok": True, "verdict": "healthy", "probe_mode": "ws_tls",
+            "host": "rp01.l1t.ir", "port": 443,
+            "count": cnt, "ok_count": cnt, "loss_pct": 0.0,
+            "rtt_ms": {"min": 11.8, "avg": 15.1, "max": 19.6, "p95": 18.9},
+            "jitter_ms": 1.6, "listener_up": True,
+            "http_status": 101, "tls_version": "TLSv1.3", "detail": None,
+            "backends": [{"name": snm, "lane": "rathole", "port": inb_map.get(snm, 8444), "up": True, "rtt_ms": 0.4}],
+            "gre": None, "role": "node", "transport": "ws",
+            "endpoint": "rp01.l1t.ir:443",
+            "service": {"name": "rathole-client", "active": True, "status": "yes"},
+        }), "err": ""}
     if j.startswith("ratholenode set SERVER "):
         return {"rc": 0, "out": "tanzim shod: SERVER = %s\n[mock] tunnel-e asli be-ruz shod." % cmd_args[-1], "err": ""}
     return {"rc": 0, "out": "[mock] %s → %s" % (role, j), "err": ""}
@@ -1205,6 +1247,174 @@ def authed(cfg, headers, cookies):
     tok = cookies.get("rhsession", "")
     return check_session(cfg, tok)
 
+
+def collect_server_overview(s):
+    name = s.get("name", "")
+    role = s.get("role")
+    host_fallback = s.get("host") or (urlparse(s.get("api_url") or "").hostname if s.get("transport") == "api" else None)
+    ov = {"server": name, "role": role, "host": host_fallback, "reachable": True}
+    def R(args):
+        return run_on_server(s, args)
+    if role == "iran":
+        # Sariat-e bala: be jaye 12 dastoor-e motavali + `doctor` (ke 6-9s rooye WS probe
+        # hang mikonad), status --json + kcp status + version ra hamzaman ejra mikonim.
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f_st = pool.submit(R, ["ratholectl", "status", "--json"])
+            f_kcp = pool.submit(R, ["ratholectl", "kcp", "status"])
+            f_ver = pool.submit(R, ["ratholectl", "version"])
+            r_st, r_kcp, r_ver = f_st.result(), f_kcp.result(), f_ver.result()
+        if r_st.get("rc") not in (0, None):
+            ov["reachable"] = False; ov["error"] = r_st.get("err", "") or ("rc=%s" % r_st.get("rc")); return ov
+        st = {}
+        raw = r_st.get("out", "") or ""
+        try:
+            st = json.loads(raw) if raw.strip() else {}
+        except Exception as e:
+            print(f"[hub] status --json parse failed for {name}: {e}")
+            print(f"[hub] raw output: {raw[:200]}")
+            st = {}
+        ov["status"] = st
+        ov["kcp"] = parse_kcp_status(r_kcp.get("out", ""))
+        ov["version"] = parse_version(r_ver.get("out", ""))
+        if isinstance(st, dict) and ("nodes" in st or "features" in st):
+            ov["domain"] = st.get("domain") or ""
+            if not ov["host"] and st.get("public_ip"):
+                ov["host"] = st.get("public_ip")
+            raw_nodes = st.get("nodes") or []
+            norm_nodes = []
+            for nd in raw_nodes:
+                if not isinstance(nd, dict):
+                    continue
+                inb = nd.get("inbound_port") if nd.get("inbound_port") is not None else nd.get("inbound")
+                norm_nodes.append({
+                    "name": nd.get("name", ""),
+                    "port": str(nd.get("port", "")) if nd.get("port") is not None else "",
+                    "inbound": str(inb) if inb is not None else "",
+                    "inbound_port": str(inb) if inb is not None else "",
+                    "api_port": str(nd.get("api_local_port")) if nd.get("api_local_port") else "",
+                    "sni": nd.get("sni") or "",
+                    "transport": nd.get("transport") or "ws",
+                })
+            ov["nodes"] = norm_nodes
+            ov["game"] = [{"name": x["name"], "sni": x["sni"], "port": x["port"]} for x in norm_nodes if x.get("sni")]
+            feats = st.get("features") or {}
+            f_pl = feats.get("plain") or {}
+            f_dr = feats.get("direct") or {}
+            f_nz = feats.get("noise") or {}
+            f_bh = feats.get("backhaul") or {}
+            f_frp = feats.get("frp") or {}
+            f_gre = feats.get("gre") or {}
+            nz_nodes = [x["name"] for x in norm_nodes if x.get("transport") == "noise"]
+            ov["plain"] = {"enabled": bool(f_pl.get("configured")), "port": f_pl.get("port")}
+            ov["direct"] = {"enabled": bool(f_dr.get("configured")), "port": f_dr.get("port"), "header": st.get("direct_header") or ""}
+            ov["noise"] = {"enabled": bool(f_nz.get("configured")), "active": bool(f_nz.get("active")), "port": f_nz.get("port"), "nodes": nz_nodes, "count": len(nz_nodes)}
+            ov["backhaul"] = {"enabled": bool(f_bh.get("configured")), "active": bool(f_bh.get("active")), "port": f_bh.get("port"), "mode": f_bh.get("mode"), "transport": f_bh.get("transport")}
+            ov["frp"] = {"enabled": bool(f_frp.get("configured")), "active": bool(f_frp.get("active")), "port": f_frp.get("port"), "transport": f_frp.get("transport")}
+            ov["gre"] = {"enabled": bool(f_gre.get("configured")), "active": bool(f_gre.get("active")), "name": f_gre.get("name"), "remote_ip": f_gre.get("remote_ip"), "tunnel_ip": f_gre.get("tunnel_ip")}
+            svcs = st.get("services") or {}
+            h_ok, h_fail = 0, 0
+            for k in ("rathole_server", "nginx", "nginx_config_ok"):
+                if k in svcs:
+                    if svcs[k] == "yes": h_ok += 1
+                    else: h_fail += 1
+            for k in ("noise", "backhaul", "frp"):
+                if svcs.get(k) in ("yes", "no"):
+                    if svcs[k] == "yes": h_ok += 1
+                    else: h_fail += 1
+            ov["health"] = {"ok": h_ok, "fail": h_fail, "nodes": {}}
+        else:
+            # Fallback baraye panel-haye ghadimi ke status --json nadarand (hamzaman, bedoone doctor-e kond)
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                f_ls = pool.submit(R, ["ratholectl", "ls"])
+                f_nz = pool.submit(R, ["ratholectl", "noise", "status"])
+                f_pl = pool.submit(R, ["ratholectl", "plain", "status"])
+                f_dr = pool.submit(R, ["ratholectl", "direct", "status"])
+                f_gm = pool.submit(R, ["ratholectl", "game", "ls"])
+                f_bh = pool.submit(R, ["ratholectl", "backhaul", "status"])
+                f_frp = pool.submit(R, ["ratholectl", "frp", "status"])
+                f_gre = pool.submit(R, ["ratholectl", "gre", "status"])
+                r_ls = f_ls.result()
+                if r_ls.get("rc") not in (0, None):
+                    ov["reachable"] = False; ov["error"] = r_ls.get("err", "") or ("rc=%s" % r_ls.get("rc")); return ov
+                ov["nodes"] = parse_iran_ls(r_ls.get("out", ""))
+                ov["noise"] = parse_noise_status(f_nz.result().get("out", ""))
+                ov["plain"] = parse_plain_status(f_pl.result().get("out", ""))
+                ov["direct"] = parse_direct_status(f_dr.result().get("out", ""))
+                ov["game"] = parse_game_ls(f_gm.result().get("out", ""))
+                ov["backhaul"] = parse_backhaul_status(f_bh.result().get("out", ""))
+                ov["frp"] = parse_frp_status(f_frp.result().get("out", ""))
+                ov["gre"] = parse_gre_status(f_gre.result().get("out", ""))
+                ov["health"] = {"ok": 0, "fail": 0, "nodes": {}}
+    else:
+        r = R(["ratholenode", "ls"])
+        if r.get("rc") not in (0, None):
+            ov["reachable"] = False; ov["error"] = r.get("err", "") or ("rc=%s" % r.get("rc")); return ov
+        nls = parse_node_ls(r.get("out", ""))
+        ov["main_server"] = nls["server"]; ov["services"] = nls["services"]
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            f_bls = pool.submit(R, ["ratholenode", "backhaul", "ls"])
+            f_st  = pool.submit(R, ["ratholenode", "status", "--json"])
+            f_kcp = pool.submit(R, ["ratholenode", "kcp", "status"])
+            f_nz  = pool.submit(R, ["ratholenode", "noise", "status"])
+            f_bh  = pool.submit(R, ["ratholenode", "backhaul", "status"])
+            f_frp = pool.submit(R, ["ratholenode", "frp", "status"])
+            f_gre = pool.submit(R, ["ratholenode", "gre", "status"])
+            f_ups = pool.submit(R, ["ratholenode", "upstream", "ls"])
+            f_ver = pool.submit(R, ["ratholenode", "version"])
+            bls = parse_node_ls(f_bls.result().get("out", ""))
+            ov["backhaul_services"] = bls["services"]
+            try:
+                raw = f_st.result().get("out", "") or "{}"
+                node_status = json.loads(raw)
+                if isinstance(node_status, dict) and "main" in node_status:
+                    ov["status"] = node_status
+                    ov["main_tunnel"] = node_status.get("main", {}).get("transport", "ws")
+            except Exception:
+                ov["status"] = {}
+            ov["kcp"] = parse_kcp_status(f_kcp.result().get("out", ""))
+            ov["noise"] = parse_noise_status(f_nz.result().get("out", ""))
+            ov["backhaul"] = parse_backhaul_status(f_bh.result().get("out", ""))
+            ov["frp"] = parse_frp_status(f_frp.result().get("out", ""))
+            ov["gre"] = parse_gre_status(f_gre.result().get("out", ""))
+            ups = parse_upstream_ls(f_ups.result().get("out", ""))
+            ov["upstreams"] = ups["upstreams"]
+            ov["version"] = parse_version(f_ver.result().get("out", ""))
+        if not ov.get("status", {}).get("main", {}).get("transport"):
+            if ov.get("frp", {}).get("enabled"):
+                ov["main_tunnel"] = "frp"
+            elif ov.get("backhaul", {}).get("enabled"):
+                ov["main_tunnel"] = "backhaul"
+            elif ov.get("noise", {}).get("enabled"):
+                ov["main_tunnel"] = "noise"
+            elif ov.get("kcp", {}).get("enabled"):
+                ov["main_tunnel"] = "kcp"
+            elif not ov.get("main_tunnel"):
+                ov["main_tunnel"] = (ups.get("main") or {}).get("tunnel", ov["kcp"].get("mode", "ws"))
+    return ov
+
+
+def _parse_cli_link_test(res):
+    if not isinstance(res, dict):
+        return None, False
+    out_s = (res.get("out") or "").strip()
+    err_s = (res.get("err") or "").strip()
+    rc = res.get("rc")
+    low = (err_s + "\n" + out_s).lower()
+    unsupported = (rc not in (0, None)) and ("dstvr nashenakhte" in low or "unknown" in low or "usage:" in low)
+    if out_s.startswith("{"):
+        try:
+            parsed = json.loads(out_s)
+            if isinstance(parsed, dict):
+                return parsed, unsupported
+        except Exception:
+            pass
+    if unsupported:
+        return None, True
+    if rc not in (0, None):
+        return {"ok": False, "verdict": "failed", "detail": (err_s or out_s or ("rc=%s" % rc))[:200]}, False
+    return None, False
+
+
 # ---------- HTTP handler ----------
 class Handler(BaseHTTPRequestHandler):
     server_version = "ratholehub/0.1"
@@ -1284,6 +1494,8 @@ class Handler(BaseHTTPRequestHandler):
             try: lim = max(1, min(500, int(q.get("limit", ["100"])[0])))
             except Exception: lim = 100
             return self._send(200, read_audit(lim))
+        if p == "/api/fleet/drift":
+            return self._fleet_drift()
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/status$", p)
         if m:
             return self._status(m.group(1))
@@ -1349,6 +1561,9 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/action$", p)
         if m:
             return self._action(m.group(1), self._body_json())
+        m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/link-test$", p)
+        if m:
+            return self._link_test(m.group(1), self._body_json())
         if p == "/api/ip-tls/prepare":
             return self._prepare_ip_tls(self._body_json())
         return self._send(404, {"error": "not found"})
@@ -1615,152 +1830,6 @@ class Handler(BaseHTTPRequestHandler):
             audit_log(self._user(), name, action, safe_cmd, res.get("rc"))
         return self._send(200, {"server": name, "cmd": safe_cmd, **res})
 
-    def _overview(self, name):
-        s = self._find(name)
-        if not s:
-            return self._send(404, {"error": "server not found"})
-        role = s.get("role")
-        host_fallback = s.get("host") or (urlparse(s.get("api_url") or "").hostname if s.get("transport") == "api" else None)
-        ov = {"server": name, "role": role, "host": host_fallback, "reachable": True}
-        def R(args):
-            return run_on_server(s, args)
-        if role == "iran":
-            # Sariat-e bala: be jaye 12 dastoor-e motavali + `doctor` (ke 6-9s rooye WS probe
-            # hang mikonad), status --json + kcp status + version ra hamzaman ejra mikonim.
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                f_st = pool.submit(R, ["ratholectl", "status", "--json"])
-                f_kcp = pool.submit(R, ["ratholectl", "kcp", "status"])
-                f_ver = pool.submit(R, ["ratholectl", "version"])
-                r_st, r_kcp, r_ver = f_st.result(), f_kcp.result(), f_ver.result()
-            if r_st.get("rc") not in (0, None):
-                ov["reachable"] = False; ov["error"] = r_st.get("err", "") or ("rc=%s" % r_st.get("rc")); return self._send(200, ov)
-            st = {}
-            raw = r_st.get("out", "") or ""
-            try:
-                st = json.loads(raw) if raw.strip() else {}
-            except Exception as e:
-                print(f"[hub] status --json parse failed for {name}: {e}")
-                print(f"[hub] raw output: {raw[:200]}")
-                st = {}
-            ov["status"] = st
-            ov["kcp"] = parse_kcp_status(r_kcp.get("out", ""))
-            ov["version"] = parse_version(r_ver.get("out", ""))
-            if isinstance(st, dict) and ("nodes" in st or "features" in st):
-                ov["domain"] = st.get("domain") or ""
-                if not ov["host"] and st.get("public_ip"):
-                    ov["host"] = st.get("public_ip")
-                raw_nodes = st.get("nodes") or []
-                norm_nodes = []
-                for nd in raw_nodes:
-                    if not isinstance(nd, dict):
-                        continue
-                    inb = nd.get("inbound_port") if nd.get("inbound_port") is not None else nd.get("inbound")
-                    norm_nodes.append({
-                        "name": nd.get("name", ""),
-                        "port": str(nd.get("port", "")) if nd.get("port") is not None else "",
-                        "inbound": str(inb) if inb is not None else "",
-                        "inbound_port": str(inb) if inb is not None else "",
-                        "api_port": str(nd.get("api_local_port")) if nd.get("api_local_port") else "",
-                        "sni": nd.get("sni") or "",
-                        "transport": nd.get("transport") or "ws",
-                    })
-                ov["nodes"] = norm_nodes
-                ov["game"] = [{"name": x["name"], "sni": x["sni"], "port": x["port"]} for x in norm_nodes if x.get("sni")]
-                feats = st.get("features") or {}
-                f_pl = feats.get("plain") or {}
-                f_dr = feats.get("direct") or {}
-                f_nz = feats.get("noise") or {}
-                f_bh = feats.get("backhaul") or {}
-                f_frp = feats.get("frp") or {}
-                f_gre = feats.get("gre") or {}
-                nz_nodes = [x["name"] for x in norm_nodes if x.get("transport") == "noise"]
-                ov["plain"] = {"enabled": bool(f_pl.get("configured")), "port": f_pl.get("port")}
-                ov["direct"] = {"enabled": bool(f_dr.get("configured")), "port": f_dr.get("port"), "header": st.get("direct_header") or ""}
-                ov["noise"] = {"enabled": bool(f_nz.get("configured")), "active": bool(f_nz.get("active")), "port": f_nz.get("port"), "nodes": nz_nodes, "count": len(nz_nodes)}
-                ov["backhaul"] = {"enabled": bool(f_bh.get("configured")), "active": bool(f_bh.get("active")), "port": f_bh.get("port"), "mode": f_bh.get("mode"), "transport": f_bh.get("transport")}
-                ov["frp"] = {"enabled": bool(f_frp.get("configured")), "active": bool(f_frp.get("active")), "port": f_frp.get("port"), "transport": f_frp.get("transport")}
-                ov["gre"] = {"enabled": bool(f_gre.get("configured")), "active": bool(f_gre.get("active")), "name": f_gre.get("name"), "remote_ip": f_gre.get("remote_ip"), "tunnel_ip": f_gre.get("tunnel_ip")}
-                svcs = st.get("services") or {}
-                h_ok, h_fail = 0, 0
-                for k in ("rathole_server", "nginx", "nginx_config_ok"):
-                    if k in svcs:
-                        if svcs[k] == "yes": h_ok += 1
-                        else: h_fail += 1
-                for k in ("noise", "backhaul", "frp"):
-                    if svcs.get(k) in ("yes", "no"):
-                        if svcs[k] == "yes": h_ok += 1
-                        else: h_fail += 1
-                ov["health"] = {"ok": h_ok, "fail": h_fail, "nodes": {}}
-            else:
-                # Fallback baraye panel-haye ghadimi ke status --json nadarand (hamzaman, bedoone doctor-e kond)
-                with ThreadPoolExecutor(max_workers=4) as pool:
-                    f_ls = pool.submit(R, ["ratholectl", "ls"])
-                    f_nz = pool.submit(R, ["ratholectl", "noise", "status"])
-                    f_pl = pool.submit(R, ["ratholectl", "plain", "status"])
-                    f_dr = pool.submit(R, ["ratholectl", "direct", "status"])
-                    f_gm = pool.submit(R, ["ratholectl", "game", "ls"])
-                    f_bh = pool.submit(R, ["ratholectl", "backhaul", "status"])
-                    f_frp = pool.submit(R, ["ratholectl", "frp", "status"])
-                    f_gre = pool.submit(R, ["ratholectl", "gre", "status"])
-                    r_ls = f_ls.result()
-                    if r_ls.get("rc") not in (0, None):
-                        ov["reachable"] = False; ov["error"] = r_ls.get("err", "") or ("rc=%s" % r_ls.get("rc")); return self._send(200, ov)
-                    ov["nodes"] = parse_iran_ls(r_ls.get("out", ""))
-                    ov["noise"] = parse_noise_status(f_nz.result().get("out", ""))
-                    ov["plain"] = parse_plain_status(f_pl.result().get("out", ""))
-                    ov["direct"] = parse_direct_status(f_dr.result().get("out", ""))
-                    ov["game"] = parse_game_ls(f_gm.result().get("out", ""))
-                    ov["backhaul"] = parse_backhaul_status(f_bh.result().get("out", ""))
-                    ov["frp"] = parse_frp_status(f_frp.result().get("out", ""))
-                    ov["gre"] = parse_gre_status(f_gre.result().get("out", ""))
-                    ov["health"] = {"ok": 0, "fail": 0, "nodes": {}}
-        else:
-            r = R(["ratholenode", "ls"])
-            if r.get("rc") not in (0, None):
-                ov["reachable"] = False; ov["error"] = r.get("err", "") or ("rc=%s" % r.get("rc")); return self._send(200, ov)
-            nls = parse_node_ls(r.get("out", ""))
-            ov["main_server"] = nls["server"]; ov["services"] = nls["services"]
-            with ThreadPoolExecutor(max_workers=5) as pool:
-                f_bls = pool.submit(R, ["ratholenode", "backhaul", "ls"])
-                f_st  = pool.submit(R, ["ratholenode", "status", "--json"])
-                f_kcp = pool.submit(R, ["ratholenode", "kcp", "status"])
-                f_nz  = pool.submit(R, ["ratholenode", "noise", "status"])
-                f_bh  = pool.submit(R, ["ratholenode", "backhaul", "status"])
-                f_frp = pool.submit(R, ["ratholenode", "frp", "status"])
-                f_gre = pool.submit(R, ["ratholenode", "gre", "status"])
-                f_ups = pool.submit(R, ["ratholenode", "upstream", "ls"])
-                f_ver = pool.submit(R, ["ratholenode", "version"])
-                bls = parse_node_ls(f_bls.result().get("out", ""))
-                ov["backhaul_services"] = bls["services"]
-                try:
-                    raw = f_st.result().get("out", "") or "{}"
-                    node_status = json.loads(raw)
-                    if isinstance(node_status, dict) and "main" in node_status:
-                        ov["status"] = node_status
-                        ov["main_tunnel"] = node_status.get("main", {}).get("transport", "ws")
-                except Exception:
-                    ov["status"] = {}
-                ov["kcp"] = parse_kcp_status(f_kcp.result().get("out", ""))
-                ov["noise"] = parse_noise_status(f_nz.result().get("out", ""))
-                ov["backhaul"] = parse_backhaul_status(f_bh.result().get("out", ""))
-                ov["frp"] = parse_frp_status(f_frp.result().get("out", ""))
-                ov["gre"] = parse_gre_status(f_gre.result().get("out", ""))
-                ups = parse_upstream_ls(f_ups.result().get("out", ""))
-                ov["upstreams"] = ups["upstreams"]
-                ov["version"] = parse_version(f_ver.result().get("out", ""))
-            if not ov.get("status", {}).get("main", {}).get("transport"):
-                if ov.get("frp", {}).get("enabled"):
-                    ov["main_tunnel"] = "frp"
-                elif ov.get("backhaul", {}).get("enabled"):
-                    ov["main_tunnel"] = "backhaul"
-                elif ov.get("noise", {}).get("enabled"):
-                    ov["main_tunnel"] = "noise"
-                elif ov.get("kcp", {}).get("enabled"):
-                    ov["main_tunnel"] = "kcp"
-                elif not ov.get("main_tunnel"):
-                    ov["main_tunnel"] = (ups.get("main") or {}).get("tunnel", ov["kcp"].get("mode", "ws"))
-        return self._send(200, ov)
-
     def _details(self, name):
         s = self._find(name)
         if not s:
@@ -1971,6 +2040,90 @@ class Handler(BaseHTTPRequestHandler):
             cmd = build_cmd(role, act, {})
             out[act] = run_on_server(s, cmd) if cmd else {"rc": 1, "err": "n/a"}
         return self._send(200, {"server": name, "role": role, "checks": out})
+
+    def _overview(self, name):
+        s = self._find(name)
+        if not s:
+            return self._send(404, {"error": "server not found"})
+        return self._send(200, collect_server_overview(s))
+
+    def _fleet_drift(self):
+        inv = get_inventory()
+        ovs = {}
+        if inv:
+            workers = min(8, max(1, len(inv)))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futs = {s["name"]: pool.submit(collect_server_overview, s) for s in inv if s.get("name")}
+                for sname, fut in futs.items():
+                    try:
+                        ovs[sname] = fut.result()
+                    except Exception as e:
+                        ovs[sname] = {"server": sname, "reachable": False, "error": str(e)}
+        return self._send(200, compute_fleet_drift(inv, ovs, hub_version=hub_manager_version()))
+
+    def _link_test(self, name, d):
+        s = self._find(name)
+        if not s:
+            return self._send(404, {"error": "server not found"})
+        d = d if isinstance(d, dict) else {}
+        cnt_raw = str(d.get("count", "5") if d.get("count") is not None else "5")
+        if not RE_COUNT.match(cnt_raw):
+            return self._send(400, {"error": "invalid count (1..20)"})
+        inv = get_inventory()
+        role = s.get("role")
+
+        if role == "iran":
+            node = str(d.get("node", "") or "")
+            if not RE_NAME.match(node):
+                return self._send(400, {"error": "invalid or missing node name"})
+            peer = str(d.get("peer", "") or "")
+            if peer and not RE_NAME.match(peer):
+                return self._send(400, {"error": "invalid peer name"})
+            peer_srv = None
+            for x in inv:
+                if x.get("role") != "iran" and x.get("name") == (peer or node):
+                    peer_srv = x
+                    break
+            iran_cmd = build_iran_cmd("link_test", {"name": node, "count": cnt_raw})
+            node_cmd = build_node_cmd("link_test", {"count": cnt_raw}) if peer_srv else None
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                f_ir = pool.submit(run_on_server, s, iran_cmd)
+                f_nd = pool.submit(run_on_server, peer_srv, node_cmd) if peer_srv else None
+                iran_raw = f_ir.result()
+                node_raw = f_nd.result() if f_nd else None
+            iran_json, iran_unsup = _parse_cli_link_test(iran_raw)
+            node_json, node_unsup = _parse_cli_link_test(node_raw) if node_raw else (None, False)
+            res = synthesize_link_test(node, iran_json, node_json, peer_name=peer_srv["name"] if peer_srv else None)
+            if iran_unsup:
+                res["unsupported"] = True
+            if node_unsup:
+                res["node_unsupported"] = True
+            return self._send(200, res)
+
+        iran_name = str(d.get("iran", "") or "")
+        node_name = str(d.get("node", "") or "")
+        if iran_name and not RE_NAME.match(iran_name):
+            return self._send(400, {"error": "invalid iran server name"})
+        if node_name and not RE_NAME.match(node_name):
+            return self._send(400, {"error": "invalid node name"})
+        iran_srv = self._find(iran_name) if (iran_name and node_name) else None
+        if iran_srv and iran_srv.get("role") != "iran":
+            iran_srv = None
+        node_cmd = build_node_cmd("link_test", {"count": cnt_raw})
+        iran_cmd = build_iran_cmd("link_test", {"name": node_name, "count": cnt_raw}) if iran_srv else None
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_nd = pool.submit(run_on_server, s, node_cmd)
+            f_ir = pool.submit(run_on_server, iran_srv, iran_cmd) if iran_srv else None
+            node_raw = f_nd.result()
+            iran_raw = f_ir.result() if f_ir else None
+        node_json, node_unsup = _parse_cli_link_test(node_raw)
+        iran_json, iran_unsup = _parse_cli_link_test(iran_raw) if iran_raw else (None, False)
+        res = synthesize_link_test(node_name or name, iran_json, node_json, peer_name=name)
+        if node_unsup:
+            res["unsupported"] = True
+        if iran_unsup:
+            res["iran_unsupported"] = True
+        return self._send(200, res)
 
 
 # ---------- UI (az disk، na inline) ----------

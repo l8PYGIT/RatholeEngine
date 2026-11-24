@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Executable standalone entrypoint for rathole-tuner."""
+
+import os
+import sys
+
+_SELF_DIR = os.path.dirname(os.path.realpath(__file__))
+for _cand in (_SELF_DIR, "/usr/local/share/rathole"):
+    if os.path.isdir(os.path.join(_cand, "tuner")) and _cand not in sys.path:
+        sys.path.insert(0, _cand)
+        break
+
+from tuner.__main__ import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

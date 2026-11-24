@@ -8,6 +8,7 @@ import json
 import secrets
 import socket
 import struct
+import threading
 import time
 
 from . import ALLOWED_ACTIONS, MAX_FRAME_BYTES
@@ -150,6 +151,7 @@ class ControlClient:
         self.timeout = float(timeout)
         self._sock: socket.socket | None = None
         self._seen_nonces: dict[str, int] = {}
+        self._io_lock = threading.Lock()
 
     def connect(self) -> "ControlClient":
         sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
@@ -166,20 +168,21 @@ class ControlClient:
             self._sock = None
 
     def call(self, action: str, payload: dict | None = None, timeout: float | None = None) -> dict:
-        if self._sock is None:
-            self.connect()
-        old_to = self._sock.gettimeout()
-        if timeout is not None:
-            self._sock.settimeout(float(timeout))
-        try:
-            req = sign_frame(self.token, action, payload or {})
-            send_frame(self._sock, req)
-            resp = recv_frame(self._sock)
-            verify_frame(self.token, resp, seen_nonces=self._seen_nonces)
-            return resp.get("payload", {})
-        finally:
-            if self._sock is not None and timeout is not None:
-                try:
-                    self._sock.settimeout(old_to)
-                except OSError:
-                    pass
+        with self._io_lock:
+            if self._sock is None:
+                self.connect()
+            old_to = self._sock.gettimeout()
+            if timeout is not None:
+                self._sock.settimeout(float(timeout))
+            try:
+                req = sign_frame(self.token, action, payload or {})
+                send_frame(self._sock, req)
+                resp = recv_frame(self._sock)
+                verify_frame(self.token, resp, seen_nonces=self._seen_nonces)
+                return resp.get("payload", {})
+            finally:
+                if self._sock is not None and timeout is not None:
+                    try:
+                        self._sock.settimeout(old_to)
+                    except OSError:
+                        pass

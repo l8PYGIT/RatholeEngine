@@ -70,7 +70,7 @@ def verify_frame(
     frame: dict,
     seen_nonces: dict | None = None,
     now: int | None = None,
-    window_s: int = 60,
+    window_s: int = 600,
 ) -> dict:
     """Verify action allow-list, timestamp replay window, nonce uniqueness, and HMAC."""
     if not token or not isinstance(token, str):
@@ -154,10 +154,20 @@ class ControlClient:
         self._io_lock = threading.Lock()
 
     def connect(self) -> "ControlClient":
-        sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
-        sock.settimeout(self.timeout)
-        self._sock = sock
-        return self
+        try:
+            sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
+            sock.settimeout(self.timeout)
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            except OSError:
+                pass
+            self._sock = sock
+            return self
+        except OSError as exc:
+            raise ConnectionError(
+                f"Cannot reach peer responder at {self.host}:{self.port} ({exc}). "
+                f"Check firewall/security-group for TCP {self.port} and TCP/UDP {self.port + 1}."
+            ) from exc
 
     def close(self) -> None:
         if self._sock is not None:
@@ -169,20 +179,34 @@ class ControlClient:
 
     def call(self, action: str, payload: dict | None = None, timeout: float | None = None) -> dict:
         with self._io_lock:
-            if self._sock is None:
-                self.connect()
-            old_to = self._sock.gettimeout()
-            if timeout is not None:
-                self._sock.settimeout(float(timeout))
-            try:
-                req = sign_frame(self.token, action, payload or {})
-                send_frame(self._sock, req)
-                resp = recv_frame(self._sock)
-                verify_frame(self.token, resp, seen_nonces=self._seen_nonces)
-                return resp.get("payload", {})
-            finally:
-                if self._sock is not None and timeout is not None:
-                    try:
-                        self._sock.settimeout(old_to)
-                    except OSError:
-                        pass
+            max_attempts = 1 if action == "shutdown" else 3
+            last_exc: Exception | None = None
+            for attempt in range(max_attempts):
+                if self._sock is None:
+                    self.connect()
+                old_to = self._sock.gettimeout()
+                if timeout is not None:
+                    self._sock.settimeout(float(timeout))
+                try:
+                    req = sign_frame(self.token, action, payload or {})
+                    send_frame(self._sock, req)
+                    resp = recv_frame(self._sock)
+                    verify_frame(self.token, resp, seen_nonces=self._seen_nonces)
+                    if resp.get("id") != req["id"]:
+                        raise ProtocolError("mismatched response frame id")
+                    return resp.get("payload", {})
+                except (socket.timeout, TimeoutError, OSError, ProtocolError) as exc:
+                    last_exc = exc
+                    self.close()
+                    if action == "shutdown" or attempt >= max_attempts - 1:
+                        raise
+                    time.sleep(0.3)
+                finally:
+                    if self._sock is not None and timeout is not None:
+                        try:
+                            self._sock.settimeout(old_to)
+                        except OSError:
+                            pass
+            if last_exc is not None:
+                raise last_exc
+            raise ProtocolError("control call failed")

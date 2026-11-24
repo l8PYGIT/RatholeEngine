@@ -22,8 +22,111 @@ MON_CONF_PATH = os.environ.get("RATHOLEMON_CONF", "/etc/ratholehub/monitor.json"
 MON_UNIT_PATH = os.environ.get("RATHOLEMON_UNIT", "/etc/systemd/system/ratholemonitor.service")
 MON_INSTALLER_PATH = os.environ.get("RATHOLEMON_INSTALLER", os.path.join(os.path.dirname(os.path.abspath(__file__)), "install-monitor.sh"))
 TUNER_PROFILES_PATH = os.environ.get("RATHOLEHUB_TUNER_PROFILES", "/var/lib/ratholehub/tuner-profiles.json")
+TUNER_JOBS_PATH = os.environ.get("RATHOLEHUB_TUNER_JOBS", "/var/lib/ratholehub/tuner-jobs.json")
 _TUNER_JOBS = {}
+_tuner_jobs_loaded_path = None
 _tuner_jobs_lock = threading.Lock()
+
+
+def _public_tuner_job(j):
+    return {k: v for k, v in j.items() if k != "_stop_ev"}
+
+
+def _save_tuner_jobs_locked():
+    items = [_public_tuner_job(j) for j in _TUNER_JOBS.values()]
+    items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    try:
+        save_json(TUNER_JOBS_PATH, {"jobs": items[:20]})
+    except OSError:
+        pass
+
+
+def _ensure_tuner_jobs_loaded_locked():
+    global _tuner_jobs_loaded_path
+    if _tuner_jobs_loaded_path == TUNER_JOBS_PATH:
+        return
+    _tuner_jobs_loaded_path = TUNER_JOBS_PATH
+    _TUNER_JOBS.clear()
+    try:
+        data = load_json(TUNER_JOBS_PATH, {"jobs": []})
+    except Exception:
+        data = {"jobs": []}
+    raw_jobs = data.get("jobs") if isinstance(data, dict) else []
+    dirty = False
+    if isinstance(raw_jobs, list):
+        for item in raw_jobs[:20]:
+            if not isinstance(item, dict) or not item.get("job_id"):
+                continue
+            rec = dict(item)
+            if rec.get("status") == "running":
+                rec["status"] = "error"
+                rec["phase"] = "error"
+                if not rec.get("error"):
+                    rec["error"] = "Hub service restarted while benchmark was running"
+                dirty = True
+            _TUNER_JOBS[rec["job_id"]] = rec
+    if dirty:
+        _save_tuner_jobs_locked()
+
+
+def _extract_json_obj(raw_text):
+    s = (raw_text or "").strip()
+    if not s:
+        raise ValueError("Empty output (expected JSON)")
+    try:
+        obj = json.loads(s)
+        if isinstance(obj, dict):
+            return obj
+    except Exception:
+        pass
+    for line in reversed(s.splitlines()):
+        ls = line.strip()
+        if not ls.startswith("{"):
+            continue
+        try:
+            obj = json.loads(ls)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            continue
+    dec = json.JSONDecoder()
+    pos = len(s)
+    while True:
+        idx = s.rfind("{", 0, pos)
+        if idx < 0:
+            break
+        try:
+            obj, _ = dec.raw_decode(s[idx:])
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
+        pos = idx
+    raise ValueError("Invalid JSON output: " + s[:240])
+
+
+def _format_tuner_error(step, res_or_exc):
+    if isinstance(res_or_exc, dict):
+        err = (res_or_exc.get("err") or "").strip()
+        out = (res_or_exc.get("out") or "").strip()
+        raw = "\n".join(x for x in (err, out) if x).strip()
+        if not raw:
+            raw = f"rc={res_or_exc.get('rc', 1)} (no output)"
+    else:
+        raw = str(res_or_exc or "").strip() or "unknown error"
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    if any("Traceback (most recent call last)" in ln for ln in lines) and len(lines) > 1:
+        exc_line = lines[-1]
+        tail_ctx = "\n".join(lines[-5:-1])
+        msg = f"[{step}] {exc_line}" + (f"\n{tail_ctx}" if tail_ctx else "")
+    elif len(lines) > 6:
+        msg = f"[{step}] {lines[-1]}\n" + "\n".join(lines[-5:-1])
+    else:
+        msg = f"[{step}] " + "\n".join(lines)
+    low = raw.lower()
+    if "dstvr nashenakhte: bench" in low or "rathole-tuner peyda nashod" in low:
+        msg += "\nHint: update this server to v2.3+ via Update button or ratholectl/ratholenode update."
+    return msg[:1200]
 
 
 def _tuner_profile_mod():
@@ -1045,7 +1148,7 @@ def mock_run(server, cmd_args):
         # nemune-ye kutah: sakhtar-e vaghei + neshan dadan-e inke token-ha REDACT shode-and.
         return {"rc": 0, "out":
                 "\n===== kolli =====\n"
-                "naghsh      : %s\nratholectl  : manager_version=2.3.0\n"
+                "naghsh      : %s\nratholectl  : manager_version=2.3.2\n"
                 "\n===== unit: rathole-server  (halat: active/enabled) =====\n"
                 "Jul 31 12:00:01 rp01 rathole[811]: control channel established\n"
                 "\n===== state.json (/etc/rathole-manager/state.json) =====\n"
@@ -1208,7 +1311,15 @@ def mock_run(server, cmd_args):
                 "capabilities": {"kernel": "6.8.0", "cpus": 4, "ram_mb": 4096, "iface": "eth0", "available_cc": ["cubic", "bbr"]},
             }), "err": ""}
         if sub == "job":
-            return {"rc": 0, "out": json.dumps({"phase": "completed", "stage_index": 6, "stage_total": 6, "best_so_far": 91.8}), "err": ""}
+            return {"rc": 0, "out": json.dumps({
+                "phase": "completed", "stage_index": 6, "stage_total": 6,
+                "completed_trials": 12, "estimated_trials": 12, "best_so_far": 91.8,
+                "pmtu": {"forward_bytes": 1460, "reverse_bytes": 1460, "blackhole_detected": False},
+                "live_trials": [
+                    {"id": "baseline", "name": "baseline", "stage": 0, "throughput_mbps": 182.4, "loaded_rtt_p95_ms": 158.0, "jitter_ms": 14.5, "retrans_pct": 1.6, "score": 52.1, "disqualified": False},
+                    {"id": "s2_0_bbr_fq_lw32768", "name": "bbr_fq_lw32768", "stage": 2, "throughput_mbps": 418.7, "loaded_rtt_p95_ms": 46.2, "jitter_ms": 2.9, "retrans_pct": 0.15, "score": 91.8, "disqualified": False},
+                ],
+            }), "err": ""}
         if sub == "apply":
             return {"rc": 0, "out": json.dumps({"ok": True, "applied": ["net.core.default_qdisc=fq", "net.ipv4.tcp_congestion_control=bbr"], "unsupported": []}), "err": ""}
         if sub == "rollback":
@@ -3000,20 +3111,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def _tuner_jobs_list(self):
         with _tuner_jobs_lock:
-            items = [{k: v for k, v in j.items() if k != "_stop_ev"} for j in _TUNER_JOBS.values()]
+            _ensure_tuner_jobs_loaded_locked()
+            items = [_public_tuner_job(j) for j in _TUNER_JOBS.values()]
         items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         return self._send(200, {"jobs": items[:20]})
 
     def _tuner_job_get(self, job_id):
         with _tuner_jobs_lock:
+            _ensure_tuner_jobs_loaded_locked()
             job = _TUNER_JOBS.get(job_id)
             if not job:
                 return self._send(404, {"error": "job not found"})
-            snap = {k: v for k, v in job.items() if k != "_stop_ev"}
+            snap = _public_tuner_job(job)
         return self._send(200, snap)
 
     def _tuner_job_cancel(self, job_id):
         with _tuner_jobs_lock:
+            _ensure_tuner_jobs_loaded_locked()
             job = _TUNER_JOBS.get(job_id)
             if not job:
                 return self._send(404, {"error": "job not found"})
@@ -3022,6 +3136,7 @@ class Handler(BaseHTTPRequestHandler):
             if job.get("status") == "running":
                 job["status"] = "cancelled"
                 job["phase"] = "cancelled"
+            _save_tuner_jobs_locked()
         node_srv = self._find(node_name) if node_name else None
         if node_srv:
             cmd = build_node_cmd("bench_listen_stop", {})
@@ -3108,15 +3223,20 @@ class Handler(BaseHTTPRequestHandler):
         job_rec = {
             "job_id": job_id, "iran": iran_name, "node": node_name,
             "mode": mode, "goal": goal, "deep": deep, "kind": ("test-profile" if prof_b64 else "sweep"),
-            "status": "running", "phase": "starting", "stage_index": 0, "stage_total": 6,
+            "status": "running", "phase": "starting_responder", "stage_index": 0, "stage_total": 6,
             "completed_trials": 0, "estimated_trials": 12, "best_so_far": 0.0,
+            "current_candidate": "", "pmtu": None, "baseline": None, "best_trial": None,
+            "live_trials": [], "carriers": {}, "warnings": [],
             "created_at": int(time.time()), "elapsed_s": 0.0, "result": None, "error": None, "cancelled": False,
         }
         with _tuner_jobs_lock:
+            _ensure_tuner_jobs_loaded_locked()
             if len(_TUNER_JOBS) > 30:
                 oldest = sorted(_TUNER_JOBS.items(), key=lambda kv: kv[1].get("created_at", 0))[0][0]
                 _TUNER_JOBS.pop(oldest, None)
             _TUNER_JOBS[job_id] = job_rec
+            _save_tuner_jobs_locked()
+            initial_snap = _public_tuner_job(job_rec)
 
         def _worker():
             t0 = time.monotonic()
@@ -3124,27 +3244,47 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 lr = run_on_server(node_srv, start_cmd, timeout=30)
                 if lr.get("rc") != 0:
-                    raise RuntimeError(lr.get("err") or lr.get("out") or "failed to start peer responder")
+                    raise RuntimeError(_format_tuner_error("node responder", lr))
+                with _tuner_jobs_lock:
+                    j = _TUNER_JOBS.get(job_id)
+                    if j and j["status"] == "running":
+                        j["phase"] = "connecting_peer"
+                        j["elapsed_s"] = round(time.monotonic() - t0, 1)
 
                 def _poll_prog():
                     job_cmd = build_iran_cmd("bench_job", {"id": job_id})
-                    while not done_flag.wait(3.0):
+                    last_saved_sig = None
+                    first_wait = True
+                    while not done_flag.wait(1.0 if first_wait else 1.5):
+                        first_wait = False
+                        with _tuner_jobs_lock:
+                            j = _TUNER_JOBS.get(job_id)
+                            if not j or j.get("cancelled") or j.get("status") != "running":
+                                break
+                            j["elapsed_s"] = round(time.monotonic() - t0, 1)
                         if MOCK:
                             continue
-                        with _tuner_jobs_lock:
-                            if _TUNER_JOBS.get(job_id, {}).get("cancelled"):
-                                break
                         pr = run_on_server(iran_srv, job_cmd, timeout=10)
                         if pr.get("rc") == 0 and pr.get("out"):
                             try:
-                                pdata = json.loads(pr["out"])
+                                pdata = _extract_json_obj(pr["out"])
+                                if pdata.get("ok") is False and "progress not found" in str(pdata.get("detail", "")).lower():
+                                    continue
                                 with _tuner_jobs_lock:
                                     j = _TUNER_JOBS.get(job_id)
                                     if j and j["status"] == "running":
-                                        for fk in ("phase", "stage_index", "stage_total", "completed_trials", "estimated_trials", "best_so_far"):
-                                            if fk in pdata:
+                                        for fk in (
+                                            "phase", "stage_index", "stage_total", "completed_trials", "estimated_trials",
+                                            "best_so_far", "current_candidate", "pmtu", "baseline", "best_trial",
+                                            "live_trials", "carriers", "warnings",
+                                        ):
+                                            if fk in pdata and pdata[fk] is not None:
                                                 j[fk] = pdata[fk]
                                         j["elapsed_s"] = round(time.monotonic() - t0, 1)
+                                        sig = (j.get("completed_trials"), j.get("stage_index"), j.get("phase"))
+                                        if sig != last_saved_sig:
+                                            last_saved_sig = sig
+                                            _save_tuner_jobs_locked()
                             except Exception:
                                 pass
 
@@ -3154,28 +3294,41 @@ class Handler(BaseHTTPRequestHandler):
                 done_flag.set()
                 pt.join(timeout=1.5)
                 if rr.get("rc") != 0:
-                    raise RuntimeError(rr.get("err") or rr.get("out") or "benchmark failed")
-                parsed = json.loads((rr.get("out") or "").strip())
+                    raise RuntimeError(_format_tuner_error("iran bench", rr))
+                parsed = _extract_json_obj(rr.get("out") or "")
+                best_score = (
+                    ((parsed.get("benchmarks") or {}).get("winner") or {}).get("scores", {}).get(goal)
+                    or (parsed.get("candidate") or {}).get("scores", {}).get(goal)
+                )
                 with _tuner_jobs_lock:
                     j = _TUNER_JOBS.get(job_id)
                     if j and not j.get("cancelled"):
                         j["status"] = "done"
                         j["phase"] = "completed"
                         j["stage_index"] = 6
-                        j["best_so_far"] = ((parsed.get("benchmarks") or {}).get("winner") or {}).get("scores", {}).get(goal, j.get("best_so_far", 0))
+                        j["current_candidate"] = ""
+                        if best_score is not None:
+                            j["best_so_far"] = best_score
+                        if parsed.get("pmtu"):
+                            j["pmtu"] = parsed.get("pmtu")
                         j["elapsed_s"] = round(time.monotonic() - t0, 2)
                         j["result"] = parsed
+                        _save_tuner_jobs_locked()
                 audit_log(user_actor, f"{iran_name}->{node_name}", "tuner_run", f"{mode}/{goal}", 0)
             except Exception as exc:
                 done_flag.set()
+                emsg = str(exc) if str(exc).startswith("[") else _format_tuner_error("tuner", exc)
+                emsg = emsg[:1200]
                 with _tuner_jobs_lock:
                     j = _TUNER_JOBS.get(job_id)
                     if j and not j.get("cancelled"):
                         j["status"] = "error"
                         j["phase"] = "error"
-                        j["error"] = str(exc)[:300]
+                        j["current_candidate"] = ""
+                        j["error"] = emsg
                         j["elapsed_s"] = round(time.monotonic() - t0, 2)
-                audit_log(user_actor, f"{iran_name}->{node_name}", "tuner_run", str(exc)[:120], 1)
+                        _save_tuner_jobs_locked()
+                audit_log(user_actor, f"{iran_name}->{node_name}", "tuner_run", emsg[:200], 1)
             finally:
                 try:
                     run_on_server(node_srv, stop_cmd, timeout=15)
@@ -3183,7 +3336,7 @@ class Handler(BaseHTTPRequestHandler):
                     pass
 
         threading.Thread(target=_worker, daemon=True).start()
-        return self._send(202, {"ok": True, "job_id": job_id, "job": job_rec})
+        return self._send(202, {"ok": True, "job_id": job_id, "job": initial_snap})
 
     def _tuner_profiles_list(self):
         return self._send(200, {"profiles": self._load_tuner_profiles()})

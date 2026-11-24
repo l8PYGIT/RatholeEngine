@@ -123,10 +123,10 @@ class TunerOrchestrator:
         stop_ev = threading.Event()
 
         def _beat():
-            while not stop_ev.wait(5.0):
+            while not stop_ev.wait(8.0):
                 try:
                     self._watchdog.heartbeat()
-                    client.call("heartbeat", {"ts": int(time.time())}, timeout=4.0)
+                    client.call("heartbeat", {"ts": int(time.time())}, timeout=12.0)
                 except Exception:
                     pass
 
@@ -137,19 +137,26 @@ class TunerOrchestrator:
     def _setup_session(self, client: ControlClient) -> tuple[dict, dict, int, int, dict]:
         peer_ip = self._resolve_peer_ip()
         hello = client.call("hello", {"role": "orchestrator"})
+        if not isinstance(hello, dict) or not hello.get("ok"):
+            raise RuntimeError((hello or {}).get("error") or "peer hello handshake failed")
         data_tcp_port = int(hello.get("data_tcp_port", 29891))
         data_udp_port = int(hello.get("data_udp_port", data_tcp_port))
 
         caps_local = discover_capabilities(self.driver, peer_ip=peer_ip)
-        caps_remote = client.call("caps", {"peer_ip": ""}).get("caps") or {}
+        caps_resp = client.call("caps", {"peer_ip": ""})
+        if not isinstance(caps_resp, dict) or not caps_resp.get("ok") or not caps_resp.get("caps"):
+            raise RuntimeError((caps_resp or {}).get("error") or "failed to discover remote capabilities")
+        caps_remote = caps_resp.get("caps") or {}
 
         os.makedirs(self.state_dir, exist_ok=True)
         snap_path = os.path.join(self.state_dir, "snapshots", f"pre-{self._session_id}.json")
         local_snap = capture_snapshot(self.driver, iface=caps_local["iface"], peer_ip=peer_ip, save_path=snap_path)
 
-        client.call("snapshot", {"iface": caps_remote.get("iface", ""), "mode": self.mode})
+        snap_resp = client.call("snapshot", {"iface": caps_remote.get("iface", ""), "mode": self.mode})
+        if not isinstance(snap_resp, dict) or not snap_resp.get("ok"):
+            raise RuntimeError((snap_resp or {}).get("error") or "failed to capture remote snapshot")
         if self.mode == "brutal" and not isinstance(self.driver, MockSysDriver):
-            self._watchdog.arm(snap_path, ttl_s=45.0)
+            self._watchdog.arm(snap_path, ttl_s=90.0)
         return caps_local, caps_remote, data_tcp_port, data_udp_port, local_snap
 
     def _teardown_session(self, client: ControlClient, local_snap: dict | None) -> None:
@@ -179,8 +186,26 @@ class TunerOrchestrator:
         hb_ev = None
         hb_thr = None
         try:
+            self._emit_progress({
+                "phase": "connecting_peer",
+                "stage_index": 0,
+                "stage_total": 6,
+                "completed_trials": 0,
+                "estimated_trials": 12,
+                "best_so_far": 0.0,
+                "live_trials": [],
+            })
             client.connect()
             caps_local, caps_remote, tcp_port, udp_port, local_snap = self._setup_session(client)
+            self._emit_progress({
+                "phase": "session_ready",
+                "stage_index": 0,
+                "stage_total": 6,
+                "completed_trials": 0,
+                "estimated_trials": 12,
+                "best_so_far": 0.0,
+                "live_trials": [],
+            })
             hb_ev, hb_thr = self._start_heartbeat(client)
 
             sweep_res = run_staged_sweep(
@@ -277,6 +302,9 @@ class TunerOrchestrator:
             with open(os.path.join(self.out_dir, "profile.b64"), "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(b64 + "\n")
             return report
+        except Exception as exc:
+            self._emit_progress({"phase": "error", "error": str(exc)[:1000]})
+            raise
         finally:
             if hb_ev is not None:
                 hb_ev.set()

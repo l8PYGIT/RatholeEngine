@@ -6,7 +6,15 @@ import copy
 
 from .carriers import benchmark_carriers, recommend_best_carrier
 from .probes import probe_pmtu, probe_trial, probe_unloaded_rtt
-from .profile import clamp_config_for_ram, compute_ram_buffer_cap
+from .profile import (
+    ALLOWED_OFFLOADS,
+    ALLOWED_QDISCS,
+    _ALLOWED_SYSCTL_ENUMS,
+    _ALLOWED_SYSCTL_INTS,
+    _ALLOWED_SYSCTL_TRIPLETS,
+    clamp_config_for_ram,
+    compute_ram_buffer_cap,
+)
 from .scoring import check_hard_fail, diagnose_findings, raw_throughput, score_trials
 from .sysstate import apply_candidate, capture_snapshot, read_net_counters, restore_snapshot
 
@@ -158,32 +166,125 @@ def build_stage_candidates(
     return cands
 
 
-def _config_from_snapshot(snap: dict) -> dict:
-    return {
-        "mtu": snap.get("mtu", 1500),
-        "mss_clamp": 0,
-        "qdisc": {"kind": (snap.get("qdisc") or {}).get("kind", "fq_codel"), "params": {}},
-        "txqueuelen": snap.get("txqueuelen", 1000),
-        "route": copy.deepcopy(snap.get("route") or {}),
-        "offloads": copy.deepcopy(snap.get("offloads") or {}),
-        "sysctl": {
-            k: v
-            for k, v in (snap.get("sysctl") or {}).items()
-            if k in (
-                "net.core.default_qdisc",
-                "net.ipv4.tcp_congestion_control",
-                "net.ipv4.tcp_notsent_lowat",
-                "net.ipv4.tcp_mtu_probing",
-                "net.ipv4.tcp_base_mss",
-                "net.ipv4.tcp_slow_start_after_idle",
-                "net.ipv4.tcp_ecn",
-                "net.core.rmem_max",
-                "net.core.wmem_max",
-                "net.ipv4.tcp_rmem",
-                "net.ipv4.tcp_wmem",
-            )
-        },
+_SNAP_SYSCTL_KEYS = (
+    "net.core.default_qdisc",
+    "net.ipv4.tcp_congestion_control",
+    "net.ipv4.tcp_notsent_lowat",
+    "net.ipv4.tcp_mtu_probing",
+    "net.ipv4.tcp_base_mss",
+    "net.ipv4.tcp_slow_start_after_idle",
+    "net.ipv4.tcp_ecn",
+    "net.core.rmem_max",
+    "net.core.wmem_max",
+    "net.ipv4.tcp_rmem",
+    "net.ipv4.tcp_wmem",
+)
+
+_CLAMP_INT_KEYS = frozenset({
+    "net.core.rmem_max",
+    "net.core.wmem_max",
+    "net.core.rmem_default",
+    "net.core.wmem_default",
+})
+
+
+def sanitize_snapshot_config(snap: dict) -> dict:
+    """Convert raw host snapshot into a strictly schema-valid side config."""
+    snap = snap or {}
+    snap_sys = snap.get("sysctl") or {}
+
+    try:
+        raw_mtu = int(snap.get("mtu", 1500) or 1500)
+    except (TypeError, ValueError):
+        raw_mtu = 1500
+    mtu = max(576, min(1500, raw_mtu))
+
+    try:
+        raw_txq = int(snap.get("txqueuelen", 1000) or 1000)
+    except (TypeError, ValueError):
+        raw_txq = 1000
+    txq = max(100, min(20000, raw_txq))
+
+    raw_qd = str((snap.get("qdisc") or {}).get("kind", "") or "").strip()
+    sys_qd = str(snap_sys.get("net.core.default_qdisc", "") or "").strip()
+    if raw_qd in ALLOWED_QDISCS:
+        qd_kind = raw_qd
+    elif sys_qd in ALLOWED_QDISCS:
+        qd_kind = sys_qd
+    else:
+        qd_kind = "fq_codel"
+
+    clean_rt: dict[str, int] = {}
+    for rk in ("initcwnd", "initrwnd"):
+        rv = (snap.get("route") or {}).get(rk)
+        if rv is not None and not isinstance(rv, bool):
+            try:
+                irv = int(rv)
+                if 4 <= irv <= 128:
+                    clean_rt[rk] = irv
+            except (TypeError, ValueError):
+                pass
+    adv = (snap.get("route") or {}).get("advmss")
+    if adv is not None and not isinstance(adv, bool):
+        try:
+            iadv = int(adv)
+            if iadv == 0:
+                clean_rt["advmss"] = 0
+            elif iadv > 0:
+                clean_rt["advmss"] = max(536, min(1460, iadv))
+        except (TypeError, ValueError):
+            pass
+
+    clean_offs = {
+        k: v
+        for k, v in (snap.get("offloads") or {}).items()
+        if k in ALLOWED_OFFLOADS and type(v) is bool
     }
+
+    clean_sys: dict = {}
+    for k in _SNAP_SYSCTL_KEYS:
+        if k not in snap_sys:
+            continue
+        v = snap_sys[k]
+        if k in _ALLOWED_SYSCTL_ENUMS:
+            sv = str(v).strip()
+            if sv in _ALLOWED_SYSCTL_ENUMS[k]:
+                clean_sys[k] = sv
+        elif k in _ALLOWED_SYSCTL_INTS:
+            if isinstance(v, bool):
+                continue
+            try:
+                iv = int(v)
+            except (TypeError, ValueError):
+                continue
+            lo, hi = _ALLOWED_SYSCTL_INTS[k]
+            if k in _CLAMP_INT_KEYS:
+                clean_sys[k] = max(lo, min(hi, iv))
+            elif lo <= iv <= hi:
+                clean_sys[k] = iv
+        elif k in _ALLOWED_SYSCTL_TRIPLETS:
+            parts = str(v).split()
+            if len(parts) == 3 and all(p.isdigit() for p in parts):
+                lo, hi = _ALLOWED_SYSCTL_TRIPLETS[k]
+                a, b, c = [int(p) for p in parts]
+                a = max(lo, min(hi, a))
+                b = max(a, min(hi, b))
+                c = max(b, min(hi, c))
+                clean_sys[k] = f"{a} {b} {c}"
+
+    return {
+        "mtu": mtu,
+        "mss_clamp": 0,
+        "qdisc": {"kind": qd_kind, "params": {}},
+        "txqueuelen": txq,
+        "route": clean_rt,
+        "offloads": clean_offs,
+        "sysctl": clean_sys,
+    }
+
+
+def _config_from_snapshot(snap: dict) -> dict:
+    return sanitize_snapshot_config(snap)
 
 
 def _evaluate_candidate(
@@ -209,6 +310,7 @@ def _evaluate_candidate(
     remote_ram = caps_remote["ram_mb"]
 
     c_before = read_net_counters(local_driver, local_iface)
+    remote_warn = ""
     if mode == "brutal":
         cfg_local = clamp_config_for_ram(cfg, local_ram)
         cfg_remote = clamp_config_for_ram(cfg, remote_ram)
@@ -216,7 +318,9 @@ def _evaluate_candidate(
             local_driver, cfg_local, iface=local_iface, peer_ip=host, session_id=session_id,
             ram_mb=local_ram, ipv6_active=caps_local["ipv6_active"],
         )
-        ctrl_client.call("apply_cand", {"config": cfg_remote, "iface": remote_iface, "session_id": session_id})
+        rc_resp = ctrl_client.call("apply_cand", {"config": cfg_remote, "iface": remote_iface, "session_id": session_id})
+        if isinstance(rc_resp, dict) and rc_resp.get("ok") is False:
+            remote_warn = str(rc_resp.get("error") or "remote apply rejected")
 
     try:
         m = probe_trial(
@@ -240,7 +344,26 @@ def _evaluate_candidate(
     m["id"] = cand_id
     m["name"] = cfg.get("name", cand_id)
     m["config"] = copy.deepcopy(cfg)
+    if remote_warn:
+        m["remote_apply_warning"] = remote_warn
     return m
+
+
+def _live_trial_row(t: dict, goal: str) -> dict:
+    return {
+        "id": t.get("id", ""),
+        "name": t.get("name", t.get("id", "")),
+        "stage": int(t.get("stage", 0) or 0),
+        "throughput_mbps": round(raw_throughput(t), 2),
+        "loaded_rtt_p95_ms": t.get("loaded_rtt_p95_ms"),
+        "jitter_ms": t.get("jitter_ms"),
+        "retrans_pct": t.get("retrans_pct"),
+        "udp_loss_pct": t.get("udp_loss_pct"),
+        "stability_cov": t.get("stability_cov"),
+        "score": round(float((t.get("scores") or {}).get(goal, 0.0) or 0.0), 2),
+        "disqualified": bool(t.get("disqualified")),
+        "disqualify_reason": t.get("disqualify_reason"),
+    }
 
 
 def run_staged_sweep(
@@ -262,25 +385,68 @@ def run_staged_sweep(
     """Execute Stage 0..5 search, isolated carrier benchmarks, and winner selection."""
     local_snap = capture_snapshot(local_driver, iface=caps_local["iface"], peer_ip=host, save_path=snapshot_path)
 
-    def _emit(stage_idx: int, phase: str, completed: int, total: int, best_score: float = 0.0):
+    best_score_so_far = 0.0
+    pmtu_live: dict | None = None
+    baseline_live: dict | None = None
+    best_trial_live: dict | None = None
+    live_trials_cache: list[dict] = []
+    carriers_live: dict = {}
+    warnings_live: list[str] = []
+
+    def _emit(
+        stage_idx: int,
+        phase: str,
+        completed: int,
+        total: int,
+        best_score: float | None = None,
+        current_candidate: str = "",
+        extra_rows: list[dict] | None = None,
+    ):
+        nonlocal best_score_so_far
+        if best_score is not None:
+            best_score_so_far = float(best_score)
         if progress_cb:
+            rows = (live_trials_cache + (extra_rows or []))[-40:]
             progress_cb({
                 "phase": phase,
                 "stage_index": stage_idx,
                 "stage_total": 6,
                 "completed_trials": completed,
                 "estimated_trials": total,
-                "best_so_far": round(best_score, 2),
+                "best_so_far": round(best_score_so_far, 2),
+                "current_candidate": current_candidate,
+                "pmtu": pmtu_live,
+                "baseline": baseline_live,
+                "best_trial": best_trial_live,
+                "live_trials": rows,
+                "carriers": carriers_live,
+                "warnings": warnings_live[-10:],
             })
+
+    def _update_scored_state(trials_list: list[dict]) -> list[dict]:
+        nonlocal baseline_live, best_trial_live, live_trials_cache
+        scored = score_trials(trials_list, baseline_id="baseline")
+        live_trials_cache = [_live_trial_row(x, goal) for x in scored]
+        base_item = next((x for x in live_trials_cache if x["id"] == "baseline"), None)
+        if base_item:
+            baseline_live = base_item
+        alive = [x for x in live_trials_cache if not x["disqualified"]]
+        if alive:
+            best_trial_live = max(alive, key=lambda x: x["score"])
+        elif live_trials_cache:
+            best_trial_live = live_trials_cache[0]
+        return scored
 
     sweep_dur = 0.12 if fast_test else (8.0 if deep else 3.2)
     soak_dur = 0.16 if fast_test else (16.0 if deep else 6.0)
     carrier_dur = 0.12 if fast_test else 2.5
 
-    _emit(0, "baseline_and_pmtu", 0, 12)
+    _emit(0, "baseline_and_pmtu", 0, 12, current_candidate="PMTU + Unloaded RTT")
     pmtu_info = probe_pmtu(host, data_udp_port, fast_test=fast_test)
+    pmtu_live = dict(pmtu_info)
     unloaded = probe_unloaded_rtt(host, data_tcp_port, data_udp_port, samples=4 if fast_test else 20)
     unloaded_p50 = float(unloaded["tcp_rtt"]["p50"] or 1.0)
+    _emit(0, "baseline_and_pmtu", 0, 12, current_candidate="baseline")
 
     baseline_cfg = _config_from_snapshot(local_snap)
     baseline_cfg["name"] = "baseline"
@@ -296,30 +462,37 @@ def run_staged_sweep(
     )
     baseline_trial["id"] = "baseline"
     baseline_trial["name"] = "baseline"
+    baseline_trial["stage"] = 0
     baseline_trial["config"] = copy.deepcopy(baseline_cfg)
 
     all_trials = [baseline_trial]
     best_cfg = copy.deepcopy(baseline_cfg)
     completed = 1
     est_total = 12
+    scored_base = _update_scored_state(all_trials)
+    _emit(0, "baseline_and_pmtu", completed, est_total, best_score=scored_base[0]["scores"][goal])
 
+    stage_names = {1: "mtu_mss_offload", 2: "cc_qdisc_pacing", 3: "bdp_buffers_tcp"}
     for stage in (1, 2, 3):
-        stage_names = {1: "mtu_mss_offload", 2: "cc_qdisc_pacing", 3: "bdp_buffers_tcp"}
         cands = build_stage_candidates(stage, mode, caps_local, caps_remote, best_cfg, baseline_trial, pmtu_info, fast_test=fast_test)
         est_total = max(est_total, completed + len(cands) + 4)
         for idx, cand in enumerate(cands):
+            _emit(stage, stage_names[stage], completed, est_total, current_candidate=cand.get("name", f"s{stage}_{idx}"))
             cid = f"s{stage}_{idx}_{cand['name']}"
             tr = _evaluate_candidate(
                 cid, cand, mode, host, data_tcp_port, data_udp_port,
                 ctrl_client, local_driver, local_snap, caps_local, caps_remote,
                 session_id, sweep_dur, unloaded_p50, baseline_trial,
             )
+            tr["stage"] = stage
+            if tr.get("remote_apply_warning"):
+                warnings_live.append(f"{cand.get('name', cid)}: {tr['remote_apply_warning']}")
             all_trials.append(tr)
             completed += 1
-            scored_now = score_trials(all_trials, baseline_id="baseline")
+            scored_now = _update_scored_state(all_trials)
             alive = [x for x in scored_now if not x["disqualified"]]
             best_now = max(alive, key=lambda x: x["scores"][goal]) if alive else scored_now[0]
-            _emit(stage, stage_names[stage], completed, est_total, best_now["scores"][goal])
+            _emit(stage, stage_names[stage], completed, est_total, best_score=best_now["scores"][goal])
         scored_stage = score_trials(all_trials, baseline_id="baseline")
         alive_stage = [x for x in scored_stage if not x["disqualified"] and x["id"] != "baseline"]
         if alive_stage:
@@ -327,7 +500,7 @@ def run_staged_sweep(
             best_cfg = copy.deepcopy(best_stage["config"])
 
     # Stage 4: Isolated carrier benchmarks
-    _emit(4, "carrier_matrix", completed, est_total)
+    _emit(4, "carrier_matrix", completed, est_total, current_candidate="raw-tcp / kcp / installed carriers")
     pmtu_min = min(int(pmtu_info.get("forward_bytes", 1460)), int(pmtu_info.get("reverse_bytes", 1460)))
     carrier_matrix = benchmark_carriers(
         ctrl_client,
@@ -341,10 +514,18 @@ def run_staged_sweep(
         duration_s=carrier_dur,
         dry_run=fast_test,
     )
+    carriers_live = {
+        k: {
+            "status": v.get("status"),
+            "throughput_mbps": v.get("throughput_mbps"),
+            "udp_loss_pct": v.get("udp_loss_pct"),
+        }
+        for k, v in (carrier_matrix or {}).items()
+    }
     rec_carrier = recommend_best_carrier(carrier_matrix)
 
     # Stage 5: Brutal Top-3 Finalist Soak vs Baseline
-    _emit(5, "finalist_soak", completed, completed + 3)
+    _emit(5, "finalist_soak", completed, completed + 3, current_candidate="soak:baseline")
     scored_pre = score_trials(all_trials, baseline_id="baseline")
     distinct_top = []
     seen_names = {"baseline"}
@@ -364,22 +545,34 @@ def run_staged_sweep(
         ctrl_client, local_driver, local_snap, caps_local, caps_remote,
         session_id, soak_dur, unloaded_p50, None,
     )
+    base_soak["stage"] = 5
     soak_trials.append(base_soak)
+    soak_total = completed + len(distinct_top)
+    soak_rows_scored = [_live_trial_row(x, goal) for x in score_trials(soak_trials, baseline_id="baseline")]
     for idx, fcfg in enumerate(distinct_top):
+        _emit(5, "finalist_soak", completed, soak_total, current_candidate=f"soak:{fcfg.get('name', 'cand')}", extra_rows=soak_rows_scored)
         ftr = _evaluate_candidate(
             f"final_{idx}_{fcfg.get('name', 'cand')}", fcfg, mode, host, data_tcp_port, data_udp_port,
             ctrl_client, local_driver, local_snap, caps_local, caps_remote,
             session_id, soak_dur, unloaded_p50, base_soak,
         )
+        ftr["stage"] = 5
         soak_trials.append(ftr)
         completed += 1
+        soak_scored_now = score_trials(soak_trials, baseline_id="baseline")
+        soak_rows_scored = [_live_trial_row(x, goal) for x in soak_scored_now]
+        for sr in soak_rows_scored:
+            if not str(sr.get("name", "")).startswith("soak:"):
+                sr["name"] = f"soak:{sr['name']}"
+        _emit(5, "finalist_soak", completed, max(completed, soak_total), extra_rows=soak_rows_scored)
 
     final_scored = score_trials(soak_trials, baseline_id="baseline")
     base_final = next(x for x in final_scored if x["id"] == "baseline")
     alive_final = [x for x in final_scored if not x["disqualified"]]
     winner_final = max(alive_final, key=lambda x: x["scores"][goal]) if alive_final else base_final
+    best_trial_live = _live_trial_row(winner_final, goal)
 
-    _emit(6, "completed", completed, completed, winner_final["scores"][goal])
+    _emit(6, "completed", completed, completed, best_score=winner_final["scores"][goal], extra_rows=soak_rows_scored)
     return {
         "pmtu": pmtu_info,
         "unloaded_rtt": unloaded,

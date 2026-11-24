@@ -56,6 +56,7 @@ class TunerResponder:
         self._probe = ProbeServer(self.bind_host, tcp_port=self._req_data_port, udp_port=self._req_data_port)
         self._stop_ev = threading.Event()
         self._seen_nonces: dict[str, int] = {}
+        self._action_lock = threading.Lock()
         self._snapshot: dict | None = None
         self._session_id = secrets.token_hex(4)
         self._watchdog = WatchdogController(self.state_dir, session_id=f"resp_{self._session_id}")
@@ -83,11 +84,29 @@ class TunerResponder:
             with open(self.pidfile, "w", encoding="utf-8") as fh:
                 fh.write(f"{os.getpid()}\n")
 
+    def _sweep_ephemeral_fw_rules(self) -> None:
+        if isinstance(self.driver, MockSysDriver):
+            return
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            return
+        for ipt in ("iptables", "ip6tables"):
+            if not self.driver.which(ipt):
+                continue
+            rc, out, _ = self.driver.run([ipt, "-S", "INPUT"])
+            if rc != 0:
+                continue
+            for line in out.splitlines():
+                if line.startswith("-A INPUT ") and "rathole-tuner-ephemeral" in line:
+                    toks = [t.strip('"') for t in line[3:].split()]
+                    if toks:
+                        self.driver.run([ipt, "-D"] + toks)
+
     def stop(self) -> None:
         self._stop_ev.set()
         try:
             self._revert_and_disarm()
         finally:
+            self._sweep_ephemeral_fw_rules()
             self._probe.stop()
             if self._ctrl_sock is not None:
                 try:
@@ -148,7 +167,7 @@ class TunerResponder:
             snap_file = os.path.join(self.state_dir, f"pre-{self._session_id}.json")
             self._snapshot = capture_snapshot(self.driver, iface=iface, peer_ip=peer_ip, save_path=snap_file)
             if mode == "brutal" and not isinstance(self.driver, MockSysDriver):
-                self._watchdog.arm(snap_file, ttl_s=45.0)
+                self._watchdog.arm(snap_file, ttl_s=90.0)
             return {"ok": True, "iface": self._snapshot["iface"]}
         if action == "heartbeat":
             self._watchdog.heartbeat()
@@ -239,13 +258,21 @@ class TunerResponder:
                 except ProtocolError:
                     break
                 try:
-                    verified = verify_frame(self.token, frame, seen_nonces=self._seen_nonces)
+                    with self._action_lock:
+                        verified = verify_frame(self.token, frame, seen_nonces=self._seen_nonces)
                 except ProtocolError as exc:
-                    err = sign_frame(self.token, frame.get("action", "hello") if frame.get("action") in ("hello", "caps", "snapshot", "heartbeat", "apply_cand", "revert", "stats", "audit", "shutdown") else "hello", {"ok": False, "error": str(exc)})
-                    send_frame(conn, err)
-                    continue
+                    try:
+                        allowed = ("hello", "caps", "snapshot", "heartbeat", "apply_cand", "revert", "stats", "audit", "shutdown")
+                        err_act = frame.get("action") if frame.get("action") in allowed else "hello"
+                        fid = frame.get("id") if isinstance(frame.get("id"), str) else None
+                        err = sign_frame(self.token, err_act, {"ok": False, "error": str(exc)}, frame_id=fid)
+                        send_frame(conn, err)
+                    except OSError:
+                        pass
+                    break
                 action = verified["action"]
-                resp_payload = self._handle_action(action, verified["payload"])
+                with self._action_lock:
+                    resp_payload = self._handle_action(action, verified["payload"])
                 send_frame(conn, sign_frame(self.token, action, resp_payload, frame_id=verified["id"]))
                 if action == "shutdown":
                     break
@@ -270,6 +297,10 @@ class TunerResponder:
                     continue
                 except OSError:
                     break
-                self._serve_client(conn)
+                try:
+                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                except OSError:
+                    pass
+                threading.Thread(target=self._serve_client, args=(conn,), daemon=True).start()
         finally:
             self.stop()

@@ -142,6 +142,10 @@ class _AgentHTTPServer(ThreadingHTTPServer):
     def finish_request(self, request, client_address):
         try:
             request.settimeout(30)
+            try:
+                request.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            except OSError:
+                pass
             if self.tls_ctx is not None:
                 request = self.tls_ctx.wrap_socket(request, server_side=True)
         except OSError:

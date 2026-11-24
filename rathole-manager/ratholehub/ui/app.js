@@ -376,7 +376,7 @@ function shell(){
    </div></aside><main id="page" tabindex="-1"></main>`;
  router();
 }
-function refreshPage(){SERVERS=[];ensureServers().then(()=>{router();pollByPage();});}
+function refreshPage(){SERVERS=[];if(ROUTE.page==='tuner'){TUNER_STATE.jobsLoaded=false;TUNER_STATE.profiles=null;}ensureServers().then(()=>{router();pollByPage();});}
 // polling-e hoshmand: faghat overview-haye lazem baraye safhe-ye faal
 function pollByPage(){
  if(!TOKEN)return;
@@ -3350,8 +3350,67 @@ function editServer(n){const s=fnd(n);
 
 async function savePw(){const cur=$('cpw').value,nw=$('npw').value;if(!nw){toast(t('need_newpw'));return;}const {status,j}=await api('POST','api/config',{current_password:cur,new_password:nw});if(status!==200){toast('error: '+(j.error||status));return;}toast(t('pw_changed'));$('cpw').value='';$('npw').value='';}
 async function rotTok(){if(!confirm(t('cf_rottok')))return;const {status,j}=await api('POST','api/config',{rotate_token:true});if(status!==200){toast('error: '+(j.error||status));return;}TOKEN=j.api_token;localStorage.setItem('rh_token',TOKEN);toast(t('tok_applied'));renderSettingsPage();}
-let TUNER_STATE={activeJobId:null,job:null,lastReport:null,profiles:null,pollTimer:null,iran:'',node:'',mode:'brutal',goal:'balanced',deep:false,iran_dc:'',node_dc:''};
+let TUNER_STATE={activeJobId:null,job:null,lastReport:null,profiles:null,jobs:[],jobsLoaded:false,pollTimer:null,iran:'',node:'',mode:'brutal',goal:'balanced',deep:false,iran_dc:'',node_dc:''};
 function clearTunerPoll(){if(TUNER_STATE.pollTimer){clearTimeout(TUNER_STATE.pollTimer);TUNER_STATE.pollTimer=null;}}
+function _tunerPhaseLabel(phase){
+ const p=String(phase||'starting');
+ const key='tuner_ph_'+p;
+ const tr=t(key);
+ return tr!==key?tr:p;
+}
+function _upsertTunerJob(job){
+ if(!job||!job.job_id)return;
+ const list=(TUNER_STATE.jobs||[]).filter(x=>x&&x.job_id!==job.job_id);
+ list.unshift(job);
+ TUNER_STATE.jobs=list.slice(0,20);
+}
+async function loadTunerJobs(force=false){
+ const {status,j}=await api('GET','api/tuner/jobs');
+ TUNER_STATE.jobsLoaded=true;
+ if(status!==200||!j)return;
+ const jobs=Array.isArray(j.jobs)?j.jobs:[];
+ TUNER_STATE.jobs=jobs;
+ if(force||!TUNER_STATE.job){
+  const picked=jobs.find(x=>x&&x.status==='running')||jobs[0]||null;
+  if(picked){
+   TUNER_STATE.job=picked;
+   if(picked.iran)TUNER_STATE.iran=picked.iran;
+   if(picked.node)TUNER_STATE.node=picked.node;
+   if(picked.mode)TUNER_STATE.mode=picked.mode;
+   if(picked.goal)TUNER_STATE.goal=picked.goal;
+   TUNER_STATE.lastReport=(picked.status==='done'&&picked.result)?picked.result:null;
+   TUNER_STATE.activeJobId=(picked.status==='running')?picked.job_id:null;
+  }
+ }
+ if(ROUTE.page==='tuner'){
+  renderTunerPage();
+  if(TUNER_STATE.activeJobId&&!TUNER_STATE.pollTimer)pollTunerJob(TUNER_STATE.activeJobId);
+ }
+}
+async function selectTunerJob(jobId){
+ if(!jobId)return;
+ clearTunerPoll();
+ const {status,j}=await api('GET','api/tuner/jobs/'+encodeURIComponent(jobId));
+ const job=(status===200&&j)?j:(TUNER_STATE.jobs||[]).find(x=>x&&x.job_id===jobId);
+ if(!job)return;
+ _upsertTunerJob(job);
+ TUNER_STATE.job=job;
+ if(job.iran)TUNER_STATE.iran=job.iran;
+ if(job.node)TUNER_STATE.node=job.node;
+ if(job.mode)TUNER_STATE.mode=job.mode;
+ if(job.goal)TUNER_STATE.goal=job.goal;
+ TUNER_STATE.lastReport=(job.status==='done'&&job.result)?job.result:null;
+ TUNER_STATE.activeJobId=(job.status==='running')?job.job_id:null;
+ renderTunerPage();
+ if(TUNER_STATE.activeJobId)pollTunerJob(TUNER_STATE.activeJobId);
+}
+function dismissTunerJob(){
+ clearTunerPoll();
+ TUNER_STATE.activeJobId=null;
+ TUNER_STATE.job=null;
+ TUNER_STATE.lastReport=null;
+ renderTunerPage();
+}
 async function loadTunerProfiles(){
  const {status,j}=await api('GET','api/tuner/profiles');
  if(status===200){TUNER_STATE.profiles=j.profiles||[];}
@@ -3373,7 +3432,10 @@ async function startTunerJob(profileB64Override=''){
  const {status,j}=await api('POST','api/tuner/start',body);
  if(status>=400||!j||!j.ok){toast('error: '+((j&&j.error)||status));return;}
  TUNER_STATE.activeJobId=j.job_id;
- TUNER_STATE.job=j.job||{job_id:j.job_id,status:'running',stage_index:0,stage_total:6};
+ TUNER_STATE.job=j.job||{job_id:j.job_id,iran:ir,node:nd,mode,goal,status:'running',phase:'starting_responder',stage_index:0,stage_total:6,live_trials:[]};
+ TUNER_STATE.lastReport=null;
+ TUNER_STATE.jobsLoaded=true;
+ _upsertTunerJob(TUNER_STATE.job);
  renderTunerPage();
  pollTunerJob(j.job_id);
 }
@@ -3383,13 +3445,21 @@ function pollTunerJob(jobId){
  TUNER_STATE.pollTimer=setTimeout(async()=>{
   if(ROUTE.page!=='tuner'||TUNER_STATE.activeJobId!==jobId)return;
   const {status,j}=await api('GET','api/tuner/jobs/'+encodeURIComponent(jobId));
+  if(status===404){
+   TUNER_STATE.activeJobId=null;
+   TUNER_STATE.job={...(TUNER_STATE.job||{job_id:jobId}),status:'error',phase:'error',error:'Job not found on hub'};
+   renderTunerPage();
+   return;
+  }
   if(status===200&&j){
    TUNER_STATE.job=j;
+   _upsertTunerJob(j);
    if(j.status==='done'&&j.result){
     TUNER_STATE.lastReport=j.result;
     TUNER_STATE.activeJobId=null;
     renderTunerPage();
-    toast('✓ '+(j.result.benchmarks&&j.result.benchmarks.winner?j.result.benchmarks.winner.throughput_mbps+' Mbps':'done'));
+    const w=(j.result.benchmarks&&j.result.benchmarks.winner)||j.result.candidate;
+    toast('✓ '+(w&&w.throughput_mbps!=null?w.throughput_mbps+' Mbps':'done'));
     return;
    }
    if(j.status==='error'||j.status==='cancelled'){
@@ -3411,7 +3481,7 @@ async function cancelTunerJob(){
  clearTunerPoll();
  await api('POST','api/tuner/jobs/'+encodeURIComponent(jid)+'/cancel',{});
  TUNER_STATE.activeJobId=null;
- if(TUNER_STATE.job)TUNER_STATE.job.status='cancelled';
+ if(TUNER_STATE.job){TUNER_STATE.job.status='cancelled';TUNER_STATE.job.phase='cancelled';_upsertTunerJob(TUNER_STATE.job);}
  renderTunerPage();
 }
 function _copyTunerText(txt){
@@ -3505,15 +3575,94 @@ async function rollbackTunerBoth(){
 function _renderTunerProgressBody(){
  const job=TUNER_STATE.job;
  if(!job)return '';
- const pct=Math.min(100,Math.max(5,Math.round(((job.stage_index||0)/Math.max(1,job.stage_total||6))*100)));
- return `<div class="sec-head-row"><strong>${h(t('tuner_progress'))}: ${h(job.phase||job.status)}</strong><span class="badge b-info mono" dir="ltr">${h(job.stage_index||0)}/${h(job.stage_total||6)} · ${h(job.elapsed_s||0)}s · best=${h(job.best_so_far||0)}</span></div>
-  <div class="tuner-bar"><div class="tuner-bar-fill" style="width:${pct}%"></div></div>`;
+ const isErr=job.status==='error'||!!job.error;
+ const isDone=job.status==='done';
+ const isCanc=job.status==='cancelled';
+ const stTotal=Math.max(1,Number(job.stage_total||6));
+ const stIdx=Number(job.stage_index||0);
+ const stagePct=Math.round((stIdx/stTotal)*100);
+ const estTrials=Number(job.estimated_trials||0);
+ const compTrials=Number(job.completed_trials||0);
+ const trialPct=estTrials>0?Math.round((compTrials/Math.max(1,estTrials))*100):0;
+ const pct=(isErr||isDone||isCanc)?100:Math.min(98,Math.max(6,Math.max(stagePct,trialPct)));
+ const barCls=isErr?' is-error':(isDone?' is-done':'');
+ const phaseTxt=_tunerPhaseLabel(job.phase||job.status);
+ const pairTag=(job.iran&&job.node)?`<span class="badge b-ws mono" dir="ltr">${h(job.iran)} → ${h(job.node)}</span>`:'';
+ const trInfo=estTrials>0?` · ${compTrials}/${estTrials}`:'';
+
+ let stagesHtml='<div class="tuner-stages">';
+ for(let si=0;si<6;si++){
+  let cls='';
+  if(isDone||stIdx>si)cls='is-done';
+  else if(isErr&&stIdx===si)cls='is-err';
+  else if(!isErr&&!isCanc&&stIdx===si)cls='is-active';
+  stagesHtml+=`<span class="tuner-stage ${cls}">${h(t('tuner_st_'+si))}</span>`;
+ }
+ stagesHtml+='</div>';
+
+ const chips=[];
+ if(job.pmtu){
+  const pm=job.pmtu;
+  const pmin=Math.min(Number(pm.forward_bytes||1500),Number(pm.reverse_bytes||1500));
+  chips.push(`<span class="badge ${pm.blackhole_detected?'b-warn':'b-ok'} mono" dir="ltr">PMTU ${h(pmin)}B${pm.blackhole_detected?' (blackhole)':''}</span>`);
+ }
+ if(job.baseline){
+  const bl=job.baseline;
+  chips.push(`<span class="badge b-ws mono" dir="ltr">${h(t('tuner_baseline'))}: ${h(bl.throughput_mbps??'-')} Mbps · p95 ${h(bl.loaded_rtt_p95_ms??'-')}ms</span>`);
+ }
+ if(job.best_trial){
+  const bt=job.best_trial;
+  chips.push(`<span class="badge b-ok mono" dir="ltr">${h(t('tuner_winner'))}: ${h(bt.name)} (${h(bt.throughput_mbps??'-')} Mbps · score ${h(bt.score??'-')})</span>`);
+ }
+ if(!isErr&&!isDone&&!isCanc&&job.current_candidate){
+  chips.push(`<span class="badge b-info mono" dir="ltr">${h(t('tuner_testing_now'))}: ${h(job.current_candidate)}</span>`);
+ }
+ const stripHtml=chips.length?`<div class="tuner-live-strip">${chips.join('')}</div>`:'';
+
+ const warnsHtml=Array.isArray(job.warnings)&&job.warnings.length
+  ?job.warnings.map(w=>`<div class="tuner-alert">${h(w)}</div>`).join('')
+  :'';
+
+ const errHtml=(isErr||job.error)?`<div class="tuner-err" role="alert">
+  <div class="sec-head-row"><strong>${h(t('tuner_err_title'))}</strong>
+   <div class="btns">
+    <button class="s" type="button" onclick="startTunerJob()">${h(t('tuner_retry'))}</button>
+    <button class="gh" type="button" onclick="dismissTunerJob()">${h(t('tuner_dismiss'))}</button>
+   </div></div>
+  <pre class="tuner-err-detail" dir="ltr">${h(job.error||job.phase||'unknown error')}</pre>
+ </div>`:'';
+
+ let liveTblHtml='';
+ const trials=Array.isArray(job.live_trials)?job.live_trials:[];
+ if(trials.length){
+  let topScore=-1;
+  trials.forEach(tr=>{if(!tr.disqualified&&Number(tr.score||0)>topScore)topScore=Number(tr.score||0);});
+  const trRows=trials.map((tr,i)=>{
+   const isBest=!tr.disqualified&&topScore>=0&&Number(tr.score||0)===topScore;
+   const rCls=tr.disqualified?' class="tuner-row-disq"':(isBest?' class="tuner-row-best"':'');
+   const stBadge=t('tuner_st_'+Math.min(5,Math.max(0,Number(tr.stage||0))));
+   const scCell=tr.disqualified
+    ?`<span class="badge b-bad mono" dir="ltr">FAIL${tr.disqualify_reason?': '+h(tr.disqualify_reason):''}</span>`
+    :`<strong class="mono" dir="ltr">${isBest?'★ ':''}${h(tr.score??'-')}</strong>`;
+   return `<tr${rCls}><td class="mono" dir="ltr">${i+1}</td><td>${h(stBadge)}</td><td class="mono" dir="ltr">${h(tr.name||tr.id)}</td><td class="mono" dir="ltr">${h(tr.throughput_mbps??'-')}</td><td class="mono" dir="ltr">${h(tr.loaded_rtt_p95_ms??'-')}</td><td class="mono" dir="ltr">${h(tr.jitter_ms??'-')}</td><td class="mono" dir="ltr">${h(tr.retrans_pct??'-')}</td><td>${scCell}</td></tr>`;
+  }).join('');
+  liveTblHtml=`<div class="tuner-sec-lbl">${h(t('tuner_live_trials'))} (${trials.length})</div>
+   <div class="table-wrap tuner-live-tbl"><table><thead><tr><th>#</th><th>${h(t('tuner_col_stage'))}</th><th>${h(t('tuner_col_cand'))}</th><th>Mbps</th><th>p95 ms</th><th>Jitter</th><th>Retrans %</th><th>${h(t('tuner_col_score'))}</th></tr></thead><tbody>${trRows}</tbody></table></div>`;
+ }
+
+ return `<div class="sec-head-row"><strong>${h(t('tuner_progress'))}: ${h(phaseTxt)} ${pairTag}</strong>
+  <span class="badge ${isErr?'b-bad':(isDone?'b-ok':'b-info')} mono" dir="ltr">${h(stIdx)}/${h(stTotal)}${h(trInfo)} · ${h(job.elapsed_s??0)}s · best=${h(job.best_so_far??0)}</span></div>
+  <div class="tuner-bar"><div class="tuner-bar-fill${barCls}" style="width:${pct}%"></div></div>
+  ${stagesHtml}${stripHtml}${errHtml}${warnsHtml}${liveTblHtml}`;
 }
 function _renderTunerResultsCard(){
  const rep=TUNER_STATE.lastReport;
  if(!rep)return '';
+ const isAb=!rep.benchmarks&&rep.baseline&&rep.candidate;
  const bm=rep.benchmarks||{};
- const b=bm.baseline||{}; const w=bm.winner||{};
+ const b=isAb?rep.baseline:(bm.baseline||{});
+ const w=isAb?rep.candidate:(bm.winner||{});
+ const goalKey=(rep.profile&&rep.profile.meta&&rep.profile.meta.goal)||rep.goal||TUNER_STATE.goal||'balanced';
  const ws=(w.scores||{});
  const bs=(b.scores||{});
  const rows=[
@@ -3522,19 +3671,21 @@ function _renderTunerResultsCard(){
   ['Jitter (ms)',b.jitter_ms,w.jitter_ms],
   ['Retrans (%)',b.retrans_pct,w.retrans_pct],
   ['Stability CoV',b.stability_cov,w.stability_cov],
-  ['Score ('+(TUNER_STATE.goal||'balanced')+')',bs[TUNER_STATE.goal||'balanced'],ws[TUNER_STATE.goal||'balanced']]
+  ['Score ('+goalKey+')',bs[goalKey],ws[goalKey]]
  ].map(r=>`<tr><td>${h(r[0])}</td><td class="mono" dir="ltr">${h(r[1]??'-')}</td><td class="mono" dir="ltr"><strong>${h(r[2]??'-')}</strong></td></tr>`).join('');
  const cars=Object.entries(bm.carriers||{}).map(([k,v])=>`<span class="badge ${v.status==='tested'?'b-ok':'b-info'} mono" dir="ltr">${h(k)}: ${h(v.status)}${v.throughput_mbps!=null?' · '+h(v.throughput_mbps)+' Mbps':''}</span>`).join(' ');
  const diags=(rep.diagnostics||[]).map(d=>`<div class="tuner-alert"><strong class="mono">${h(d.code)}</strong> — ${h(d.detail)}</div>`).join('');
+ const abDelta=isAb&&rep.delta?`<div class="tuner-live-strip" style="margin-bottom:10px"><span class="badge ${rep.delta.goal_score_diff>=0?'b-ok':'b-warn'} mono" dir="ltr">${h(t('tuner_ab_delta'))}: TP ${rep.delta.throughput_pct>=0?'+':''}${h(rep.delta.throughput_pct)}% · RTT ${rep.delta.loaded_rtt_p95_diff_ms>=0?'+':''}${h(rep.delta.loaded_rtt_p95_diff_ms)}ms · Score ${rep.delta.goal_score_diff>=0?'+':''}${h(rep.delta.goal_score_diff)}</span></div>`:'';
  return `<section class="card sec">
-  <div class="sec-head-row"><h4>${h(t('tuner_results'))}</h4>
-   <div class="btns">
+  <div class="sec-head-row"><h4>${h(t('tuner_results'))}${isAb&&rep.profile_name?' — '+h(rep.profile_name):''}</h4>
+   ${rep.profile_b64?`<div class="btns">
     <button class="gh" type="button" onclick="copyTunerJson()">${h(t('tuner_copy_json'))}</button>
     <button class="gh" type="button" onclick="copyTunerBase64()">${h(t('tuner_copy_b64'))}</button>
     <button class="s" type="button" onclick="saveTunerProfileToLib()">${h(t('tuner_save_lib'))}</button>
     <button class="g" type="button" onclick="applyTunerProfileBoth('','')">${h(t('tuner_apply_both'))}</button>
     <button class="r" type="button" onclick="rollbackTunerBoth()">${h(t('tuner_rollback_both'))}</button>
-   </div></div>
+   </div>`:''}</div>
+  ${abDelta}
   <div class="tuner-metrics">
    <div class="tuner-score"><div class="k">Balanced</div><div class="v">${h(ws.balanced??'-')}</div></div>
    <div class="tuner-score"><div class="k">Low Latency</div><div class="v">${h(ws['low-latency']??'-')}</div></div>
@@ -3544,7 +3695,7 @@ function _renderTunerResultsCard(){
   <div class="table-wrap"><table><thead><tr><th>Metric</th><th>${h(t('tuner_baseline'))}</th><th>${h(t('tuner_winner'))}</th></tr></thead><tbody>${rows}</tbody></table></div>
   ${cars?`<div class="tuner-sec-lbl">${h(t('tuner_carriers'))}</div><div class="bstrip">${cars}</div>`:''}
   ${diags?`<div class="tuner-sec-lbl">${h(t('tuner_diagnostics'))}</div>${diags}`:''}
-  <textarea class="tuner-code" readonly>${h(rep.profile_b64||'')}</textarea>
+  ${rep.profile_b64?`<textarea class="tuner-code" readonly>${h(rep.profile_b64)}</textarea>`:''}
  </section>`;
 }
 function _renderTunerLibraryRows(){
@@ -3572,6 +3723,15 @@ function renderTunerPage(){
  const running=!!TUNER_STATE.activeJobId;
  const irOpts=irs.map(s=>`<option value="${h(s.name)}"${s.name===TUNER_STATE.iran?' selected':''}>${h(s.name)}</option>`).join('');
  const ndOpts=nds.map(s=>`<option value="${h(s.name)}"${s.name===TUNER_STATE.node?' selected':''}>${h(s.name)}</option>`).join('');
+ const curJid=TUNER_STATE.job&&TUNER_STATE.job.job_id;
+ const recentList=Array.isArray(TUNER_STATE.jobs)?TUNER_STATE.jobs:[];
+ const recentHtml=(recentList.length>1||(!TUNER_STATE.job&&recentList.length>0))
+  ?`<div class="tuner-jobs-bar"><span class="muted">${h(t('tuner_recent_jobs'))}:</span>`+recentList.slice(0,6).map(jb=>{
+   const safeId=String(jb.job_id||'').replace(/[^A-Za-z0-9_-]/g,'');
+   const act=safeId&&safeId===curJid?' active':'';
+   const lbl=`${jb.iran||'?'}→${jb.node||'?'} · ${jb.status}${jb.best_so_far?' ('+jb.best_so_far+')':''}`;
+   return `<button type="button" class="tuner-job-pill${act}" onclick="selectTunerJob('${h(safeId)}')">${h(lbl)}</button>`;
+  }).join('')+'</div>':'';
  pg.innerHTML=`<div class="ptitle"><h2>${h(t('tuner_title'))}</h2></div>
   <div class="tuner-grid">
    <section class="card sec">
@@ -3598,7 +3758,7 @@ function renderTunerPage(){
       <button class="g" type="button" onclick="startTunerJob()"${running?' disabled':''}>${h(t('tuner_start'))}</button>
       ${running?`<button class="r" type="button" onclick="cancelTunerJob()">${h(t('tuner_stop'))}</button>`:''}
      </div>
-    </div>
+    </div>${recentHtml}
    </section>
    ${TUNER_STATE.job?`<section class="card sec" id="tn_prog_box">${_renderTunerProgressBody()}</section>`:''}
    ${_renderTunerResultsCard()}
@@ -3608,6 +3768,8 @@ function renderTunerPage(){
     <div id="tn_lib_box">${_renderTunerLibraryRows()}</div>
    </section>
   </div>`;
+ if(!TUNER_STATE.jobsLoaded)loadTunerJobs();
+ else if(TUNER_STATE.activeJobId&&!TUNER_STATE.pollTimer)pollTunerJob(TUNER_STATE.activeJobId);
  if(TUNER_STATE.profiles===null)loadTunerProfiles();
 }
 

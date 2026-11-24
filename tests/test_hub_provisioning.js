@@ -1128,6 +1128,8 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
  for (const k of [
   'nav_tuner', 'tuner_title', 'tuner_start', 'tuner_stop', 'tuner_copy_json',
   'tuner_copy_b64', 'tuner_apply_both', 'tuner_rollback_both', 'tuner_import_btn',
+  'tuner_err_title', 'tuner_live_trials', 'tuner_ph_completed', 'tuner_ph_error',
+  'tuner_st_0', 'tuner_st_5',
  ]) {
   assert.ok(i18nCtx.DICT.fa[k], 'missing fa.' + k);
   assert.ok(i18nCtx.DICT.en[k], 'missing en.' + k);
@@ -1138,6 +1140,7 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
 
  const c = context();
  const els = {
+  page: { innerHTML: '', classList: { remove() {}, add() {} }, offsetWidth: 1 },
   tn_iran: { value: 'iran' },
   tn_node: { value: 'node' },
   tn_mode: { value: 'brutal' },
@@ -1150,23 +1153,43 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
  c.location = { get hash() { return curHash; }, set hash(v) { curHash = v; } };
  c.$ = id => els[id] || null;
  c.t = k => k;
+ c.h = x => ('' + (x == null ? '' : x)).replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+ c.SERVERS = [{ name: 'iran', role: 'iran', host: '5.202.4.40' }, { name: 'node', role: 'node', host: '198.51.100.5' }];
+ c.ROUTE = { page: 'tuner', param: null };
  c.confirm = () => true;
  c.closeModal = () => {};
- c.pollTunerJob = () => {};
+ let polledJobId = '';
+ c.pollTunerJob = id => { polledJobId = id; };
+ c.clearTunerPoll = () => { if (c.TUNER_STATE) c.TUNER_STATE.pollTimer = null; };
  c.loadTunerProfiles = async () => {};
- c.renderTunerPage = () => {};
- c.TUNER_STATE = { lastReport: { profile_b64: 'rthprof1:abcdefghijklmnop' }, activeJobId: null };
+ let jobsReply = [];
+ c.TUNER_STATE = {
+  activeJobId: null, job: null, lastReport: { profile_b64: 'rthprof1:abcdefghijklmnop' },
+  profiles: [], jobs: [], jobsLoaded: false, pollTimer: null,
+  iran: '', node: '', mode: 'brutal', goal: 'balanced', deep: false, iran_dc: '', node_dc: '',
+ };
  c.api = async (method, url, body) => {
   c.calls.push({ method, url, body });
-  if (url === 'api/tuner/start') return { status: 202, j: { ok: true, job_id: 'job_mock_1', job: { job_id: 'job_mock_1', status: 'running' } } };
+  if (url === 'api/tuner/start') return { status: 202, j: { ok: true, job_id: 'job_mock_1', job: { job_id: 'job_mock_1', iran: 'iran', node: 'node', mode: 'brutal', goal: 'low-latency', status: 'running', phase: 'starting_responder', live_trials: [] } } };
+  if (url === 'api/tuner/jobs') return { status: 200, j: { jobs: jobsReply } };
   return { status: 200, j: { ok: true, profile: { id: 'prof_1' } } };
  };
  vm.runInContext(
   definition('parseHash') + '\n' +
+  definition('iranServers') + '\n' +
+  definition('_tunerPhaseLabel') + '\n' +
+  definition('_upsertTunerJob') + '\n' +
+  definition('loadTunerJobs') + '\n' +
+  definition('selectTunerJob') + '\n' +
+  definition('dismissTunerJob') + '\n' +
   definition('startTunerJob') + '\n' +
   definition('importTunerProfile') + '\n' +
   definition('applyTunerProfileBoth') + '\n' +
-  definition('rollbackTunerBoth'),
+  definition('rollbackTunerBoth') + '\n' +
+  definition('_renderTunerProgressBody') + '\n' +
+  definition('_renderTunerResultsCard') + '\n' +
+  definition('_renderTunerLibraryRows') + '\n' +
+  definition('renderTunerPage'),
   c
  );
 
@@ -1177,6 +1200,7 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
  assert.equal(stCall.body.goal, 'low-latency');
  assert.equal(stCall.body.deep, true);
  assert.equal(stCall.body.tags.iran_dc, 'arvan-thr');
+ assert.equal(polledJobId, 'job_mock_1');
 
  await c.importTunerProfile('custom-dc', 'rthprof1:abcdefghijklmnop');
  assert.ok(c.calls.some(x => x.url === 'api/tuner/profiles' && x.body.profile === 'rthprof1:abcdefghijklmnop'));
@@ -1186,4 +1210,43 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
 
  await c.rollbackTunerBoth();
  assert.ok(c.calls.some(x => x.url === 'api/tuner/rollback' && x.body.iran === 'iran' && x.body.node === 'node'));
+
+ // Rehydration after page reload: running job with live_trials & PMTU resumes polling
+ polledJobId = '';
+ c.TUNER_STATE.job = null;
+ c.TUNER_STATE.activeJobId = null;
+ c.TUNER_STATE.jobsLoaded = false;
+ jobsReply = [{
+  job_id: 'job_live_77', iran: 'iran', node: 'node', mode: 'brutal', goal: 'balanced',
+  status: 'running', phase: 'cc_qdisc_pacing', stage_index: 2, stage_total: 6,
+  completed_trials: 4, estimated_trials: 14, best_so_far: 91.8, elapsed_s: 12.4,
+  current_candidate: 'bbr_fq_lw32768',
+  pmtu: { forward_bytes: 1420, reverse_bytes: 1420, blackhole_detected: false },
+  live_trials: [{ id: 's2_0', name: 'bbr_fq_lw32768', stage: 2, throughput_mbps: 418.7, loaded_rtt_p95_ms: 46.2, jitter_ms: 2.9, retrans_pct: 0.15, score: 91.8, disqualified: false }],
+ }];
+ await c.loadTunerJobs(true);
+ assert.equal(polledJobId, 'job_live_77');
+ assert.ok(els.page.innerHTML.includes('PMTU 1420B'));
+ assert.ok(els.page.innerHTML.includes('bbr_fq_lw32768'));
+ assert.ok(els.page.innerHTML.includes('418.7'));
+ assert.equal((els.page.innerHTML.match(/class="tuner-stage /g) || []).length, 6);
+
+ // Rehydrated error job renders explicit diagnostic box with error text
+ jobsReply = [{
+  job_id: 'job_err_1', iran: 'iran', node: 'node', status: 'error', phase: 'error',
+  stage_index: 0, stage_total: 6, elapsed_s: 15.1, error: '[iran bench] ConnectionError: port 29890 blocked',
+ }];
+ await c.loadTunerJobs(true);
+ assert.ok(els.page.innerHTML.includes('tuner-err-detail'));
+ assert.ok(els.page.innerHTML.includes('ConnectionError: port 29890 blocked'));
+
+ // A/B test-profile result renders cleanly without profile_b64 copy/apply controls
+ c.TUNER_STATE.lastReport = {
+  ok: true, goal: 'balanced', profile_name: 'arvan-ab',
+  baseline: { throughput_mbps: 150, loaded_rtt_p95_ms: 120, jitter_ms: 9, retrans_pct: 1.1, stability_cov: 0.1, scores: { balanced: 60 } },
+  candidate: { throughput_mbps: 260, loaded_rtt_p95_ms: 55, jitter_ms: 3, retrans_pct: 0.2, stability_cov: 0.03, scores: { balanced: 90 } },
+  delta: { throughput_pct: 73.3, loaded_rtt_p95_diff_ms: -65, goal_score_diff: 30 },
+ };
+ const abHtml = c._renderTunerResultsCard();
+ assert.ok(abHtml.includes('arvan-ab') && abHtml.includes('tuner_ab_delta'));
 });

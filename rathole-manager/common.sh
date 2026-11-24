@@ -3,7 +3,7 @@
 
 # noskhe-ye rathole-manager (panel/node/hub). moqe-e release in adad ba tag hamahang mishavad.
 # package.sh/CI mitavanad in ra be tag-e vaghei stamp konad; agar dast taghir dadi، bedoon 'v' bezar.
-MANAGER_VERSION="2.3.1"
+MANAGER_VERSION="2.3.2"
 
 c_g(){ printf '\033[1;32m%s\033[0m' "$*"; }
 c_r(){ printf '\033[1;31m%s\033[0m' "$*"; }
@@ -1624,6 +1624,37 @@ PY
 # ---------------------------------------------------------------------------
 # rathole-tuner CLI wrapper (moshtarak beyn-e ratholectl va ratholenode)
 # ---------------------------------------------------------------------------
+_rth_bench_fw_close(){
+  local ipt line rest
+  local -a toks=()
+  for ipt in iptables ip6tables; do
+    command -v "$ipt" >/dev/null 2>&1 || continue
+    while IFS= read -r line; do
+      case "$line" in
+        "-A INPUT "*rathole-tuner-ephemeral*)
+          rest="${line#-A }"
+          read -ra toks <<<"${rest//\"/}"
+          [ "${#toks[@]}" -gt 0 ] && "$ipt" -D "${toks[@]}" 2>/dev/null || true
+          ;;
+      esac
+    done < <("$ipt" -S INPUT 2>/dev/null || true)
+  done
+}
+
+_rth_bench_fw_open(){ # $1=ctrl_port $2=data_port
+  local cport="${1:-29890}" dport="${2:-29891}" ipt spec proto port
+  _rth_bench_fw_close
+  for ipt in iptables ip6tables; do
+    command -v "$ipt" >/dev/null 2>&1 || continue
+    for spec in "tcp:${cport}" "tcp:${dport}" "udp:${dport}" "udp:29920"; do
+      proto="${spec%%:*}"
+      port="${spec#*:}"
+      [[ "$port" =~ ^[0-9]+$ ]] || continue
+      "$ipt" -I INPUT 1 -p "$proto" --dport "$port" -m comment --comment rathole-tuner-ephemeral -j ACCEPT 2>/dev/null || true
+    done
+  done
+}
+
 rth_bench_exec(){ # $1=role (iran|node) $2=subcommand $@=args
   local role="$1"; shift || true
   local sub="${1:-status}"; shift || true
@@ -1646,6 +1677,7 @@ rth_bench_exec(){ # $1=role (iran|node) $2=subcommand $@=args
       fi
       rm -f "$pidfile"
     fi
+    _rth_bench_fw_close
     echo '{"ok":true,"stopped":true}'
     return 0
   fi
@@ -1676,7 +1708,7 @@ rth_bench_exec(){ # $1=role (iran|node) $2=subcommand $@=args
   case "$sub" in
     listen)
       need_root
-      local is_daemon=0 arg port_hint="29890" prev=""
+      local is_daemon=0 arg port_hint="29890" dport_hint="29891" prev=""
       local -a fwd_args=()
       for arg in "$@"; do
         if [ "$arg" = "--daemon" ]; then
@@ -1685,6 +1717,7 @@ rth_bench_exec(){ # $1=role (iran|node) $2=subcommand $@=args
           fwd_args+=("$arg")
         fi
         [ "$prev" = "--port" ] && port_hint="$arg"
+        [ "$prev" = "--data-port" ] && dport_hint="$arg"
         prev="$arg"
       done
       if [ "$is_daemon" -eq 1 ]; then
@@ -1698,7 +1731,12 @@ rth_bench_exec(){ # $1=role (iran|node) $2=subcommand $@=args
           rm -f "$pidfile"
         fi
         mkdir -p "$(dirname "$pidfile")" "$(dirname "$logfile")" 2>/dev/null || true
-        setsid python3 "$tbin" listen "${fwd_args[@]}" --pidfile "$pidfile" >"$logfile" 2>&1 < /dev/null &
+        _rth_bench_fw_open "$port_hint" "$dport_hint"
+        if command -v setsid >/dev/null 2>&1; then
+          setsid python3 "$tbin" listen "${fwd_args[@]}" --pidfile "$pidfile" >"$logfile" 2>&1 < /dev/null &
+        else
+          nohup python3 "$tbin" listen "${fwd_args[@]}" --pidfile "$pidfile" >"$logfile" 2>&1 < /dev/null &
+        fi
         local spawned_pid=$! i=0 ready=0
         while [ "$i" -lt 30 ]; do
           if [ -s "$pidfile" ]; then
@@ -1711,6 +1749,7 @@ rth_bench_exec(){ # $1=role (iran|node) $2=subcommand $@=args
           printf '{"ok":true,"pid":%s,"port":%s}\n' "$(tr -d '[:space:]' < "$pidfile" 2>/dev/null || echo "$spawned_pid")" "$port_hint"
           return 0
         fi
+        _rth_bench_fw_close
         err "responder daemon bala nayamad:"
         tail -n 10 "$logfile" >&2 2>/dev/null || true
         return 1

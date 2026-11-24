@@ -22,6 +22,10 @@ class TestTunerProtocol(unittest.TestCase):
         self.assertEqual(out["payload"], {"iface": "eth0"})
         self.assertIn(out["nonce"], seen)
 
+        # Typical VPS NTP clock skew (180s) must be accepted by default
+        skew_frame = sign_frame(tok, "hello", {"role": "orchestrator"}, ts=1000)
+        verify_frame(tok, skew_frame, seen_nonces={}, now=1180)
+
     def test_rejects_replay_stale_tamper_and_unknown_action(self):
         from tuner.protocol import ProtocolError, sign_frame, verify_frame
 
@@ -182,6 +186,40 @@ class TestTunerProfile(unittest.TestCase):
         cap = int(128 * 1024 * 1024 * 0.10)
         self.assertLessEqual(clamped["sysctl"]["net.core.rmem_max"], cap)
         self.assertLessEqual(int(clamped["sysctl"]["net.ipv4.tcp_rmem"].split()[2]), cap)
+
+    def test_snapshot_sanitization_handles_real_kvm_defaults(self):
+        from tuner.profile import _validate_side_config
+        from tuner.sweep import _config_from_snapshot
+
+        raw_kvm_snap = {
+            "mtu": 9000,
+            "txqueuelen": 0,
+            "qdisc": {"kind": "mq"},
+            "route": {"initcwnd": 10, "initrwnd": 10, "advmss": 8960},
+            "offloads": {"tso": True, "gso": True, "gro": True, "unknown_flag": True},
+            "sysctl": {
+                "net.core.default_qdisc": "noqueue",
+                "net.ipv4.tcp_congestion_control": "cubic",
+                "net.ipv4.tcp_notsent_lowat": "0",
+                "net.core.rmem_max": "134217728",
+                "net.core.wmem_max": "134217728",
+                "net.ipv4.tcp_rmem": "4096 131072 134217728",
+                "net.ipv4.tcp_mtu_probing": "1",
+            },
+        }
+        clean = _config_from_snapshot(raw_kvm_snap)
+        validated = _validate_side_config(clean, "iran_config")
+        self.assertEqual(validated["mtu"], 1500)
+        self.assertEqual(validated["txqueuelen"], 1000)
+        small_txq = _config_from_snapshot({**raw_kvm_snap, "txqueuelen": 50})
+        self.assertEqual(_validate_side_config(small_txq, "iran_config")["txqueuelen"], 100)
+        self.assertEqual(validated["qdisc"]["kind"], "fq_codel")
+        self.assertNotIn("net.core.default_qdisc", validated["sysctl"])
+        self.assertNotIn("net.ipv4.tcp_notsent_lowat", validated["sysctl"])
+        self.assertEqual(validated["sysctl"]["net.core.rmem_max"], 67108864)
+        self.assertEqual(validated["sysctl"]["net.ipv4.tcp_rmem"], "4096 131072 67108864")
+        self.assertEqual(validated["route"]["advmss"], 1460)
+        self.assertNotIn("unknown_flag", validated["offloads"])
 
 
 class TestScoringAndDiagnostics(unittest.TestCase):

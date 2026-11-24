@@ -6,6 +6,13 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.3.2] - 2026-11-24
+
+### Fixed
+- **Real-server tuner snapshot sanitization, ephemeral firewall & control resiliency:** `_config_from_snapshot()` now sanitizes real cloud/KVM host defaults (such as `mq`/`noqueue` qdiscs, jumbo MTUs `> 1500`, `txqueuelen=0`, and oversized `rmem_max`) against strict schema bounds so candidate validation and profile export never fail; widened replay-window tolerance to 600s for VPS NTP clock skew, added `ControlClient` auto-reconnect on saturated/dropped links, made `TunerResponder` accept concurrent control sessions with action locking and `iptables` cleanup, and opened/cleaned ephemeral `INPUT` firewall rules (`rathole-tuner-ephemeral`) in `common.sh` during `bench listen` / `stop-listen`.
+- **Persistent Hub tuner job state across browser refreshes and Hub restarts:** Persist recent `#/tuner` jobs to `/var/lib/ratholehub/tuner-jobs.json` (`RATHOLEHUB_TUNER_JOBS`) and automatically rehydrate running, completed, or errored jobs via `GET /api/tuner/jobs` when opening or refreshing `#/tuner`.
+- **Full actionable error reporting & live intermediate trial streaming:** Extract JSON payloads resiliently past warning lines, surface tail exception lines and outdated-server hints in a persistent `.tuner-err` box with Retry/Dismiss actions, keep `best_so_far` monotonic through stages 4–5, and stream live PMTU, Baseline, active candidate, 6-stage stepper, and intermediate trial score rows in `#/tuner` while running (plus A/B `test-profile` result rendering).
+
 ## [2.3.1] - 2026-11-24
 
 ### Fixed

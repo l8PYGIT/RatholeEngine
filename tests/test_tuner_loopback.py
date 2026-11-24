@@ -34,6 +34,7 @@ class TestTunerLoopbackAndCLI(unittest.TestCase):
             th = threading.Thread(target=responder.serve_forever, daemon=True)
             th.start()
             try:
+                events = []
                 orch = TunerOrchestrator(
                     peer_host="127.0.0.1",
                     ctrl_port=responder.ctrl_port,
@@ -45,9 +46,25 @@ class TestTunerLoopbackAndCLI(unittest.TestCase):
                     driver=orch_drv,
                     state_dir=os.path.join(td, "orch_state"),
                     fast_test=True,
+                    progress_cb=events.append,
                 )
                 result = orch.run()
                 self.assertTrue(result["ok"])
+                self.assertGreater(len(events), 4)
+                self.assertEqual(events[0]["phase"], "connecting_peer")
+                phases = [e.get("phase") for e in events]
+                self.assertIn("mtu_mss_offload", phases)
+                self.assertIn("carrier_matrix", phases)
+                self.assertIn("finalist_soak", phases)
+                c_ev = next(e for e in events if e.get("phase") == "carrier_matrix")
+                s_ev = next(e for e in events if e.get("phase") == "finalist_soak")
+                self.assertGreater(c_ev.get("best_so_far", 0), 0)
+                self.assertGreater(s_ev.get("best_so_far", 0), 0)
+                self.assertTrue(c_ev.get("pmtu"))
+                self.assertGreater(len(c_ev.get("live_trials") or []), 0)
+                first_row = c_ev["live_trials"][0]
+                for fk in ("name", "throughput_mbps", "loaded_rtt_p95_ms", "score"):
+                    self.assertIn(fk, first_row)
                 prof = result["profile"]
                 b64 = result["profile_b64"]
                 self.assertEqual(prof["schema"], "rathole.netprofile.v1")
@@ -153,6 +170,40 @@ class TestTunerLoopbackAndCLI(unittest.TestCase):
                 self.assertTrue(p_exp.stdout.strip().startswith("rthprof1:"))
             finally:
                 responder.stop()
+                th.join(timeout=3.0)
+
+    def test_control_client_recovers_from_dropped_socket(self):
+        from tuner.protocol import ControlClient
+        from tuner.responder import TunerResponder
+        from tuner.sysstate import MockSysDriver
+
+        token = "feedface0123456789abcdef01234567"
+        with tempfile.TemporaryDirectory() as td:
+            resp = TunerResponder(
+                bind_host="127.0.0.1",
+                ctrl_port=0,
+                data_port=0,
+                token=token,
+                idle_timeout=30,
+                driver=MockSysDriver(),
+                state_dir=td,
+            )
+            resp.start()
+            th = threading.Thread(target=resp.serve_forever, daemon=True)
+            th.start()
+            client = ControlClient("127.0.0.1", resp.ctrl_port, token, timeout=5.0)
+            try:
+                client.connect()
+                h1 = client.call("hello", {"role": "orchestrator"})
+                self.assertTrue(h1.get("ok"))
+                # Simulate mid-run TCP drop / reset without closing ControlClient cleanly
+                client._sock.close()
+                c2 = client.call("caps", {"peer_ip": ""})
+                self.assertTrue(c2.get("ok"))
+                self.assertIn("iface", c2.get("caps") or {})
+            finally:
+                client.close()
+                resp.stop()
                 th.join(timeout=3.0)
 
 

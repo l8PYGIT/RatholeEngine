@@ -83,6 +83,12 @@ if [ "${1:-}" = "--workflow" ]; then
   ok 'release.yml: dist SHA256SUMS + Ed25519 signing step vojood darad'
   grep -q 'RATHOLE_REQUIRE_CORE' "$CIY" || fail 'release.yml RATHOLE_REQUIRE_CORE nadarad'
   ok 'release.yml: RATHOLE_REQUIRE_CORE enforcement vojood darad'
+  for wf in "$REPO_ROOT/.github/workflows/"*.yml; do
+    if grep -qE '^[[:space:]]*if:.*secrets\.' "$wf"; then
+      fail "workflow nabayad dar if: az secrets estefade konad ($wf)"
+    fi
+  done
+  ok 'workflows: hich secrets.* dar shart-e if: nist'
 fi
 
 echo "---"

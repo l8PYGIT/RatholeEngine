@@ -130,10 +130,13 @@ jobs:
           sha256sum -c SHA256SUMS --strict
 
       - name: Sign core SHA256SUMS (Ed25519)
-        if: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY != '' }}
         env:
           SIGN_KEY: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY }}
         run: |
+          if [ -z "${SIGN_KEY:-}" ]; then
+            echo "RELEASE_ED25519_PRIVATE_KEY not set; skipping Ed25519 signing."
+            exit 0
+          fi
           K="$(umask 077 && mktemp)"
           trap 'rm -f "$K"' EXIT
           printf '%s\n' "$SIGN_KEY" > "$K"
@@ -165,10 +168,13 @@ jobs:
           ls -lh dist/
 
       - name: Sign dist/SHA256SUMS (Ed25519)
-        if: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY != '' }}
         env:
           SIGN_KEY: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY }}
         run: |
+          if [ -z "${SIGN_KEY:-}" ]; then
+            echo "RELEASE_ED25519_PRIVATE_KEY not set; skipping Ed25519 signing."
+            exit 0
+          fi
           K="$(umask 077 && mktemp)"
           trap 'rm -f "$K"' EXIT
           printf '%s\n' "$SIGN_KEY" > "$K"

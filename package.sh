@@ -51,15 +51,15 @@ PACK=("$SRC")
 for L in LICENSE NOTICE; do [ -f "$L" ] && PACK+=("$L"); done
 
 echo "[+] normal-sazi khate-payan (LF) rooye askriptha va mstndat..."
-find "${PACK[@]}" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.md' -o -name 'common.sh' -o -name 'ratholectl' -o -name 'ratholenode' \) \
+find "${PACK[@]}" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.md' -o -name 'common.sh' -o -name 'ratholectl' -o -name 'ratholenode' -o -name 'rathole-tuner' \) \
   -exec sed -i 's/\r$//' {} +
 # ghabele-ejra kardan askriptha
-for s in "$SRC"/*.sh "$SRC/ratholectl" "$SRC/ratholenode" "$SRC/fakeweb.py" "$SRC/ratholeagent.py" "$SRC/ratholehub/hub.py" "$SRC/ratholehub/install-hub.sh"; do [ -f "$s" ] && chmod +x "$s"; done
+for s in "$SRC"/*.sh "$SRC/ratholectl" "$SRC/ratholenode" "$SRC/rathole-tuner" "$SRC/fakeweb.py" "$SRC/ratholeagent.py" "$SRC/ratholehub/hub.py" "$SRC/ratholehub/monitor.py" "$SRC/ratholehub/install-hub.sh"; do [ -f "$s" ] && chmod +x "$s"; done
 
 rm -f "$OUT"
 if command -v zip >/dev/null 2>&1; then
   echo "[+] sakht $OUT ba zip (forward-slash)..."
-  zip -r -q "$OUT" "${PACK[@]}"
+  zip -r -q "$OUT" "${PACK[@]}" -x '*/__pycache__/*' '*.pyc'
 elif command -v python3 >/dev/null 2>&1 && [ -f "tools/build_zip.py" ]; then
   echo "[+] sakht $OUT ba python3 tools/build_zip.py..."
   python3 tools/build_zip.py

@@ -435,6 +435,13 @@ ratholenode migrate
 
 ```bash
 ratholenode tune             # اعمال sysctl برای بهینه‌سازی (BBR، buffer، ...)
+
+# Auto-Bench & Kernel/Network Tuner (v2.3.0+, یکسان در ratholectl و ratholenode)
+ratholenode bench listen --port 44990 --token <SECRET> [--idle-sec 300]
+ratholectl  bench run --peer <IP>:44990 --token <SECRET> --mode <brutal|safe> --goal <balanced|low-latency|max-throughput|anti-loss> [--iran-dc tag] [--node-dc tag] [--deep] [--out profile.json] [--b64-out profile.b64]
+ratholectl  bench test --peer <IP>:44990 --token <SECRET> --profile <file.json|rthprof1:...>
+ratholectl  bench apply --profile <file.json|rthprof1:...>
+ratholectl  bench rollback | status | audit [--json] | stop-listen | job <id>
 ratholenode fakeweb start [port]   # سایت فیک سبک برای fallback inbound (پیش‌فرض ۸۰۸۱)
 ratholenode fakeweb stop
 ratholenode fakeweb rm

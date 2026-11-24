@@ -60,12 +60,15 @@ The UI is a static asset tree under `ratholehub/ui/` (`index.html`, `app.css`, `
 | Page | Hash | Content |
 |------|------|---------|
 | **Dashboard** | `#/dashboard` | **4 KPI cards** (servers, connectivity, nodes/services, hub health), hub status strip, role/reachability/text filter bar, server cards/table with carrier protocol and version badges, add-server/Provision forms, and Update All progress. |
-| **Server page** | `#/server/<name>` | Iran server: four tabs (Nodes & Paths, Carriers & Protocols, Network & Ingress, Maintenance & System), live table filter + domain/certificate, the Ports section, ingress modes, and diagnostics. Node: main tunnel, quick presets, carrier select, watchdog and adaptive toggles, unified services table (rathole lane + Backhaul lane), upstreams, and diagnostics. |
-| **Routing map** | `#/routing` | **Read-only**: three views — a draggable SVG graph (layout persisted in the browser, with reset), a summary table, and an ingress/output console with per-node client connection recipes. Routing changes happen on the server/node pages. |
-| **Activity log** | `#/audit` | Last 100 audit records (with live text filter): time, user, server, action, and `rc`. |
-| **Settings** | `#/settings` | 3-state Appearance selector (**Light / Dark / System**), language toggle, hub proxy settings, API-token hint, listen address, token rotation, admin-password change, and the insecure-default warning. |
+| **Server page** | `#/server/<name>` | Iran server: four tabs (Nodes & Paths, Carriers & Protocols, Network & Ingress, Maintenance & System), live table filter, `paqet`, Ports, and diagnostics. Node: main tunnel, quick presets, carrier select, watchdog & adaptive, `paqet`, Managed Xray (REALITY/XHTTP + cover scanner), upstreams, and diagnostics. |
+| **Network Tuner** | `#/tuner` | Async 6-stage `rathole-tuner` benchmark runner, 5D score strip, Baseline/Winner table, `rthprof1:` & JSON AI profile export/import, Datacenter Profile Library, live A/B testing, and two-sided apply/rollback (`/api/tuner/*`). |
+| **Routing map** | `#/routing` | **Read-only**: three views — a draggable SVG graph (layout persisted in the browser, with reset), a summary table, and an ingress/output console with per-node client connection recipes. |
+| **Activity log** | `#/audit` | Last 100 SHA-256 hash-chained audit records (with live text filter): time, user, server, action, and `rc`. |
+| **Settings** | `#/settings` | 3-state Appearance selector (**Light / Dark / System**), language toggle, hub proxy, TOTP 2FA, scoped API tokens, standalone Monitor & Telegram Relay settings, Ed25519 relayed update policy, and admin password. |
 
-Press **`⌘K / Ctrl+K`** anywhere (or click the sidebar trigger) to open the **Command Palette** and jump straight to any server, page, or theme/language toggle. On mobile widths (≤820px) navigation collapses into a fixed bottom bar. There is no wiring-board page; `#/wiring` falls back to `#/dashboard`.
+![RatholeHub Auto-Tuner UI](assets/screenshots/tuner.png)
+
+Press **`⌘K / Ctrl+K`** anywhere (or click the sidebar trigger) to open the **Command Palette** and jump straight to any server, page (including `#/tuner`), or theme/language toggle. On mobile widths (≤820px) navigation collapses into a fixed bottom bar (`v2.3.0`). There is no wiring-board page; `#/wiring` falls back to `#/dashboard`.
 
 ### Per-node carrier selector (v2.0.4)
 
@@ -238,6 +241,10 @@ All routes require `Authorization: Bearer <API_TOKEN>` (or the session cookie fr
 | POST | `/api/2fa/setup` \| `enable` \| `disable` | Configure opt-in TOTP 2FA and recovery codes |
 | GET/POST | `/api/monitor/config` \| `test` \| `diagnose` | Manage standalone monitor & Telegram relay bot |
 | GET | `/api/releases/asset` | Tunnel-relayed GitHub Release artifact & Ed25519 signature fetcher |
+| POST | `/api/tuner/start` | Launch async 6-stage `rathole-tuner` benchmark (`operate` scope) |
+| GET/POST | `/api/tuner/jobs` \| `/api/tuner/jobs/<id>/cancel` | List or cancel running/completed tuner benchmark jobs |
+| GET/POST/DELETE | `/api/tuner/profiles` | Datacenter Profile Library (import/export `rthprof1:` or JSON) |
+| POST | `/api/tuner/apply` \| `/api/tuner/rollback` | Two-sided apply (`99-rathole-tuner.conf`) or rollback via hub allow-list |
 | POST | `/api/servers/<name>/action` | `{"action":"...","args":{...}}` → run one allowed action |
 | GET | `/api/config` | Redacted configuration (token shown as a hint only) |
 | POST | `/api/config` | Rotate token / change admin password / proxy / `ssh_key_path` |

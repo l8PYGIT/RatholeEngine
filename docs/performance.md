@@ -3,8 +3,44 @@
 این راهنما همه‌ی جاهایی که می‌توان بعد از تونل (rathole + kcp) سرعت و پایداری را بهتر کرد جمع کرده.
 ترتیب از «بیشترین تأثیر» به «کمترین» است. هر تغییر را جدا اعمال کن و تست بگیر.
 
-> یادآوری معماری: کاربر → TLS/۴۴۳/دامنه → nginx (روی rp01) → rathole-server → تونل (websocket یا kcp، یا laneهای مستقل Backhaul/FRP/GRE) → نود → Xray → اینترنت.
+> یادآوری معماری: کاربر → TLS/۴۴۳/دامنه → nginx (روی rp01) → rathole-server → تونل (websocket یا kcp، یا laneهای مستقل Backhaul/FRP/GRE/Paqet) → نود → Xray → اینترنت.
 > پس چهار نقطه‌ی قابل‌تنظیم داریم: **تونل**، **کرنل دو سرور**، **Xray نود**، **کلاینت کاربر**. nginx فقط یک پراکسی سبک در مسیر است.
+
+---
+
+## ۰-الف) تیونر خودکار بی‌رحمانه (`rathole-tuner` / `bench`) و پروفایل‌های AI (`v2.3.0+`)
+
+به‌جای حدس‌زدن `sysctl` یا `MTU`، از موتور **`rathole-tuner`** (قابل اجرا با `ratholectl bench` / `ratholenode bench` یا از صفحه **`#/tuner`** در RatholeHub) استفاده کن تا لینک ایران↔نود در **۶ مرحله** بررسی شود:
+
+![معماری rathole-tuner](assets/tuner-architecture.svg)
+
+1. **PMTU و MSS باینری** (کشف سقف بسته بدون تکه‌تکه شدن + تست blackhole)
+2. **آف‌لودهای کارت شبکه** (`TSO` / `GSO` / `GRO`)
+3. **کنترل ازدحام و Qdisc** (`BBR`، `CAKE`، `FQ`، `CUBIC`)
+4. **بافرهای کرنل و TCP Tuning** (`rmem_max`، `wmem_max`، `tcp_rmem`، `tcp_notsent_lowat`، `initcwnd`)
+5. **تست استرس هم‌زمان و Bufferbloat** (اندازه‌گیری Throughput + Loaded RTT p95 + Jitter + Retrans)
+6. **ماتریس حامل‌ها + ممیزی غیرکرنلی** (بررسی `Xray`، `Nginx`، `OpenSSL AES`، `LimitNOFILE`) با امتیازدهی ۵بعدی و **Watchdog بازگشت خودکار** (`rollback_sec`).
+
+```bash
+# روی نود خارج: راه‌اندازی موقت responder امن (HMAC-SHA256، بسته شدن خودکار)
+sudo ratholenode bench listen --port 44990 --token <SECRET> --idle-sec 300
+
+# روی سرور ایران: اجرای تست کامل (برجسب دیتاسنتر + خروجی JSON/rthprof1)
+sudo ratholectl bench run --peer <NODE_IP>:44990 --token <SECRET> \
+  --mode brutal --goal balanced --iran-dc arvan --node-dc hetzner-fsn1 --out /tmp/dc.json
+
+# تست مقایسه زنده A/B/N با یک پروفایل اشتراکی (بدون اعمال دائمی تا تایید برنده)
+sudo ratholectl bench test --peer <NODE_IP>:44990 --token <SECRET> --profile "rthprof1:..."
+
+# اعمال دائمی برنده (/etc/sysctl.d/99-rathole-tuner.conf) یا بازگشت به وضعیت قبل:
+sudo ratholectl bench apply --profile /tmp/dc.json
+sudo ratholectl bench rollback
+
+# ممیزی تنظیمات غیرکرنلی (Xray / Nginx / ulimit / OpenSSL):
+sudo ratholectl bench audit --json
+```
+
+> **پروفایل قابل‌تحلیل توسط AI (`rthprof1:`):** خروجی JSON با اسکیمای `rathole.netprofile.v1` به‌همراه رشته فشرده `rthprof1:<base64url>` (با کنترلسام SHA-256) شامل کل متریک‌های baseline/winner و تنظیمات ایران/نود است تا مستقیماً به مدل هوش مصنوعی بدهی یا در تب `#/tuner` ذخیره و بین سرورها تست کنی.
 
 ---
 

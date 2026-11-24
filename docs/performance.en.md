@@ -2,8 +2,44 @@
 
 This guide covers every place you can improve speed and stability after the tunnel (rathole + kcp) is working. Ordered from **highest impact** to lowest. Apply each change separately and test.
 
-> Architecture reminder: User → TLS/443/domain → nginx (Iran) → rathole-server → tunnel (websocket or kcp, or the independent Backhaul/FRP/GRE lanes) → node → Xray → internet.
+> Architecture reminder: User → TLS/443/domain → nginx (Iran) → rathole-server → tunnel (websocket or kcp, or the independent Backhaul/FRP/GRE/Paqet lanes) → node → Xray → internet.
 > Four tunable points: **tunnel**, **kernel on both servers**, **Xray on node**, **user client**. nginx is just a lightweight proxy in the path.
+
+---
+
+## 0A) Automated Brutal Benchmark & Auto-Tuner (`rathole-tuner` / `bench`, `v2.3.0+`)
+
+Instead of guessing `sysctl` values or `MTU`, use **`rathole-tuner`** (via `ratholectl bench` / `ratholenode bench` or **`#/tuner`** in RatholeHub) to sweep the Iran↔node link across **6 stages**:
+
+![rathole-tuner Architecture](assets/tuner-architecture.svg)
+
+1. **Binary PMTU & TCP MSS probe** (discovers fragmentation ceiling and PMTU blackholes)
+2. **NIC Offloads** (`TSO` / `GSO` / `GRO`)
+3. **Congestion Control & Qdisc** (`BBR`, `CAKE`, `FQ`, `CUBIC`)
+4. **TCP/UDP Buffers & Socket Knobs** (`rmem_max`, `wmem_max`, `tcp_rmem`, `tcp_notsent_lowat`, `initcwnd`)
+5. **Loaded Bufferbloat Stress Sweep** (throughput, loaded RTT p95, jitter, retransmissions, stability CoV)
+6. **Carrier Matrix & Non-Kernel Audit** (audits `Xray`, `Nginx`, `OpenSSL AES`, and `LimitNOFILE`) with **5D weighted scoring** and a deterministic **dead-man Watchdog rollback**.
+
+```bash
+# On the foreign node: start ephemeral HMAC-authenticated responder
+sudo ratholenode bench listen --port 44990 --token <SECRET> --idle-sec 300
+
+# On the Iran server: run 6-stage sweep and emit JSON + portable rthprof1: string
+sudo ratholectl bench run --peer <NODE_IP>:44990 --token <SECRET> \
+  --mode brutal --goal balanced --iran-dc arvan --node-dc hetzner-fsn1 --out /tmp/dc.json
+
+# Live A/B/N profile comparison (only keeps winner when goal score beats baseline)
+sudo ratholectl bench test --peer <NODE_IP>:44990 --token <SECRET> --profile "rthprof1:..."
+
+# Persist winner to /etc/sysctl.d/99-rathole-tuner.conf or revert cleanly:
+sudo ratholectl bench apply --profile /tmp/dc.json
+sudo ratholectl bench rollback
+
+# Audit non-kernel stack (Xray / Nginx / OpenSSL / ulimit):
+sudo ratholectl bench audit --json
+```
+
+> **Portable AI Profiles (`rthprof1:`):** Every run emits structured `rathole.netprofile.v1` JSON plus a gzip + SHA-256 verified `rthprof1:<base64url>` token you can paste into an AI assistant for root-cause diagnostics, share per datacenter pair, and import into Hub **`#/tuner`**.
 
 ---
 

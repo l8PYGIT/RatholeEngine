@@ -11,6 +11,7 @@ import pathlib
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / "docs" / "assets"
 FONT = "Segoe UI, system-ui, -apple-system, Arial, sans-serif"
+VERSION = "v2.3.0"
 
 
 def esc(text: str) -> str:
@@ -156,7 +157,7 @@ class Svg:
   <rect x="20" y="16" width="{width - 40}" height="{hdr_h}" rx="14" fill="{t['hdr_fill']}" stroke="{t['hdr_stroke']}" stroke-width="1.2"/>
   <text x="{width / 2}" y="{41 if subtitle else 46}" text-anchor="middle" fill="{t['title']}" font-size="18.5" font-weight="700">{esc(title)}</text>
 {sub_svg}  <rect x="{width - 92}" y="27" width="56" height="22" rx="11" fill="{t['ver_bg']}" stroke="{t['ver_stroke']}" stroke-width="1"/>
-  <text x="{width - 64}" y="42" text-anchor="middle" fill="{t['ver_fg']}" font-size="11" font-weight="700">v2.1.0</text>
+  <text x="{width - 64}" y="42" text-anchor="middle" fill="{t['ver_fg']}" font-size="11" font-weight="700">{esc(VERSION)}</text>
 """
         )
 
@@ -276,13 +277,13 @@ def build_architecture(theme: str) -> Svg:
         1200,
         660,
         "RatholeEngine — 4 Roles, 1 Public Port (:443)",
-        "One domain · one TLS cert · URL-path routing to many foreign nodes · SSH & REST Agent control",
+        "One domain · one TLS cert · URL-path routing · 9 carriers · Managed Xray · Monitor & Auto-Tuner",
         theme,
     )
 
     # Column 1: Users
     s.zone(24, 100, 240, 396, accent="blue", title="USERS · IRAN")
-    s.card(40, 136, 208, "Xray / V2Ray Client", ["VLESS + WebSocket + TLS", "wss://domain:443/trk01"], accent="blue")
+    s.card(40, 136, 208, "Xray / V2Ray Client", ["VLESS + WS / REALITY / XHTTP", "wss://domain:443/trk01"], accent="blue")
     s.card(40, 234, 208, "Direct-IP Client", ["Raw Iran IP · :8081 HTTP", "Header X-Cdn-Id: <node>"], accent="blue")
     s.card(40, 332, 208, "Browser / Web Hub", ["Fake site on /", "Admin Hub on /hub/"], accent="blue")
     s.text(144, 466, "Zero client port config change", size=10.5, anchor="middle")
@@ -292,36 +293,37 @@ def build_architecture(theme: str) -> Svg:
     s.card(340, 136, 460, "Nginx Edge :443 (HTTPS / Stream SNI)", ["Terminates Let's Encrypt TLS · map $uri -> 127.0.0.1:<port>"], accent="green")
     s.card(340, 214, 460, "Rathole Server (Loopback)", ["ws/kcp/plain/noise · tls = false · secret control /_rh/<hex> -> :2333"], accent="green")
 
-    # 3 compact independent lane cards
-    s.card(340, 294, 146, "Backhaul SMUX", ["127.0.0.1:3080", "/channel + /tunnel"], accent="amber", size=11.5)
-    s.card(497, 294, 146, "FRP Core", ["frps :7000", "TCP + UDP (kcp/quic)"], accent="amber", size=11.5)
-    s.card(654, 294, 146, "GRE L3 Kernel", ["gre1 /30 (proto 47)", "MTU 1476 + TCPMSS"], accent="amber", size=11.5)
+    # 4 compact independent lane cards (w=109, gap=8 -> 4*109 + 3*8 = 460)
+    s.card(340, 294, 109, "Backhaul SMUX", ["127.0.0.1:3080", "/channel + /tun"], accent="amber", size=11)
+    s.card(457, 294, 109, "FRP Core", ["frps :7000", "TCP/KCP/QUIC"], accent="amber", size=11)
+    s.card(574, 294, 109, "GRE L3 Kernel", ["gre1 /30 p47", "MTU 1476"], accent="amber", size=11)
+    s.card(691, 294, 109, "Paqet PCK", ["Raw TCP+KCP", "Zero TLS"], accent="red", size=11)
 
     s.card(
         340,
         390,
         460,
         "Services & Node Inventory (state.json)",
-        ["/trk01 -> :1001   /nld01 -> :1002   /usa01 -> :1003", "Loopback <name>_api services for panel <-> node sync"],
+        ["/trk01 -> :1001   /nld01 -> :1002   /usa01 -> :1003", "Loopback <name>_api services · state history & undo"],
         accent="green",
         soft=True,
     )
 
     # Column 3: Foreign Nodes & Internet
     s.zone(876, 100, 300, 344, accent="violet", title="FOREIGN NODES — NO PUBLIC PORT")
-    s.card(894, 136, 264, "eu-node1 · Xray + Client", ["/trk01 -> :2087 · outbound tunnel"], accent="violet", size=11.5)
+    s.card(894, 136, 264, "eu-node1 · Managed Xray", ["/trk01 -> :2087 · REALITY/XHTTP"], accent="violet", size=11.5)
     s.card(894, 214, 264, "de-node2 · Xray + Client", ["/nld01 -> :2087 · Backhaul / FRP"], accent="violet", size=11.5)
-    s.card(894, 292, 264, "us-node3 · Xray + Client", ["/usa01 -> :2087 · WS / KCP / GRE"], accent="violet", size=11.5)
-    s.text(1026, 392, "Matching clients: rathole / backhaul / frpc", size=10.5, anchor="middle")
-    s.text(1026, 412, "services.conf + bh-services.conf", size=10.5, anchor="middle")
+    s.card(894, 292, 264, "us-node3 · Xray + Client", ["/usa01 -> :2087 · Paqet / GRE"], accent="violet", size=11.5)
+    s.text(1026, 392, "Matching clients + rathole-tuner responder", size=10.5, anchor="middle")
+    s.text(1026, 412, "services.conf + bh-services.conf + paqet.yaml", size=10.5, anchor="middle")
 
     s.zone(876, 464, 300, 152, accent="slate", title="OPEN INTERNET")
     s.card(894, 498, 264, "Xray Exit -> Target", ["Decrypts VLESS & forwards traffic"], accent="slate", size=11.5)
 
-    # Bottom Control Plane Bar (Role 3 & 4)
-    s.zone(24, 514, 794, 102, accent="violet", title="MANAGEMENT PLANE — RATHOLEHUB + REST AGENT")
-    s.card(40, 546, 370, "RatholeHub (hub.py + Apple Glass UI)", ["SSH key argv OR HTTPS REST API · Ctrl+K · two-sided sync"], accent="violet", size=11.5)
-    s.card(430, 546, 370, "REST Agent (ratholeagent.py :8089)", ["Optional SSH-free daemon · Bearer token (0600) · strict allow-list"], accent="violet", size=11.5)
+    # Bottom Control Plane Bar (Role 3 & 4 + Monitor + Auto-Tuner)
+    s.zone(24, 514, 794, 102, accent="violet", title="MANAGEMENT PLANE — RATHOLEHUB + MONITOR + AUTO-TUNER")
+    s.card(40, 546, 370, "RatholeHub + Auto-Tuner (#/tuner)", ["SSH/Agent · ⌘K · rthprof1: Profiles · 2FA/RBAC"], accent="violet", size=11.5)
+    s.card(430, 546, 370, "REST Agent (:8089) + Monitor Bot", ["0600 Token · Telegram Relay · Ed25519 Signed Updates"], accent="violet", size=11.5)
 
     # Clean Arrows + Pill Labels in gaps
     s.arrow(248, 166, 336, 166, kind="data", width=2.3)
@@ -337,21 +339,21 @@ def build_architecture(theme: str) -> Svg:
     s.text(
         24,
         640,
-        "TLS terminates at Nginx (except Game/SNI on node & Noise own crypto). State changes regenerate configs in place preserving inodes.",
+        "TLS terminates at Nginx (except Game/SNI, REALITY, Noise & Paqet). Config mutations preserve inodes for zero-drop reload.",
         size=11,
     )
     return s
 
 
 # ---------------------------------------------------------------------------
-# 2) transport-modes.svg — compact 4x2 grid + 3 ingress cards
+# 2) transport-modes.svg — compact 5x2 grid + 4 ingress cards
 # ---------------------------------------------------------------------------
 def build_transport_modes(theme: str) -> Svg:
     s = Svg(
         1200,
-        740,
-        "Transport & Ingress Modes — 8 Carriers, 3 Ingress Modes",
-        "User URL paths and node inbound ports never change when switching tunnel carriers.",
+        814,
+        "Transport & Ingress Modes — 9 Carriers, 4 Edge / Ingress Modes",
+        "User URL paths and node inbound ports stay stable across all 9 tunnel carriers and Auto-Bench tuning.",
         theme,
     )
 
@@ -370,20 +372,26 @@ def build_transport_modes(theme: str) -> Svg:
          "Dedicated encrypted instance; bypasses Nginx completely."),
         ("5 · Backhaul (SMUX)", "DUAL-CORE · HIGH CONCURRENCY", "green",
          "wss/wssmux -> Nginx /channel + /tunnel -> 127.0.0.1:3080",
-         "Go core w/ uTLS Chrome fingerprint & separate bh-services.conf."),
+         "Go core w/ uTLS Chrome fingerprint & pinned direct-IP TLS."),
         ("6 · FRP Core (fatedier/frp)", "TCP · KCP · QUIC · WS", "amber",
          "frpc -> frps :7000/TCP (tcp/ws) + :7000/UDP (kcp/quic)",
-         "v2.0.5 preserves selected frp_transport & auto-opens UFW UDP."),
+         "Preserves selected frp_transport & auto-opens UFW UDP."),
         ("7 · GRE (Kernel L3)", "IP TUNNEL · PROTO 47", "violet",
-         "Node 10.10.10.2/30 <-> Iran 10.10.10.1/30 (gre1)",
-         "Direct Linux kernel L3 link with MTU 1476 & iptables TCPMSS."),
+         "Node 10.10.10.2/30 <-> Iran 10.10.10.1/30 (gre1 --key N)",
+         "Direct Linux kernel L3 link with configurable MTU & TCPMSS."),
         ("8 · FRP + GRE Hybrid", "RESILIENT L3 + MUX", "red",
          "frpc over GRE IP -> frps bound inside 10.10.10.0/30",
          "No public FRP port exposed; QUIC/KCP mux inside GRE packets."),
+        ("9 · Paqet (Direct PCK)", "RAW TCP+KCP · NO TLS", "red",
+         "paqet client (Iran) -> raw TCP+KCP -> paqet server (Node)",
+         "Zero TLS handshake; CAP_NET_RAW + iptables RAW NOTRACK."),
+        ("10 · Auto-Bench (Tuner)", "6-STAGE SWEEP · rthprof1:", "blue",
+         "PMTU/MSS · Offloads · BBR/CAKE · Buffers · Carrier Matrix",
+         "5D weighted scoring + AI-portable JSON & rthprof1: profiles."),
     ]
 
     col_w = 568
-    row_h = 104
+    row_h = 96
     for idx, (title, tag, acc, flow, note) in enumerate(carriers):
         col = idx % 2
         row = idx // 2
@@ -394,27 +402,29 @@ def build_transport_modes(theme: str) -> Svg:
             f'  <rect x="{x}" y="{y}" width="{col_w}" height="{row_h}" rx="12" fill="{s.t["card_fill"]}" '
             f'stroke="{stroke}" stroke-opacity="0.52" stroke-width="1.2"/>\n'
         )
-        s.pill(x + 96, y + 24, title, accent=acc, w=168, h=24, size=11)
-        s.text(x + col_w - 16, y + 28, tag, size=10, color=sub_col, weight="700", anchor="end")
-        s.text(x + 18, y + 58, flow, size=11.5, color=s.t["ink"], weight="600")
-        s.text(x + 18, y + 82, note, size=10.5, color=s.t["muted"])
+        pw = max(168, int(len(title) * 6.4 + 24))
+        s.pill(x + 14 + pw / 2, y + 23, title, accent=acc, w=pw, h=24, size=10.5)
+        s.text(x + col_w - 16, y + 27, tag, size=10, color=sub_col, weight="700", anchor="end")
+        s.text(x + 18, y + 55, flow, size=11.5, color=s.t["ink"], weight="600")
+        s.text(x + 18, y + 77, note, size=10.5, color=s.t["muted"])
 
-    # Bottom Ingress Zone
-    iy = 568
-    s.zone(24, iy, 1152, 146, accent="slate", title="USER INGRESS MODES (NOT TUNNEL CARRIERS)")
+    # Bottom Ingress Zone (4 cards across 1152px: 42 + i*284, w=270)
+    iy = 644
+    s.zone(24, iy, 1152, 148, accent="slate", title="EDGE & USER INGRESS MODES (NOT TUNNEL CARRIERS)")
     ingress = [
-        ("Game / SNI (L4 Passthrough)", ["Nginx stream on :443 passes TLS raw", "Cert + VLESS Vision live on node"]),
-        ("Direct-IP (:8081 HTTP)", ["Connect directly to Iran IP (no domain)", "Hidden header X-Cdn-Id: <node> routes"]),
-        ("Proxy & Fakeweb", ["/name/ reverse-proxy without rathole", "Decoy site fallback served on :8080"]),
+        ("Managed Xray", ["VLESS REALITY + XHTTP", "TLS 1.3 + h2 Cover Scanner"]),
+        ("Game / SNI (L4)", ["Nginx stream :443 raw TLS", "Cert + Vision + PROXY proto"]),
+        ("Direct-IP (:8081 HTTP)", ["Direct to Iran IP (no domain)", "Hidden X-Cdn-Id header"]),
+        ("Proxy & Fakeweb", ["/<name>/ reverse-proxy", "Decoy fallback site :8080"]),
     ]
     for i, (t, lines) in enumerate(ingress):
-        s.card(42 + i * 378, iy + 36, 360, t, lines, accent="blue" if i < 2 else "slate", size=12)
+        s.card(40 + i * 283, iy + 36, 269, t, lines, accent="violet" if i == 0 else ("blue" if i < 3 else "slate"), size=11.5)
 
     return s
 
 
 # ---------------------------------------------------------------------------
-# 3) hub-architecture.svg — Hub + Security + SSH/Agent + v2.0.5 UI
+# 3) hub-architecture.svg — Hub + Security + SSH/Agent + Monitor + Tuner
 # ---------------------------------------------------------------------------
 def build_hub_architecture(theme: str) -> Svg:
     s = Svg(
@@ -427,31 +437,31 @@ def build_hub_architecture(theme: str) -> Svg:
 
     # Admin column
     s.zone(24, 100, 240, 326, accent="blue", title="ADMIN")
-    s.card(40, 138, 208, "Browser UI (v2.1.0)", ["Apple Glass Light/Dark", "Offline Vazirmatn · ⌘K", "KPI + Live Filters"], accent="blue")
-    s.card(40, 260, 208, "Nginx /hub/", ["Terminates TLS on :443", "-> 127.0.0.1:8088", "Or SSH local forward"], accent="blue")
-    s.text(144, 404, "HMAC cookie or Bearer token", size=10.5, anchor="middle")
+    s.card(40, 138, 208, "Browser UI (v2.3.0)", ["Apple Glass Light/Dark", "⌘K · #/tuner · Vazirmatn", "2FA TOTP · Scoped RBAC"], accent="blue")
+    s.card(40, 262, 208, "Nginx /hub/", ["Terminates TLS on :443", "-> 127.0.0.1:8088", "Or SSH local forward"], accent="blue")
+    s.text(144, 406, "Cookie + TOTP + CSRF Origin", size=10.5, anchor="middle")
 
     # Hub column
     s.zone(316, 100, 444, 536, accent="violet", title="RATHOLEHUB (hub.py — stdlib only)")
-    s.card(336, 136, 404, "ThreadingHTTPServer Handler", ["Rate-limited auth (5/5m) · parallel fetch + TTL cache"], accent="violet")
-    s.card(336, 212, 404, "hubcmds.py — Security Allow-List", ["Maps action + RE_* validated args -> exact argv list"], accent="violet")
+    s.card(336, 136, 404, "ThreadingHTTPServer Handler", ["RBAC + 2FA · /metrics (Prometheus) · Drift & Link Test"], accent="violet")
+    s.card(336, 212, 404, "hubcmds.py — Security Allow-List", ["Maps action + RE_* args -> exact argv (incl. bench/xray/paqet)"], accent="violet")
     s.card(336, 290, 194, "SSH Transport", ["_ssh_base + shlex", "Optional proxy bridge"], accent="green", size=11.5)
     s.card(546, 290, 194, "REST Agent Client", ["POST /api/exec JSON", "TLS or insecure_ssl opt"], accent="blue", size=11.5)
-    s.card(336, 386, 404, "Locked State & Redacted Audit Log", ["inventory.json · config.json · audit.log (masked secrets)"], accent="slate")
+    s.card(336, 386, 404, "Locked State, Profiles & SHA-256 Audit", ["inventory.json · tuner-profiles.json · chained audit.log"], accent="slate")
     s.card(
         336,
         464,
         404,
-        "Per-Node & Service Controls (v2.1.0)",
-        ["Inline carrier selector w/ auto-revert on node sync failure", "⋯ menu: carrier/proto · doctor · VLESS · peer · remove pair"],
+        "Tuner (#/tuner), Monitor & Service Controls",
+        ["Async 6-stage Auto-Bench + rthprof1: Library · ⋯ Menu", "ratholemonitor.service + Multi-Path Telegram Bot Relay"],
         accent="blue",
         soft=True,
     )
 
     # Managed Fleet column
     s.zone(816, 100, 360, 536, accent="green", title="MANAGED FLEET (inventory.json)")
-    s.card(834, 136, 324, "Iran Panels (role: iran)", ["ratholectl — nginx + server lanes + status JSON"], accent="green", size=11.5)
-    s.card(834, 216, 324, "Foreign Nodes (role: node)", ["ratholenode — services.conf + bh-services.conf"], accent="green", size=11.5)
+    s.card(834, 136, 324, "Iran Panels (role: iran)", ["ratholectl · nginx + carriers + bench + paqet"], accent="green", size=11.5)
+    s.card(834, 216, 324, "Foreign Nodes (role: node)", ["ratholenode · services + Managed Xray + bench"], accent="green", size=11.5)
     s.card(
         834,
         298,
@@ -465,21 +475,21 @@ def build_hub_architecture(theme: str) -> Svg:
         834,
         412,
         324,
-        "Lifecycle & Safe Rollback (update.sh)",
-        ["deploy -> install.sh --update on target", "Snapshot -> health check -> cgroup-safe", "deferred agent restart -> auto-rollback on fail"],
+        "Signed Updates & Rollback (update.sh)",
+        ["Hub relay + Ed25519 SHA256SUMS.sig verify", "Snapshot -> health check -> auto-rollback +", "dead-man tuner watchdog revert on link fail"],
         accent="green",
         soft=True,
         size=11.5,
     )
 
     s.arrow(248, 178, 332, 178, kind="data")
-    s.arrow(248, 296, 332, 188, kind="data")
+    s.arrow(248, 298, 332, 188, kind="data")
     s.path("M 760 288 L 788 288 L 788 172 L 830 172", kind="ok", width=2.1)
     s.pill(788, 230, "SSH", accent="green", w=46)
     s.arrow(740, 338, 830, 338, kind="data", dashed=True, width=2.1)
     s.pill(788, 366, "HTTPS", accent="blue", w=54)
 
-    s.text(24, 666, "Strict argv execution only: zero shell interpolation on hub or REST Agent; every mutation is recorded in audit.log.", size=11)
+    s.text(24, 666, "Strict argv execution only: zero shell interpolation on hub or REST Agent; every mutation is SHA-256 hash-chained in audit.log.", size=11)
     return s
 
 
@@ -498,13 +508,13 @@ def build_state_regenerate(theme: str) -> Svg:
     steps = [
         ("1 · Mutate State", "blue", [
             "ratholectl: state_jq atomic write",
-            "to state.json (single source)",
+            "to state.json (+ revision undo)",
             "ratholenode: node.env +",
             "services.conf / bh-services.conf",
         ]),
         ("2 · Regenerate", "blue", [
             "gen_server_toml() / gen_nginx_conf()",
-            "gen_client() / backhaul TOML",
+            "gen_client() / backhaul / paqet",
             "rth_commit_config(): flock +",
             "cat tmp > file (inode preserved!)",
         ]),
@@ -538,8 +548,8 @@ def build_state_regenerate(theme: str) -> Svg:
         28,
         286,
         558,
-        "Validation Failed -> Auto-Revert (.rathole-good.bak)",
-        ["Restores both HTTP and Stream nginx configs + state before exit.", "Live reverse tunnels remain untouched and nginx never stays broken."],
+        "Validation Failed -> Auto-Revert (.rathole-good.bak + Undo)",
+        ["Restores nginx HTTP/Stream + state.json revision history before exit.", "Live tunnels survive; rathole-tuner also enforces dead-man rollback."],
         accent="red",
         soft=True,
     )
@@ -548,7 +558,7 @@ def build_state_regenerate(theme: str) -> Svg:
         286,
         558,
         "Validation Passed -> Active Tunnels Survive",
-        ["Inode preservation keeps rathole config_watcher hot-reloading smoothly.", "Applies identically across ws/kcp/plain/noise, Backhaul, FRP, GRE & Agent."],
+        ["Inode preservation keeps rathole config_watcher hot-reloading smoothly.", "Applies across ws/kcp/plain/noise, Backhaul, FRP, GRE, Paqet & Xray."],
         accent="green",
         soft=True,
     )
@@ -595,12 +605,12 @@ def build_architecture_detailed(theme: str) -> Svg:
     ]):
         s.card(430, 134 + i * 66, 324, t, [desc], accent="green", align="left", size=11.5, h=56)
 
-    s.zone(788, 100, 388, 314, accent="violet", title="INDEPENDENT LANES & AGENT")
+    s.zone(788, 100, 388, 314, accent="violet", title="INDEPENDENT LANES, AGENT & TUNER")
     for i, (t, desc) in enumerate([
         ("Backhaul (SMUX)", "127.0.0.1:3080 via Nginx /channel + /tunnel"),
-        ("FRP (fatedier/frp)", ":7000/TCP (tcp/ws) + :7000/UDP (kcp/quic)"),
-        ("GRE L3 Kernel", "gre1 10.10.10.0/30 · MTU 1476 · proto 47"),
-        ("REST Agent", "rathole-agent.service :8089 (Bearer TLS)"),
+        ("FRP + Paqet Direct PCK", "frps :7000/TCP+UDP | paqet raw TCP+KCP"),
+        ("GRE L3 + Managed Xray", "gre1 /30 MTU 1476 | Node REALITY+XHTTP"),
+        ("Agent & Auto-Tuner", "Agent :8089 TLS | Tuner :44990 HMAC (ephemeral)"),
     ]):
         s.card(804, 134 + i * 66, 356, t, [desc], accent="violet", align="left", size=11.5, h=56)
 
@@ -620,7 +630,7 @@ def build_architecture_detailed(theme: str) -> Svg:
         row = i // 4
         s.card(42 + col * 282, 470 + row * 78, 266, port, [f"{who} · {note}"], accent=acc, soft=pub, size=12, h=66)
 
-    s.text(24, 662, "Green = exposed by default. Other ports open ONLY when that specific carrier or agent is explicitly enabled.", size=11)
+    s.text(24, 662, "Green = exposed by default. Other ports open ONLY when enabled; rathole-tuner (:44990) stops automatically after benchmark.", size=11)
     return s
 
 
@@ -770,8 +780,124 @@ def build_traffic_sequence(theme: str) -> Svg:
     return s
 
 
+# ---------------------------------------------------------------------------
+# 9) tuner-architecture.svg — rathole-tuner Bidirectional Bench + AI Profiles
+# ---------------------------------------------------------------------------
+def build_tuner_architecture(theme: str) -> Svg:
+    s = Svg(
+        1200,
+        650,
+        "rathole-tuner — Ruthless Bidirectional Benchmark & Auto-Tuner",
+        "6-stage kernel/MTU/MSS/offload/qdisc/carrier sweep · dead-man watchdog · portable AI profiles (rthprof1:)",
+        theme,
+    )
+
+    # Left Zone: Orchestrator
+    s.zone(24, 100, 440, 340, accent="blue", title="ORCHESTRATOR — IRAN SERVER / HUB #/tuner")
+    s.card(
+        42, 134, 404,
+        "6-Stage Hardware & Link Sweep",
+        [
+            "1. PMTU/MSS binary probe · 2. Offloads (TSO/GSO/GRO)",
+            "3. CC + Qdisc (BBR/CAKE/FQ) · 4. TCP/UDP rmem/wmem",
+            "5. Loaded Bufferbloat (RRUL) · 6. Carrier Matrix",
+        ],
+        accent="blue",
+        size=12,
+        h=90,
+    )
+    s.card(
+        42, 236, 404,
+        "5D Composite Weighted Scorer",
+        [
+            "Goals: balanced · low-latency · max-throughput · anti-loss",
+            "Throughput 30% · Latency 25% · Jitter 20% · Stab 15% · Eff 10%",
+        ],
+        accent="violet",
+        size=11.5,
+        h=74,
+    )
+    s.card(
+        42, 322, 404,
+        "Non-Kernel Audit & Bottleneck Finder",
+        ["Checks Xray mux/sockopt/DNS · Nginx workers · OpenSSL AES · nofile"],
+        accent="amber",
+        soft=True,
+        size=11.5,
+        h=58,
+    )
+    s.text(244, 416, "Auto-stops immediately on link loss via watchdog", size=10.5, anchor="middle")
+
+    # Center Arrows & Pills (x=464..736)
+    s.arrow(466, 200, 732, 200, kind="data", width=2.4)
+    s.pill(600, 174, "HMAC-SHA256 Control (:44990)", accent="blue", w=214)
+
+    s.arrow(466, 286, 732, 286, kind="rev", dashed=True, width=2.4)
+    s.pill(600, 260, "Multi-Stream TCP/UDP + Loaded RTT", accent="violet", w=234)
+
+    s.arrow(734, 366, 468, 366, kind="ok", width=2.2)
+    s.pill(600, 392, "Telemetry + rthprof1: Output", accent="green", w=214)
+
+    # Right Zone: Responder
+    s.zone(736, 100, 440, 340, accent="green", title="RESPONDER — FOREIGN NODE (EPHEMERAL)")
+    s.card(
+        754, 134, 404,
+        "Zero-Footprint Responder",
+        [
+            "Starts only for test · closes after idle_sec finish",
+            "HMAC per-request nonces · zero persistent open port",
+        ],
+        accent="green",
+        size=12,
+        h=74,
+    )
+    s.card(
+        754, 224, 404,
+        "Kernel Sysstate Snapshot (Before Any Change)",
+        ["Saves sysctl, ip link mtu, tc qdisc & ethtool -k flags"],
+        accent="slate",
+        size=11.5,
+        h=58,
+    )
+    s.card(
+        754, 298, 404,
+        "Dead-Man Watchdog + Safe Persist",
+        [
+            "Auto-reverts to snapshot if peer heartbeat misses N sec",
+            "Persists winner to /etc/sysctl.d/99-rathole-tuner.conf",
+        ],
+        accent="red",
+        soft=True,
+        size=11.5,
+        h=74,
+    )
+    s.text(956, 416, "Identical CLI on both sides: ratholectl|ratholenode bench", size=10.5, anchor="middle")
+
+    # Bottom Portable AI Profiles Zone
+    s.zone(24, 462, 1152, 148, accent="violet", title="PORTABLE AI PROFILES — rathole.netprofile.v1 & rthprof1:")
+    profile_cards = [
+        ("JSON + rthprof1: Base64url Codec", "violet", [
+            "gzip + canonical URL-safe Base64 + SHA-256 check",
+            "Paste into AI to diagnose DC bottlenecks or share",
+        ]),
+        ("Live A/B/N Testing (bench test)", "blue", [
+            "Replays & scores datacenter profiles head-to-head",
+            "Keeps candidate only when goal score beats baseline",
+        ]),
+        ("RatholeHub #/tuner & Library", "green", [
+            "Run live async bench · Import/Export rthprof1: strings",
+            "One-click Apply or Rollback saved DC profiles per host",
+        ]),
+    ]
+    for i, (t, acc, lines) in enumerate(profile_cards):
+        s.card(42 + i * 378, 498, 362, t, lines, accent=acc, size=12, h=92)
+
+    s.text(24, 632, "Every experiment snapshots live kernel settings first — unsafe changes trigger deterministic dead-man rollback without SSH lockout.", size=11)
+    return s
+
+
 if __name__ == "__main__":
-    for stem, fn in [
+    stems = [
         ("transport-modes", build_transport_modes),
         ("architecture", build_architecture),
         ("hub-architecture", build_hub_architecture),
@@ -780,6 +906,8 @@ if __name__ == "__main__":
         ("traffic-steps", build_traffic_steps),
         ("traffic-flow-flowchart", build_traffic_flowchart),
         ("traffic-flow-sequence", build_traffic_sequence),
-    ]:
+        ("tuner-architecture", build_tuner_architecture),
+    ]
+    for stem, fn in stems:
         emit_both(stem, fn)
-    print("done (16 SVGs generated)")
+    print(f"done ({len(stems) * 2} SVGs generated)")

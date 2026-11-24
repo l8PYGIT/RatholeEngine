@@ -764,7 +764,8 @@
 
   .field { display: grid; gap: 6px; min-width: 0; }
   .field > label { color: var(--text-muted); font-size: 12px; font-weight: 600; }
-  .field input, .field select { width: 100%; min-width: 0; }
+  .field input:not([type="checkbox"]):not([type="radio"]), .field select { width: 100%; min-width: 0; }
+  .field input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); }
   .form-error {
     display: none;
     padding: 10px 12px;
@@ -1972,15 +1973,23 @@
   }
 
   /* #/tuner Network & Kernel Auto-Tuner */
-  .tuner-grid { display: grid; gap: 14px; }
-  .tuner-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 12px; align-items: end; }
-  .tuner-form .field { display: flex; flex-direction: column; gap: 5px; }
-  .tuner-bar { width: 100%; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 10px 0 6px; border: 1px solid var(--border); }
+  .tuner-grid { display: grid; gap: 16px; }
+  .tuner-grid > .card.sec { margin: 0; padding: 18px 20px; overflow: visible; }
+  .tuner-sub { margin: 0 0 14px; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+  .tuner-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; align-items: end; }
+  .tuner-form .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .tuner-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .tuner-bar { width: 100%; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 10px 0 2px; border: 1px solid var(--border); }
   .tuner-bar-fill { height: 100%; background: var(--primary); transition: width 220ms var(--ease-out); }
-  .tuner-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; margin: 10px 0; }
-  .tuner-score { padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); }
-  .tuner-score .k { font-size: 11.5px; color: var(--text-muted); }
-  .tuner-score .v { font-size: 18px; font-weight: 700; margin-top: 2px; }
-  .tuner-code { width: 100%; min-height: 92px; padding: 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-family: ui-monospace, monospace; font-size: 12px; resize: vertical; }
-  .tuner-prof-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); margin-top: 8px; }
+  .tuner-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 14px 0; }
+  .tuner-score { display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); }
+  .tuner-score .k { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+  .tuner-score .v { font-size: 22px; font-weight: 760; font-variant-numeric: tabular-nums; color: var(--text); }
+  .tuner-sec-lbl { margin: 14px 0 8px; font-size: 13px; font-weight: 650; color: var(--text); }
+  .tuner-alert { padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border)); background: var(--warning-soft); color: var(--text); font-size: 12.5px; line-height: 1.5; margin-top: 6px; }
+  .tuner-alert strong { color: var(--warning); }
+  .tuner-code { width: 100%; min-height: 84px; margin-top: 12px; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; resize: vertical; direction: ltr; text-align: left; }
+  .tuner-prof-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); margin-top: 10px; }
+  .tuner-prof-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  @media (max-width: 900px) { .tuner-form { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); } }
 }

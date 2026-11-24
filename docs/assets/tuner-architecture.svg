@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 650" width="1200" height="650" font-family="Segoe UI, system-ui, -apple-system, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#060b16"/>
+      <stop offset="52%" stop-color="#0d1528"/>
+      <stop offset="100%" stop-color="#121c36"/>
+    </linearGradient>
+    <radialGradient id="orbA" cx="20%" cy="15%" r="55%">
+      <stop offset="0%" stop-color="rgba(124,58,237,0.22)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="orbB" cx="85%" cy="85%" r="55%">
+      <stop offset="0%" stop-color="rgba(10,132,255,0.20)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.15" fill="rgba(148,163,184,0.13)"/>
+    </pattern>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrV" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#a78bfa"/>
+    </marker>
+    <marker id="arrG" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#34d399"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#fb7185"/>
+    </marker>
+    <marker id="arrN" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M0,1 L9,5 L0,9 z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1200" height="650" rx="18" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1200" height="650" rx="18" fill="url(#orbA)"/>
+  <rect x="0" y="0" width="1200" height="650" rx="18" fill="url(#orbB)"/>
+  <rect x="0" y="0" width="1200" height="650" rx="18" fill="url(#dotGrid)"/>
+  <rect x="20" y="16" width="1160" height="66" rx="14" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.13)" stroke-width="1.2"/>
+  <text x="600.0" y="41" text-anchor="middle" fill="#f8fafc" font-size="18.5" font-weight="700">rathole-tuner — Ruthless Bidirectional Benchmark &amp; Auto-Tuner</text>
+  <text x="600.0" y="62" text-anchor="middle" fill="#94a3b8" font-size="12.5">6-stage kernel/MTU/MSS/offload/qdisc/carrier sweep · dead-man watchdog · portable AI profiles (rthprof1:)</text>
+  <rect x="1108" y="27" width="56" height="22" rx="11" fill="rgba(10,132,255,0.20)" stroke="rgba(56,189,248,0.45)" stroke-width="1"/>
+  <text x="1136" y="42" text-anchor="middle" fill="#7dd3fc" font-size="11" font-weight="700">v2.3.0</text>
+  <rect x="24" y="100" width="440" height="340" rx="14" fill="rgba(15,23,42,0.58)" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="40" y="122" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#e0f2fe">ORCHESTRATOR — IRAN SERVER / HUB #/tuner</text>
+  <rect x="42" y="134" width="404" height="90" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="244.0" y="156" text-anchor="middle" font-size="12" font-weight="700" fill="#e0f2fe">6-Stage Hardware &amp; Link Sweep</text>
+  <text x="244.0" y="175" text-anchor="middle" font-size="11" fill="#93c5fd">1. PMTU/MSS binary probe · 2. Offloads (TSO/GSO/GRO)</text>
+  <text x="244.0" y="192" text-anchor="middle" font-size="11" fill="#93c5fd">3. CC + Qdisc (BBR/CAKE/FQ) · 4. TCP/UDP rmem/wmem</text>
+  <text x="244.0" y="209" text-anchor="middle" font-size="11" fill="#93c5fd">5. Loaded Bufferbloat (RRUL) · 6. Carrier Matrix</text>
+  <rect x="42" y="236" width="404" height="74" rx="11" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="244.0" y="258" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ede9fe">5D Composite Weighted Scorer</text>
+  <text x="244.0" y="277" text-anchor="middle" font-size="11" fill="#c4b5fd">Goals: balanced · low-latency · max-throughput · anti-loss</text>
+  <text x="244.0" y="294" text-anchor="middle" font-size="11" fill="#c4b5fd">Throughput 30% · Latency 25% · Jitter 20% · Stab 15% · Eff 10%</text>
+  <rect x="42" y="322" width="404" height="58" rx="11" fill="rgba(245,158,11,0.12)" stroke="#fbbf24" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="244.0" y="344" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fef3c7">Non-Kernel Audit &amp; Bottleneck Finder</text>
+  <text x="244.0" y="363" text-anchor="middle" font-size="11" fill="#fcd34d">Checks Xray mux/sockopt/DNS · Nginx workers · OpenSSL AES · nofile</text>
+  <text x="244" y="416" text-anchor="middle" font-size="10.5" font-weight="500" fill="#94a3b8">Auto-stops immediately on link loss via watchdog</text>
+  <line x1="466" y1="200" x2="732" y2="200" stroke="#38bdf8" stroke-width="2.4" marker-end="url(#arr)"/>
+  <rect x="493.0" y="163.0" width="214" height="22" rx="11.0" fill="#0b1324" stroke="#38bdf8" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="493.0" y="163.0" width="214" height="22" rx="11.0" fill="rgba(10,132,255,0.12)"/>
+  <text x="600" y="177.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="#e0f2fe">HMAC-SHA256 Control (:44990)</text>
+  <line x1="466" y1="286" x2="732" y2="286" stroke="#a78bfa" stroke-width="2.4" stroke-dasharray="6 4" marker-end="url(#arrV)"/>
+  <rect x="483.0" y="249.0" width="234" height="22" rx="11.0" fill="#0b1324" stroke="#a78bfa" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="483.0" y="249.0" width="234" height="22" rx="11.0" fill="rgba(124,58,237,0.14)"/>
+  <text x="600" y="263.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ede9fe">Multi-Stream TCP/UDP + Loaded RTT</text>
+  <line x1="734" y1="366" x2="468" y2="366" stroke="#34d399" stroke-width="2.2" marker-end="url(#arrG)"/>
+  <rect x="493.0" y="381.0" width="214" height="22" rx="11.0" fill="#0b1324" stroke="#34d399" stroke-opacity="0.65" stroke-width="1"/>
+  <rect x="493.0" y="381.0" width="214" height="22" rx="11.0" fill="rgba(16,185,129,0.12)"/>
+  <text x="600" y="395.5" text-anchor="middle" font-size="10.5" font-weight="700" fill="#d1fae5">Telemetry + rthprof1: Output</text>
+  <rect x="736" y="100" width="440" height="340" rx="14" fill="rgba(15,23,42,0.58)" stroke="#34d399" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="752" y="122" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#d1fae5">RESPONDER — FOREIGN NODE (EPHEMERAL)</text>
+  <rect x="754" y="134" width="404" height="74" rx="11" fill="#0f192e" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="956.0" y="156" text-anchor="middle" font-size="12" font-weight="700" fill="#d1fae5">Zero-Footprint Responder</text>
+  <text x="956.0" y="175" text-anchor="middle" font-size="11" fill="#86efac">Starts only for test · closes after idle_sec finish</text>
+  <text x="956.0" y="192" text-anchor="middle" font-size="11" fill="#86efac">HMAC per-request nonces · zero persistent open port</text>
+  <rect x="754" y="224" width="404" height="58" rx="11" fill="#0f192e" stroke="#64748b" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="956.0" y="246" text-anchor="middle" font-size="11.5" font-weight="700" fill="#f1f5f9">Kernel Sysstate Snapshot (Before Any Change)</text>
+  <text x="956.0" y="265" text-anchor="middle" font-size="11" fill="#cbd5e1">Saves sysctl, ip link mtu, tc qdisc &amp; ethtool -k flags</text>
+  <rect x="754" y="298" width="404" height="74" rx="11" fill="rgba(244,63,94,0.12)" stroke="#fb7185" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="956.0" y="320" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffe4e6">Dead-Man Watchdog + Safe Persist</text>
+  <text x="956.0" y="339" text-anchor="middle" font-size="11" fill="#fda4af">Auto-reverts to snapshot if peer heartbeat misses N sec</text>
+  <text x="956.0" y="356" text-anchor="middle" font-size="11" fill="#fda4af">Persists winner to /etc/sysctl.d/99-rathole-tuner.conf</text>
+  <text x="956" y="416" text-anchor="middle" font-size="10.5" font-weight="500" fill="#94a3b8">Identical CLI on both sides: ratholectl|ratholenode bench</text>
+  <rect x="24" y="462" width="1152" height="148" rx="14" fill="rgba(15,23,42,0.58)" stroke="#a78bfa" stroke-opacity="0.45" stroke-width="1.3"/>
+  <text x="40" y="484" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#ede9fe">PORTABLE AI PROFILES — rathole.netprofile.v1 &amp; rthprof1:</text>
+  <rect x="42" y="498" width="362" height="92" rx="11" fill="#0f192e" stroke="#a78bfa" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="223.0" y="520" text-anchor="middle" font-size="12" font-weight="700" fill="#ede9fe">JSON + rthprof1: Base64url Codec</text>
+  <text x="223.0" y="539" text-anchor="middle" font-size="11" fill="#c4b5fd">gzip + canonical URL-safe Base64 + SHA-256 check</text>
+  <text x="223.0" y="556" text-anchor="middle" font-size="11" fill="#c4b5fd">Paste into AI to diagnose DC bottlenecks or share</text>
+  <rect x="420" y="498" width="362" height="92" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="601.0" y="520" text-anchor="middle" font-size="12" font-weight="700" fill="#e0f2fe">Live A/B/N Testing (bench test)</text>
+  <text x="601.0" y="539" text-anchor="middle" font-size="11" fill="#93c5fd">Replays &amp; scores datacenter profiles head-to-head</text>
+  <text x="601.0" y="556" text-anchor="middle" font-size="11" fill="#93c5fd">Keeps candidate only when goal score beats baseline</text>
+  <rect x="798" y="498" width="362" height="92" rx="11" fill="#0f192e" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
+  <text x="979.0" y="520" text-anchor="middle" font-size="12" font-weight="700" fill="#d1fae5">RatholeHub #/tuner &amp; Library</text>
+  <text x="979.0" y="539" text-anchor="middle" font-size="11" fill="#86efac">Run live async bench · Import/Export rthprof1: strings</text>
+  <text x="979.0" y="556" text-anchor="middle" font-size="11" fill="#86efac">One-click Apply or Rollback saved DC profiles per host</text>
+  <text x="24" y="632" text-anchor="start" font-size="11" font-weight="500" fill="#94a3b8">Every experiment snapshots live kernel settings first — unsafe changes trigger deterministic dead-man rollback without SSH lockout.</text>
+</svg>

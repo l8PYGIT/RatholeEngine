@@ -47,11 +47,20 @@ lane اصلی rathole چهار حامل دارد (websocket+TLS پیش‌فرض�
 | lane/core | چیست | نکته‌ی کلیدی |
 |---|---|---|
 | **Backhaul** (SMUX) | هسته‌ی جدا (Go، `Musixal/Backhaul`) با مالتی‌پلکسینگ SMUX | پشت همان nginx/۴۴۳ روی `/channel` و `/tunnel`؛ registry جدای `bh-services.conf` |
-| **FRP** | هسته‌ی ریورس‌تونل `fatedier/frp` (frps روی ایران، frpc روی نود) | ترنسپورت `tcp\|kcp\|quic\|websocket`، احراز هویت توکن مشترک، پورت پیش‌فرض ۷۰۰۰ |
+| **FRP** | هسته‌ی ریورس‌تونل `fatedier/frp` (frps روی ایران، frpc on node) | ترنسپورت `tcp\|kcp\|quic\|websocket`، احراز هویت توکن مشترک، پورت پیش‌فرض ۷۰۰۰ |
 | **GRE** | تونل L3 کرنل لینوکس (`ip tunnel`) روی /30 | بدون دیمن userspace؛ MTU ۱۴۷۶ + TCPMSS clamping؛ اینترفیس پیش‌فرض `gre1` |
 | **FRP + GRE** | حالت هیبرید: FRP روی لینک L3 GRE | استریم مالتی‌پلکس‌شده‌ی FRP داخل GRE؛ از سرویس‌کنترل‌های هاب قابل انتخاب است |
+| **Paqet** (Direct PCK) | هسته خام TCP+KCP (`hanselime/paqet`) | بدون هندشیک TLS؛ نیازمند `CAP_NET_RAW` + قوانین خودکار `iptables RAW NOTRACK` |
 
 هر سرویس/مسیر روی یک سرور ایران فقط در یکی از این laneهاست، ولی چند lane می‌توانند هم‌زمان برای سرویس‌های متفاوت روشن باشند. جابه‌جایی یک سرویس بین laneها **path و پورت ایران را عوض نمی‌کند**. جزئیات کامل: [`transport-modes.md`](transport-modes.md).
+
+## تیونر شبکه (`rathole-tuner`) و مانیتور ناوگان (`v2.3.0`)
+
+![معماری rathole-tuner](assets/tuner-architecture.svg)
+
+- **`rathole-tuner` (`ratholectl|ratholenode bench` و `#/tuner`):** موتور ۶ مرحله‌ای تست و بهینه‌سازی دوطرفه (PMTU/MSS، آف‌لودها، BBR/CAKE/FQ، بافرها، Bufferbloat و ماتریس حامل‌ها) روی پورت موقت HMAC (`:44990`) همراه با اسنپ‌شات کرنل، Watchdog بازگشت خودکار و خروجی **`rathole.netprofile.v1` / `rthprof1:`** قابل‌تحلیل توسط هوش مصنوعی. جزئیات: [`performance.md`](performance.md).
+- **`ratholemonitor.service`:** سرویس مانیتورینگ مستقل ناوگان با هیسترزیس و ربات تلگرام چندمسیره (`direct` / `proxy` / `node_tunnel`).
+- **Managed Xray (`ratholenode xray`):** مدیریت بومی `VLESS+REALITY+Vision` و `XHTTP` روی نود به‌همراه اسکنر هم‌زمان سایت کاور TLS 1.3 + ALPN `h2`.
 
 ## ورودی‌های کاربری (Ingress)
 

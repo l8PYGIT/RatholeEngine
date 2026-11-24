@@ -60,8 +60,19 @@ The rathole lane has four carriers (websocket+TLS default, KCP, plain, Noise). B
 | **FRP** | standalone reverse-tunnel core `fatedier/frp` (frps on Iran, frpc on the node) | transports `tcp\|kcp\|quic\|websocket`, shared token auth, default port 7000 |
 | **GRE** | Linux kernel L3 tunnel (`ip tunnel`) on a /30 | no userspace daemon; MTU 1476 + TCPMSS clamping; default interface `gre1` |
 | **FRP + GRE** | hybrid: FRP over the GRE L3 link | FRP's multiplexed stream inside GRE; selectable from the hub service controls |
+| **Paqet** (Direct PCK) | raw TCP+KCP packet core (`hanselime/paqet`) | zero TLS handshake; uses `CAP_NET_RAW` and automatic `iptables RAW NOTRACK` rules |
 
 A service/path on an Iran server lives in exactly one of these lanes, while several lanes may run at once for different services. Moving a service between lanes **does not change its path or Iran-side port**. Full details: [`transport-modes.en.md`](transport-modes.en.md).
+
+---
+
+## Network Auto-Tuner (`rathole-tuner`) & Fleet Monitor (`v2.3.0`)
+
+![rathole-tuner Architecture](assets/tuner-architecture.svg)
+
+- **`rathole-tuner` (`ratholectl|ratholenode bench` & `#/tuner`):** 6-stage bidirectional benchmark & sysctl/interface auto-tuner (PMTU/MSS, offloads, BBR/CAKE/FQ, buffers, Bufferbloat, carrier matrix) over an ephemeral HMAC-authenticated peer (`:44990`), backed by live kernel snapshots, dead-man Watchdog rollback, and AI-analyzable **`rathole.netprofile.v1` / `rthprof1:`** profiles. See [`performance.en.md`](performance.en.md).
+- **`ratholemonitor.service`:** standalone hysteresis fleet monitor and multi-path Telegram bot (`direct`, `proxy`, or `node_tunnel`).
+- **Managed Xray (`ratholenode xray`):** native `VLESS+REALITY+Vision` and `XHTTP` lifecycle on nodes with an asynchronous TLS 1.3 + ALPN `h2` cover scanner.
 
 ---
 

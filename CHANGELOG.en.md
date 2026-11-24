@@ -6,6 +6,32 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-24
+
+### Added
+- **Ruthless Bidirectional Network, Kernel & Tunnel Auto-Tuner (`rathole-tuner`):** 6-stage bidirectional sweep covering binary PMTU & TCP MSS discovery, NIC offloads (`TSO`/`GSO`/`GRO`), congestion control & qdisc (`BBR`/`CAKE`/`FQ`), TCP/UDP buffers (`rmem`/`wmem`/`tcp_notsent_lowat`), concurrent loaded Bufferbloat stress tests, and tunnel carrier matrix benchmarking with 5D weighted scoring, non-kernel audit (Xray/Nginx/OpenSSL/Limits), deterministic **dead-man Watchdog auto-rollback**, and `ratholectl bench` / `ratholenode bench` wrappers.
+- **Portable AI-Analyzable Datacenter Profiles (`rathole.netprofile.v1` / `rthprof1:`):** Structured JSON + canonical URL-safe gzip/Base64url strings with SHA-256 verification for AI diagnosis, sharing per-datacenter profiles, live A/B/N profile comparison (`bench test`), persistent sysctl apply (`99-rathole-tuner.conf`), and instant `bench rollback`.
+- **RatholeHub `#/tuner` Page & Datacenter Profile Library:** Asynchronous benchmark runner in the Hub web UI, 5D score cards, baseline vs. winner table, `rthprof1:` / JSON import & export, live A/B profile testing, two-sided apply/rollback, and strict `hubcmds.py` allow-list enforcement.
+- **Refreshed `v2.3.0` Diagrams, Banners & Screenshots:** Regenerated 18 Apple Glass dual-theme SVGs via `tools/gen_diagrams.py` (including new `tuner-architecture{,-light}.svg`), rebuilt GitHub banners & Open Graph card via `tools/gen_banners.py`, and re-captured all 10 live mock Hub screenshots (including `tuner-dark.png` & `tuner.png`).
+
+### Fixed
+- **Hub UI padding & form layout polish (`app.css` / `app.js`):** Added proper frosted card padding, 3-column grid layout, and `.badge`/alert styling to `#/tuner` and scoped checkbox widths in `.field` (`#/settings`).
+- **Release packaging & CI completeness:** Included `rathole-tuner` and `monitor.py` in LF normalization and executable permissions in `package.sh` & `tools/build_zip.py`, excluded `__pycache__`/`*.pyc` from release archives, and added `rathole-manager/tuner/*.py` to CI `py_compile`.
+
+## [2.2.1] - 2026-11-24
+
+### Fixed
+- **Interactive installer menu hang under `curl | sudo bash`:** Added explicit `/dev/tty` detection under `sudo` `use_pty`, automatic `--update` when an existing install lacks TTY, and updated one-line installer commands to `sudo bash -c "$(curl ...)"`.
+- **Hub Monitor setup integration:** Saving/enabling the monitor in `#/settings` now installs and starts `ratholemonitor.service` automatically via `install-monitor.sh --enable`.
+
+## [2.2.0] - 2026-11-24
+
+### Added
+- **New `paqet` carrier (Raw Direct PCK without TLS handshake):** Two-sided `ratholectl paqet` / `ratholenode paqet` with `iptables RAW NOTRACK`, Hub autofill, and service controls.
+- **Managed Xray (`VLESS+REALITY+Vision` / `VLESS+XHTTP`) & Concurrent TLS 1.3 Cover Scanner:** `ratholenode xray setup|status|uri|off` + `xray scan` and full Hub UI controls.
+- **Standalone Fleet Monitor & Multi-Path Telegram Bot (`ratholemonitor.service`):** Hysteresis alerting and `direct` / `proxy` / `node_tunnel` Telegram relay.
+- **Enterprise Hub Security & Observability:** Scoped RBAC API tokens, RFC 6238 TOTP 2FA, CSRF Origin protection, SHA-256 hash-chained `audit.log`, `state.json` history/undo, Prometheus `/metrics`, Bidirectional Link Test, Read-Only Fleet Drift check, Adaptive Multi-Carrier Failover Chain, EWMA Backup Endpoints, and Ed25519 signed Hub-relayed updates.
+
 ## [2.1.0] - 2026-11-21
 
 ### Added

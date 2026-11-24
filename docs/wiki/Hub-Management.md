@@ -7,11 +7,13 @@
 | **SSH** | `ssh` | کلید SSH هاب در `authorized_keys` سرور | روش سنتی؛ هر دستور به‌صورت argv از طریق SSH اجرا می‌شود. |
 | **REST Agent** | `api` | سرویس `rathole-agent.service` روی سرور + API URL/توکن | بدون SSH؛ هاب درخواست را به `POST <api_url>/api/exec` می‌فرستد. |
 
-> در نسخه‌ی **v2.1.0** رابط کاربری هاب به سبک شیشه‌ای **Apple Glass** بازطراحی شده است (تم روشن/تاریک/سیستم، پالت فرمان `⌘K / Ctrl+K`، ۴ کارت KPI، فیلتر زنده، بارگذاری موازی سریع‌تر و پیام شفاف همگام‌سازی دوطرفه). صفحه‌ی قدیمی «بورد سیم‌کشی» (`#/wiring`) از v2.0.2 حذف شده و لینک آن بی‌صدا به داشبورد برمی‌گردد.
+> در نسخه‌ی **v2.3.0** رابط کاربری شیشه‌ای **Apple Glass** در هاب به صفحه جدید **تستر و تیونر شبکه (`#/tuner`)** (اجرای ۶ مرحله‌ای بنچمارک و مدیریت پروفایل‌های `rthprof1:`)، پشتیبانی کامل **Paqet / Managed Xray**، مانیتور و ربات تلگرام چندمسیره، **TOTP 2FA** و توکن‌های **RBAC** تجهیز شده است (تم روشن/تاریک/سیستم، `⌘K / Ctrl+K`، ۴ کارت KPI). صفحه‌ی قدیمی `#/wiring` از v2.0.2 حذف شده است.
 
 ![معماری هاب](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/hub-architecture.svg)
 
-![داشبورد پنل هاب RatholeHub v2.1.0](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
+![داشبورد پنل هاب RatholeHub v2.3.0](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
+
+![تستر و تیونر شبکه — امتیاز ۵بعدی و پروفایل rthprof1](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/tuner.png)
 
 ![کنترل‌های سرویس — مودال «حامل و پروتکل» روی یک سرویس](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/service-controls.png)
 
@@ -99,12 +101,13 @@ sudo ratholenode agent on 8089
 | صفحه | آدرس | محتوا |
 |------|------|-------|
 | **داشبورد** | `#/dashboard` | **۴ کارت KPI**، نوار وضعیت هاب، فیلتر سریع (نقش/وضعیت/متن)، کارت/فهرست سرورها، وضعیت و badge نسخه؛ افزودن/Provision؛ آپدیت همه با progress |
-| **صفحه سرور** | `#/server/<name>` | overview، دامنه/گواهی، پورت/path، carrierها، ingress، جستجوی زنده و سرویس‌های rathole و Backhaul، game، upstreamها، ابزارهای تشخیص و log |
+| **صفحه سرور** | `#/server/<name>` | overview، دامنه/گواهی، پورت/path، carrierها، `paqet`، `Managed Xray`، ingress، جستجوی زنده و سرویس‌های rathole و Backhaul، game، upstreamها و ابزارهای تشخیص |
+| **تستر و تیونر شبکه** | `#/tuner` | اجرای غیرهم‌زمان بنچمارک ۶ مرحله‌ای `rathole-tuner`، امتیاز ۵بعدی، کپی/ایمپورت `rthprof1:` و JSON، کتابخانه پروفایل دیتاسنترها، تست A/B و اعمال/Rollback دوطرفه |
 | **مسیریابی / کنسول** | `#/routing` | **فقط‌خواندنی**: نمای گراف/جدول topology و کنسول؛ تغییر مسیر از ردیف سرویس یا کارت حامل انجام می‌شود |
 | **فعالیت** | `#/audit` | تاریخچه‌ی عملیات با جستجوی زنده (زمان، کاربر، سرور، action، rc) — ۱۰۰ رکورد آخر |
-| **تنظیمات** | `#/settings` | انتخابگر سه‌حالتهٔ تم (**روشن / تاریک / سیستم**)، تغییر زبان، پروکسی هاب، hint listen/token، چرخش API token و تغییر رمز مدیر |
+| **تنظیمات** | `#/settings` | انتخابگر سه‌حالتهٔ تم (**روشن / تاریک / سیستم**)، تغییر زبان، پروکسی هاب، TOTP 2FA، توکن‌های RBAC، مانیتور تلگرام و تغییر رمز مدیر |
 
-رابط شیشه‌ای **Apple Glass** (نسخه‌ی **v2.1.0**) برای موبایل/دسکتاپ ریسپانسیو است، تم **روشن / تاریک / هماهنگ با سیستم**، RTL/LTR، فونت آفلاین **`vazirmatn.woff2`** (بدون CDN)، **`⌘K / Ctrl+K` پالت فرمان**، مودال‌های `<dialog>`، بارگذاری موازی سریع‌تر سرورها، پیام شفاف همگام‌سازی دوطرفه و `prefers-reduced-motion` دارد. زبان و تم در مرورگر ذخیره می‌شوند. نوار ناوبری چهار بخش دارد: داشبورد، نقشه مسیرها، گزارش فعالیت‌ها، تنظیمات.
+رابط شیشه‌ای **Apple Glass** (نسخه‌ی **v2.3.0**) برای موبایل/دسکتاپ ریسپانسیو است، تم **روشن / تاریک / هماهنگ با سیستم**، RTL/LTR، فونت آفلاین **`vazirmatn.woff2`** (بدون CDN)، **`⌘K / Ctrl+K` پالت فرمان**، مودال‌های `<dialog>`، بارگذاری موازی سریع‌تر سرورها، پیام شفاف همگام‌سازی دوطرفه و `prefers-reduced-motion` دارد. زبان و تم در مرورگر ذخیره می‌شوند. نوار ناوبری پنج بخش دارد: داشبورد، نقشه مسیرها، تستر و تیونر شبکه، گزارش فعالیت‌ها، تنظیمات.
 
 ---
 

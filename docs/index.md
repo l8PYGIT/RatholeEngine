@@ -17,54 +17,50 @@
 
 <figure class="hero-shot" markdown>
 ![داشبورد پنل هاب RatholeHub](assets/screenshots/dashboard.png)
-<figcaption>پنل هاب (RatholeHub v2.1.0) — رابط شیشه‌ای Apple Glass با کارت‌های KPI، فیلتر زنده و نوار کنترل سرورها (حالت mock)</figcaption>
+<figcaption>پنل هاب (RatholeHub v2.3.0) — رابط شیشه‌ای Apple Glass با کارت‌های KPI، فیلتر زنده، تیونر شبکه و نوار کنترل سرورها (حالت mock)</figcaption>
 </figure>
 
 ## چه چیزی دریافت می‌کنید
 
 <div class="grid cards" markdown>
 
--   **🚇 چهار حامل در lane رات‌هول**
+-   **⚡ تیونر بی‌رحمانه و پروفایل‌های AI (`rathole-tuner`)**
 
     ---
 
-    پیش‌فرض **WebSocket + TLS** روی ۴۴۳، و کنارش **KCP** (با FEC برای لینک پرافت)،
-    **Plain** سبک و **Noise** برای پوشش بیشتر. تغییر حامل، path و پورت عمومی را عوض نمی‌کند.
+    بنچمارک دوطرفه ۶ مرحله‌ای برای **PMTU/MSS**، **آف‌لودهای NIC**، **BBR/CAKE/FQ**، بافرهای TCP/UDP، تست **Bufferbloat** و ماتریس حامل‌ها با **Watchdog بازگشت خودکار** و خروجی **`rathole.netprofile.v1` / `rthprof1:`** (برای تحلیل با هوش مصنوعی و تست زنده A/B/N).
 
--   **🧬 هسته‌های مستقل**
+-   **🚇 نه حامل و Xray مدیریت‌شده (`v2.3.0`)**
 
     ---
 
-    **Backhaul (SMUX)** برای لینک‌های شلوغ/پرافت، **FRP** با ترانسپورت
-    `tcp|kcp|quic|websocket` (پورت `7000/TCP` و `7000/UDP`)، تونل لایهٔ ۳ **GRE** و حالت ترکیبی **FRP + GRE** — هر کدام برای یک path.
+    مسیر رتهول (**WebSocket+TLS**، **KCP+FEC**، **Plain**، **Noise**) به‌علاوه هسته‌های مستقل **Backhaul (SMUX)**، **FRP**، **GRE لایه ۳**، **FRP+GRE** و **Paqet Direct PCK** ضد DPI به همراه **Managed Xray** (`REALITY` / `XHTTP`) و اسکنر سایت کاور TLS 1.3.
 
 -   **🎛️ همگام‌سازی دوطرفه و کنترل سرویس‌ها**
 
     ---
 
     در صفحهٔ ایران، ردیف هر نود یک **سلکتور حامل** دارد: انتخاب حامل، یک‌کلیکی روی **هر دو سمت**
-    (ایران + نود) با پیام وضعیت شفاف اعمال می‌شود و اگر سمت نود شکست بخورد برمی‌گردد. پنج اکشن دیگر — **تست سلامت**،
+    (ایران + نود) با پیام وضعیت شفاف اعمال می‌شود و اگر سمت نود شکست بخورد برمی‌گردد. پنج اکشن دیگر — **تست دوطرفه لینک**،
     ساخت کانفیگ VLESS، مدیریت سمت مقابل و حذف هم‌زمان از دو سمت — زیر منوی **⋯** همان ردیف‌اند.
 
--   **🔐 REST Agent بدون SSH**
+-   **🔐 REST Agent بدون SSH و مانیتور تلگرام**
 
     ---
 
-    `ratholeagent.py` (stdlib خالص، پورت ۸۰۸۹) با احراز هویت Bearer، مجوز ۰۶۰۰ فایل توکن، لیست‌سفید محدود باینری‌ها و HTTPS اختیاری؛
-    هاب با `transport: "api"` سرور را بدون کلید SSH مدیریت می‌کند.
+    `ratholeagent.py` (stdlib خالص، پورت ۸۰۸۹) با احراز هویت Bearer، لیست‌سفید محدود باینری‌ها و HTTPS اختیاری؛ به همراه **`ratholemonitor.service`** برای پایش ناوگان و ربات تلگرام از مسیر مستقیم، پروکسی یا **تونل نود خارج**.
 
--   **🖥️ هاب مرکزی شیشه‌ای (v2.1.0)**
+-   **🖥️ هاب مرکزی شیشه‌ای و تیونر (`v2.3.0`)**
 
     ---
 
-    رابط کاربری یکپارچه با **تم روشن/تاریک/سیستم**، فونت آفلاین **Vazirmatn**، جستجوی سریع **`Ctrl+K`**، بارگذاری موازی و سریع وضعیت سرورها، نقشهٔ مسیرها و گزارش فعالیت‌ها.
+    رابط یکپارچه با تم **روشن/تاریک/سیستم**، فونت آفلاین **Vazirmatn**، **`Ctrl+K`**، تایید دومرحله‌ای **TOTP 2FA**، توکن‌های RBAC، گزارش زنجیره‌ای SHA-256، صفحه جدید **`#/tuner`** و رله آپدیت با امضای **Ed25519**.
 
 -   **🚀 استقرار امن و برگشت‌پذیر**
 
     ---
 
-    `update.sh` پیش از هر تغییر snapshot کامل می‌گیرد، health-check می‌کند، agent را خارج از cgroup ری‌استارت می‌کند و در صورت
-    خطا خودکار rollback می‌کند. مناسب سرورهای واقعی، نه دمو.
+    `update.sh` پیش از هر تغییر snapshot کامل می‌گیرد، health-check می‌کند و در صورت خطا خودکار rollback می‌کند — درست مثل Watchdog بدون ریبوت در `rathole-tuner`.
 
 </div>
 
@@ -73,8 +69,7 @@
 **ساده‌ترین راه: یک دستور، بعد فقط به سؤال‌ها جواب بده.**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
-  | sudo bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh)"
 ```
 
 نصب‌کننده نسخه را می‌پرسد (Enter = آخرین نسخه)، سپس منوی نقش
@@ -166,6 +161,14 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 </figure>
 
 <div class="grid cards shots" markdown>
+
+-   **تستر و تیونر شبکه (`#/tuner`)**
+
+    ---
+
+    ![تستر و تیونر شبکه](assets/screenshots/tuner.png){ loading=lazy }
+
+    اجرای ۶ مرحله‌ای، امتیاز ۵بعدی، خروجی قابل‌تحلیل AI (`rthprof1:`) و تست A/B دیتاسنترها.
 
 -   **صفحهٔ نود خارج**
 

@@ -373,3 +373,32 @@ sudo RATHOLE_GH=owner/repo bash /tmp/install.sh --token <PAT> --release v2.0.2 -
 - توکن باید `Contents: read` داشته باشد؛ برای mirrorهای عمومی ghproxy در مخزن خصوصی استفاده نمی‌شود.
 - **آپدیت گروهی هاب** برای مخزن خصوصی پشتیبانی نمی‌شود (هاب روی سرور به توکن GitHub دسترسی ندارد)؛ روی هر سرور جدا اجرا کنید.
 - اگر health-check شکست بخورد، `update.sh` خودکار به snapshot قبل برمی‌گردد؛ جزئیات در **[Troubleshooting](Troubleshooting)**.
+
+---
+
+## ۹. بهینه‌سازی بی‌رحمانه لینک و ساخت پروفایل AI با `rathole-tuner` (`v2.3.0+`)
+
+**هدف:** یافتن پایدارترین و سریع‌ترین ترکیب MTU/MSS، آف‌لود NIC، کنترل ازدحام (`BBR`/`CAKE`/`FQ`)، بافرها و حامل بین سرور ایران و نود خارج، بدون ریسک قفل‌شدن SSH، همراه با پروفایل قابل اشتراک برای دیتاسنترها و تحلیل توسط هوش مصنوعی.
+
+### روش اول — از رابط وب (`#/tuner` در RatholeHub):
+
+1. از منوی کناری وارد **تستر و تیونر شبکه (`#/tuner`)** شوید و جفت **سرور ایران** و **نود خارج** را انتخاب کنید.
+2. حالت اجرا را روی **`Brutal (Watchdog + Rollback)`** و هدف (`Balanced` / `Low Latency` / `Max Throughput` / `Anti-Loss`) و برچسب دیتاسنترها (مثلاً `arvan` و `hetzner-fsn1`) را ثبت کرده و **شروع بنچمارک بی‌رحمانه** را بزنید.
+3. پس از پایان ۶ مرحله، امتیاز ۵بعدی، جدول Baseline در برابر Winner و کد **`rthprof1:`** (یا **کپی JSON برای AI**) را دریافت می‌کنید؛ دکمهٔ **ذخیره در کتابخانه** پروفایل را برای تست زنده A/B روی سایر سرورها نگه می‌دارد.
+
+### روش دوم — مستقیم از CLI دو سرور:
+
+```bash
+# ۱) روی نود خارج (بازشدن موقت پورت با احراز هویت HMAC و بسته‌شدن خودکار):
+sudo ratholenode bench listen --port 44990 --token MyBenchSecret99 --idle-sec 300
+
+# ۲) روی سرور ایران (اجرای کامل + ذخیره فایل JSON و رشته فشرده):
+sudo ratholectl bench run --peer <NODE_IP>:44990 --token MyBenchSecret99 \
+  --mode brutal --goal balanced --iran-dc arvan --node-dc hetzner-fsn1 \
+  --out /tmp/dc-profile.json --b64-out /tmp/dc-profile.b64
+
+# ۳) تست مقایسه زنده A/B پروفایل اشتراکی دیگران و در صورت بهبود، اعمال یا بازگشت:
+sudo ratholectl bench test --peer <NODE_IP>:44990 --token MyBenchSecret99 --profile "rthprof1:..."
+sudo ratholectl bench apply --profile /tmp/dc-profile.json
+sudo ratholectl bench rollback
+```

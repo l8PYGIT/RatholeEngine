@@ -3506,7 +3506,7 @@ function _renderTunerProgressBody(){
  const job=TUNER_STATE.job;
  if(!job)return '';
  const pct=Math.min(100,Math.max(5,Math.round(((job.stage_index||0)/Math.max(1,job.stage_total||6))*100)));
- return `<div class="sec-head-row"><strong>${h(t('tuner_progress'))}: ${h(job.phase||job.status)}</strong><span class="tag">${h(job.stage_index||0)}/${h(job.stage_total||6)} · ${h(job.elapsed_s||0)}s · best=${h(job.best_so_far||0)}</span></div>
+ return `<div class="sec-head-row"><strong>${h(t('tuner_progress'))}: ${h(job.phase||job.status)}</strong><span class="badge b-info mono" dir="ltr">${h(job.stage_index||0)}/${h(job.stage_total||6)} · ${h(job.elapsed_s||0)}s · best=${h(job.best_so_far||0)}</span></div>
   <div class="tuner-bar"><div class="tuner-bar-fill" style="width:${pct}%"></div></div>`;
 }
 function _renderTunerResultsCard(){
@@ -3523,9 +3523,9 @@ function _renderTunerResultsCard(){
   ['Retrans (%)',b.retrans_pct,w.retrans_pct],
   ['Stability CoV',b.stability_cov,w.stability_cov],
   ['Score ('+(TUNER_STATE.goal||'balanced')+')',bs[TUNER_STATE.goal||'balanced'],ws[TUNER_STATE.goal||'balanced']]
- ].map(r=>`<tr><td>${h(r[0])}</td><td>${h(r[1]??'-')}</td><td><strong>${h(r[2]??'-')}</strong></td></tr>`).join('');
- const cars=Object.entries(bm.carriers||{}).map(([k,v])=>`<span class="tag">${h(k)}: ${h(v.status)}${v.throughput_mbps!=null?' · '+h(v.throughput_mbps)+' Mbps':''}</span>`).join(' ');
- const diags=(rep.diagnostics||[]).map(d=>`<div class="alert-row">${h(d.code)}: ${h(d.detail)}</div>`).join('');
+ ].map(r=>`<tr><td>${h(r[0])}</td><td class="mono" dir="ltr">${h(r[1]??'-')}</td><td class="mono" dir="ltr"><strong>${h(r[2]??'-')}</strong></td></tr>`).join('');
+ const cars=Object.entries(bm.carriers||{}).map(([k,v])=>`<span class="badge ${v.status==='tested'?'b-ok':'b-info'} mono" dir="ltr">${h(k)}: ${h(v.status)}${v.throughput_mbps!=null?' · '+h(v.throughput_mbps)+' Mbps':''}</span>`).join(' ');
+ const diags=(rep.diagnostics||[]).map(d=>`<div class="tuner-alert"><strong class="mono">${h(d.code)}</strong> — ${h(d.detail)}</div>`).join('');
  return `<section class="card sec">
   <div class="sec-head-row"><h4>${h(t('tuner_results'))}</h4>
    <div class="btns">
@@ -3542,9 +3542,9 @@ function _renderTunerResultsCard(){
    <div class="tuner-score"><div class="k">Anti-Loss</div><div class="v">${h(ws['anti-loss']??'-')}</div></div>
   </div>
   <div class="table-wrap"><table><thead><tr><th>Metric</th><th>${h(t('tuner_baseline'))}</th><th>${h(t('tuner_winner'))}</th></tr></thead><tbody>${rows}</tbody></table></div>
-  ${cars?`<div style="margin-top:10px"><div style="margin-bottom:4px;font-weight:600">${h(t('tuner_carriers'))}</div><div class="bstrip">${cars}</div></div>`:''}
-  ${diags?`<div style="margin-top:10px"><div style="margin-bottom:4px;font-weight:600">${h(t('tuner_diagnostics'))}</div>${diags}</div>`:''}
-  <div style="margin-top:10px"><textarea class="tuner-code" readonly>${h(rep.profile_b64||'')}</textarea></div>
+  ${cars?`<div class="tuner-sec-lbl">${h(t('tuner_carriers'))}</div><div class="bstrip">${cars}</div>`:''}
+  ${diags?`<div class="tuner-sec-lbl">${h(t('tuner_diagnostics'))}</div>${diags}`:''}
+  <textarea class="tuner-code" readonly>${h(rep.profile_b64||'')}</textarea>
  </section>`;
 }
 function _renderTunerLibraryRows(){
@@ -3554,7 +3554,7 @@ function _renderTunerLibraryRows(){
   const tags=Object.entries(p.tags||{}).filter(([,v])=>v).map(([k,v])=>`${k}:${v}`).join(' · ');
   const tp=p.summary&&p.summary.throughput_mbps!=null?`${p.summary.throughput_mbps} Mbps`:'';
   return `<div class="tuner-prof-row">
-   <div><strong>${h(p.name||p.id)}</strong> ${tags?`<span class="tag">${h(tags)}</span>`:''} ${tp?`<span class="tag">${h(tp)}</span>`:''}</div>
+   <div class="tuner-prof-meta"><strong>${h(p.name||p.id)}</strong>${tags?`<span class="badge b-ws mono" dir="ltr">${h(tags)}</span>`:''}${tp?`<span class="badge b-ok mono" dir="ltr">${h(tp)}</span>`:''}</div>
    <div class="btns">
     <button class="gh" type="button" onclick="copyTunerLibItem(${idx},'json')">JSON</button>
     <button class="gh" type="button" onclick="copyTunerLibItem(${idx},'b64')">Base64</button>
@@ -3575,7 +3575,7 @@ function renderTunerPage(){
  pg.innerHTML=`<div class="ptitle"><h2>${h(t('tuner_title'))}</h2></div>
   <div class="tuner-grid">
    <section class="card sec">
-    <div style="color:var(--text-muted);margin-bottom:10px">${h(t('tuner_sub'))}</div>
+    <p class="tuner-sub">${h(t('tuner_sub'))}</p>
     <div class="tuner-form">
      <div class="field"><label for="tn_iran">${h(t('tuner_iran'))}</label><select id="tn_iran">${irOpts}</select></div>
      <div class="field"><label for="tn_node">${h(t('tuner_node'))}</label><select id="tn_node">${ndOpts}</select></div>
@@ -3591,7 +3591,9 @@ function renderTunerPage(){
      </select></div>
      <div class="field"><label for="tn_iran_dc">${h(t('tuner_iran_dc'))}</label><input id="tn_iran_dc" type="text" value="${h(TUNER_STATE.iran_dc)}"></div>
      <div class="field"><label for="tn_node_dc">${h(t('tuner_node_dc'))}</label><input id="tn_node_dc" type="text" value="${h(TUNER_STATE.node_dc)}"></div>
-     <label class="sw" style="padding-bottom:6px"><input type="checkbox" id="tn_deep"${TUNER_STATE.deep?' checked':''}><span>${h(t('tuner_deep'))}</span></label>
+    </div>
+    <div class="tuner-actions">
+     <label class="sw"><input type="checkbox" id="tn_deep"${TUNER_STATE.deep?' checked':''}><span>${h(t('tuner_deep'))}</span></label>
      <div class="btns">
       <button class="g" type="button" onclick="startTunerJob()"${running?' disabled':''}>${h(t('tuner_start'))}</button>
       ${running?`<button class="r" type="button" onclick="cancelTunerJob()">${h(t('tuner_stop'))}</button>`:''}

@@ -39,10 +39,10 @@ jobs:
           echo "== warnings (gheyre-blocking) =="
           shellcheck --shell=bash --severity=warning --exclude=SC1091 $files || true
 
-      - name: python py_compile (hub.py + fakeweb.py)
+      - name: python py_compile (hub.py + fakeweb.py + tuner)
         run: |
-          python3 -m py_compile rathole-manager/ratholehub/hub.py rathole-manager/ratholehub/hubcmds.py rathole-manager/ratholehub/hubdiag.py rathole-manager/ratholehub/hubsec.py rathole-manager/ratholehub/tg_relay.py rathole-manager/ratholehub/monitor.py rathole-manager/ratholehub/hubupdate.py rathole-manager/fakeweb.py
-          echo "hub.py, hubcmds.py, hubdiag.py, hubsec.py, tg_relay.py, monitor.py, hubupdate.py & fakeweb.py compile OK"
+          python3 -m py_compile rathole-manager/ratholehub/hub.py rathole-manager/ratholehub/hubcmds.py rathole-manager/ratholehub/hubdiag.py rathole-manager/ratholehub/hubsec.py rathole-manager/ratholehub/tg_relay.py rathole-manager/ratholehub/monitor.py rathole-manager/ratholehub/hubupdate.py rathole-manager/fakeweb.py rathole-manager/tuner/*.py rathole-manager/rathole-tuner
+          echo "hub.py, hubcmds.py, hubdiag.py, hubsec.py, tg_relay.py, monitor.py, hubupdate.py, fakeweb.py & tuner/*.py compile OK"
 
       - name: manager regression tests
         run: |

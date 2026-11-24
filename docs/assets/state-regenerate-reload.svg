@@ -40,12 +40,12 @@
   <text x="600.0" y="41" text-anchor="middle" fill="#f8fafc" font-size="18.5" font-weight="700">Central Principle: State -&gt; Regenerate -&gt; Validate -&gt; Hot-Reload</text>
   <text x="600.0" y="62" text-anchor="middle" fill="#94a3b8" font-size="12.5">Never hand-edit generated configs — mutate state safely, commit in place, validate nginx, then reload.</text>
   <rect x="1108" y="27" width="56" height="22" rx="11" fill="rgba(10,132,255,0.20)" stroke="rgba(56,189,248,0.45)" stroke-width="1"/>
-  <text x="1136" y="42" text-anchor="middle" fill="#7dd3fc" font-size="11" font-weight="700">v2.1.0</text>
+  <text x="1136" y="42" text-anchor="middle" fill="#7dd3fc" font-size="11" font-weight="700">v2.3.0</text>
   <rect x="28" y="102" width="266" height="134" rx="14" fill="rgba(15,23,42,0.58)" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="1.3"/>
   <rect x="38" y="112" width="246" height="114" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
   <text x="52" y="134" text-anchor="start" font-size="12" font-weight="700" fill="#e0f2fe">1 · Mutate State</text>
   <text x="52" y="153" text-anchor="start" font-size="11" fill="#93c5fd">ratholectl: state_jq atomic write</text>
-  <text x="52" y="170" text-anchor="start" font-size="11" fill="#93c5fd">to state.json (single source)</text>
+  <text x="52" y="170" text-anchor="start" font-size="11" fill="#93c5fd">to state.json (+ revision undo)</text>
   <text x="52" y="187" text-anchor="start" font-size="11" fill="#93c5fd">ratholenode: node.env +</text>
   <text x="52" y="204" text-anchor="start" font-size="11" fill="#93c5fd">services.conf / bh-services.conf</text>
   <line x1="296" y1="169" x2="314" y2="169" stroke="#38bdf8" stroke-width="2.4" marker-end="url(#arr)"/>
@@ -53,7 +53,7 @@
   <rect x="330" y="112" width="246" height="114" rx="11" fill="#0f192e" stroke="#38bdf8" stroke-opacity="0.58" stroke-width="1.2"/>
   <text x="344" y="134" text-anchor="start" font-size="12" font-weight="700" fill="#e0f2fe">2 · Regenerate</text>
   <text x="344" y="153" text-anchor="start" font-size="11" fill="#93c5fd">gen_server_toml() / gen_nginx_conf()</text>
-  <text x="344" y="170" text-anchor="start" font-size="11" fill="#93c5fd">gen_client() / backhaul TOML</text>
+  <text x="344" y="170" text-anchor="start" font-size="11" fill="#93c5fd">gen_client() / backhaul / paqet</text>
   <text x="344" y="187" text-anchor="start" font-size="11" fill="#93c5fd">rth_commit_config(): flock +</text>
   <text x="344" y="204" text-anchor="start" font-size="11" fill="#93c5fd">cat tmp &gt; file (inode preserved!)</text>
   <line x1="588" y1="169" x2="606" y2="169" stroke="#38bdf8" stroke-width="2.4" marker-end="url(#arr)"/>
@@ -73,13 +73,13 @@
   <text x="928" y="187" text-anchor="start" font-size="11" fill="#86efac">in-place write -&gt; zero drops</text>
   <text x="928" y="204" text-anchor="start" font-size="11" fill="#86efac">Restart only if transport changed</text>
   <rect x="28" y="286" width="558" height="74" rx="11" fill="rgba(244,63,94,0.12)" stroke="#fb7185" stroke-opacity="0.58" stroke-width="1.2"/>
-  <text x="307.0" y="308" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffe4e6">Validation Failed -&gt; Auto-Revert (.rathole-good.bak)</text>
-  <text x="307.0" y="327" text-anchor="middle" font-size="11" fill="#fda4af">Restores both HTTP and Stream nginx configs + state before exit.</text>
-  <text x="307.0" y="344" text-anchor="middle" font-size="11" fill="#fda4af">Live reverse tunnels remain untouched and nginx never stays broken.</text>
+  <text x="307.0" y="308" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ffe4e6">Validation Failed -&gt; Auto-Revert (.rathole-good.bak + Undo)</text>
+  <text x="307.0" y="327" text-anchor="middle" font-size="11" fill="#fda4af">Restores nginx HTTP/Stream + state.json revision history before exit.</text>
+  <text x="307.0" y="344" text-anchor="middle" font-size="11" fill="#fda4af">Live tunnels survive; rathole-tuner also enforces dead-man rollback.</text>
   <rect x="614" y="286" width="558" height="74" rx="11" fill="rgba(16,185,129,0.12)" stroke="#34d399" stroke-opacity="0.58" stroke-width="1.2"/>
   <text x="893.0" y="308" text-anchor="middle" font-size="12.5" font-weight="700" fill="#d1fae5">Validation Passed -&gt; Active Tunnels Survive</text>
   <text x="893.0" y="327" text-anchor="middle" font-size="11" fill="#86efac">Inode preservation keeps rathole config_watcher hot-reloading smoothly.</text>
-  <text x="893.0" y="344" text-anchor="middle" font-size="11" fill="#86efac">Applies identically across ws/kcp/plain/noise, Backhaul, FRP, GRE &amp; Agent.</text>
+  <text x="893.0" y="344" text-anchor="middle" font-size="11" fill="#86efac">Applies across ws/kcp/plain/noise, Backhaul, FRP, GRE, Paqet &amp; Xray.</text>
   <path d="M 745.0 236 L 745.0 262 L 460 262 L 460 282" fill="none" stroke="#fb7185" stroke-width="2.3" stroke-dasharray="6 4" marker-end="url(#arrR)"/>
   <rect x="568.0" y="251.0" width="88" height="22" rx="11.0" fill="#0b1324" stroke="#fb7185" stroke-opacity="0.65" stroke-width="1"/>
   <rect x="568.0" y="251.0" width="88" height="22" rx="11.0" fill="rgba(244,63,94,0.12)"/>

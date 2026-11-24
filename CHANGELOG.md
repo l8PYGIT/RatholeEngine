@@ -9,6 +9,18 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-24
+
+### Added
+- **تستر و تیونر بی‌رحمانه شبکه، کرنل و تونل (rathole-tuner):** بررسی دوطرفه ۶ مرحله‌ای شامل کشف باینری PMTU و TCP MSS، آف‌لودهای NIC (`TSO`/`GSO`/`GRO`)، کنترل ازدحام و qdisc (`BBR`/`CAKE`/`FQ`)، بافرهای TCP/UDP (`rmem`/`wmem`/`tcp_notsent_lowat`)، تست استرس هم‌زمان Bufferbloat و ماتریس مقایسه حامل‌ها (`raw-tcp`, `ws`, `kcp`, `backhaul`, `frp`, `gre`) با امتیازدهی ۵بعدی، ممیزی غیرکرنلی (Xray/Nginx/OpenSSL/Limits) و **Watchdog بازگشت خودکار** روی CLIهای `ratholectl bench` و `ratholenode bench`.
+- **پروفایل قابل‌حمل و قابل‌تحلیل توسط هوش مصنوعی (rathole.netprofile.v1 / rthprof1):** خروجی JSON ساختاریافته و رشته فشرده Base64url با بررسی درستی SHA-256 برای تحلیل با AI، ساخت پروفایل اختصاصی برای دیتاسنترهای مختلف، اشتراک‌گذاری، تست زنده A/B/N (`bench test`)، اعمال دائمی (`99-rathole-tuner.conf`) و بازگشت یک‌کلیکی (`bench rollback`).
+- **صفحه جدید «تستر و تیونر شبکه» و کتابخانه پروفایل در RatholeHub:** اجرای غیرهم‌زمان بنچمارک از صفحه `#/tuner`، نمایش امتیاز ۵بعدی و جدول مقایسه Baseline/Winner، ایمپورت/کپی رشته `rthprof1:` و JSON، مدیریت کتابخانه پروفایل دیتاسنترها و اعمال دوطرفه با لیست‌سفید امن در `hubcmds.py`.
+- **نمودارها، بنرها و اسکرین‌شات‌های بازسازی‌شده v2.3.0:** به‌روزرسانی `tools/gen_diagrams.py` (۱۸ نمودار SVG تاریک و روشن شامل نمودار جدید `tuner-architecture`)، بازسازی بنرهای تاریک/روشن، Social Preview و بازثبت هر ۱۰ اسکرین‌شات زنده پنل وب (از جمله `tuner-dark.png` و `tuner.png`).
+
+### Fixed
+- **بهبود چیدمان و فاصله‌گذاری رابط وب هاب:** افزودن پدینگ استاندارد شیشه‌ای و گرید ۳ستونه متوازن به کارت‌های صفحه `#/tuner` و رفع کشیدگی چک‌باکس در تنظیمات مانیتور (`#/settings`).
+- **تکمیل بسته‌بندی ریلیز و CI برای rathole-tuner و مانیتور:** افزودن `rathole-tuner` و `monitor.py` به نرمال‌سازی LF و مجوز اجرایی در `package.sh` و `tools/build_zip.py`، حذف `__pycache__`/`*.pyc` از آرشیو ریلیز، و افزودن `tuner/*.py` به بررسی `py_compile` در CI.
+
 ## [2.2.1] - 2026-11-24
 
 ### Fixed

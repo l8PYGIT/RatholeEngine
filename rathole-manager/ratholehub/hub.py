@@ -21,6 +21,20 @@ AUDIT_PATH = os.environ.get("RATHOLEHUB_AUDIT", "/etc/ratholehub/audit.log")
 MON_CONF_PATH = os.environ.get("RATHOLEMON_CONF", "/etc/ratholehub/monitor.json")
 MON_UNIT_PATH = os.environ.get("RATHOLEMON_UNIT", "/etc/systemd/system/ratholemonitor.service")
 MON_INSTALLER_PATH = os.environ.get("RATHOLEMON_INSTALLER", os.path.join(os.path.dirname(os.path.abspath(__file__)), "install-monitor.sh"))
+TUNER_PROFILES_PATH = os.environ.get("RATHOLEHUB_TUNER_PROFILES", "/var/lib/ratholehub/tuner-profiles.json")
+_TUNER_JOBS = {}
+_tuner_jobs_lock = threading.Lock()
+
+
+def _tuner_profile_mod():
+    for cand in (
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "/usr/local/share/rathole",
+    ):
+        if os.path.isdir(os.path.join(cand, "tuner")) and cand not in sys.path:
+            sys.path.insert(0, cand)
+    from tuner import profile as prof_mod
+    return prof_mod
 
 # ---------- tanzimat va inventory ----------
 # RLock (na Lock) ta helper-haye atomic betavanand read-modify-write ra yekja
@@ -219,6 +233,12 @@ def _redact_cmd_for_audit(action, cmd):
                 parts[i] = "--private-key=***REDACTED***"
             elif parts[i].startswith("--uuid="):
                 parts[i] = "--uuid=***REDACTED***"
+    elif action.startswith("bench_"):
+        for i in range(1, len(parts)):
+            if parts[i] == "--token" and i + 1 < len(parts):
+                parts[i + 1] = "***REDACTED***"
+            elif parts[i].startswith("--token="):
+                parts[i] = "--token=***REDACTED***"
     return " ".join(parts)
 
 def _redact_proxy_creds(proxy):
@@ -356,7 +376,7 @@ def hub_status():
 from hubcmds import (  # noqa: F401  (nam-ha dar sartasar-e hub estefade mishavand)
     RE_NAME, RE_HOST, RE_PORT, RE_PROFILE, RE_IPPORT, RE_KEY, RE_B64, RE_ID, RE_PW,
     RE_EMAIL, RE_PATH, RE_SLUG, RE_HEADER, RE_BH_SRV, RE_BH_CLI, RE_BH_TOK, RE_CHAN,
-    RE_COUNT, build_iran_cmd, build_node_cmd, build_cmd, WRITE_ACTIONS, _diag,
+    RE_COUNT, RE_TUNER_MODE, RE_TUNER_GOAL, build_iran_cmd, build_node_cmd, build_cmd, WRITE_ACTIONS, _diag,
 )
 from hubdiag import compute_fleet_drift, synthesize_link_test
 from hubsec import (
@@ -1129,6 +1149,64 @@ def mock_run(server, cmd_args):
             ip = server.get("host") or "198.51.100.5"
             return {"rc": 0, "out": f"vless://11111111-2222-4333-8444-555555555555@{ip}:443?type=tcp&security=reality&encryption=none&flow=xtls-rprx-vision&sni=www.microsoft.com&fp=chrome&pbk=mOCKPubKey&sid=a1b2c3d4#rathole-reality", "err": ""}
         return {"rc": 0, "out": f"[mock] ratholenode xray {sub} ok", "err": ""}
+    if len(cmd_args) >= 3 and cmd_args[0] in ("ratholectl", "ratholenode") and cmd_args[1] == "bench":
+        sub = cmd_args[2]
+        if sub == "listen":
+            return {"rc": 0, "out": json.dumps({"ok": True, "pid": 4242, "port": 29890}), "err": ""}
+        if sub == "stop-listen":
+            return {"rc": 0, "out": json.dumps({"ok": True, "stopped": True}), "err": ""}
+        if sub == "status":
+            return {"rc": 0, "out": json.dumps({
+                "applied": False, "profile_name": None,
+                "capabilities": {"kernel": "6.8.0", "cpus": 4, "ram_mb": 4096, "iface": "eth0", "available_cc": ["cubic", "bbr"]},
+            }), "err": ""}
+        if sub == "job":
+            return {"rc": 0, "out": json.dumps({"phase": "completed", "stage_index": 6, "stage_total": 6, "best_so_far": 91.8}), "err": ""}
+        if sub == "apply":
+            return {"rc": 0, "out": json.dumps({"ok": True, "applied": ["net.core.default_qdisc=fq", "net.ipv4.tcp_congestion_control=bbr"], "unsupported": []}), "err": ""}
+        if sub == "rollback":
+            return {"rc": 0, "out": json.dumps({"ok": True, "restored_from": "/var/lib/rathole-tuner/snapshots/pre-apply-mock.json"}), "err": ""}
+        if sub in ("run", "test-profile"):
+            goal = "balanced"
+            mode = "brutal"
+            for idx, tok in enumerate(cmd_args):
+                if tok == "--goal" and idx + 1 < len(cmd_args):
+                    goal = cmd_args[idx + 1]
+                elif tok == "--mode" and idx + 1 < len(cmd_args):
+                    mode = cmd_args[idx + 1]
+            prof_mod = _tuner_profile_mod()
+            base_s = {"throughput_mbps": 182.4, "loaded_rtt_p95_ms": 158.0, "jitter_ms": 14.5, "retrans_pct": 1.6, "stability_cov": 0.22,
+                      "scores": {"balanced": 52.1, "low-latency": 44.0, "max-throughput": 56.3, "anti-loss": 49.8}}
+            win_s = {"throughput_mbps": 418.7, "loaded_rtt_p95_ms": 46.2, "jitter_ms": 2.9, "retrans_pct": 0.15, "stability_cov": 0.04,
+                     "scores": {"balanced": 91.8, "low-latency": 93.4, "max-throughput": 90.2, "anti-loss": 92.6}}
+            if sub == "test-profile":
+                return {"rc": 0, "out": json.dumps({
+                    "ok": True, "goal": goal, "mode": mode, "profile_name": "imported-test",
+                    "baseline": base_s, "candidate": win_s,
+                    "delta": {"throughput_pct": 129.5, "loaded_rtt_p95_diff_ms": -111.8, "goal_score_diff": 39.7},
+                }), "err": ""}
+            ir_c = {
+                "mtu": 1460, "mss_clamp": 0, "qdisc": {"kind": "fq", "params": {}}, "txqueuelen": 2000,
+                "route": {"initcwnd": 32, "initrwnd": 32, "advmss": 1420},
+                "offloads": {"tso": True, "gso": True, "gro": True},
+                "sysctl": {"net.core.default_qdisc": "fq", "net.ipv4.tcp_congestion_control": "bbr", "net.ipv4.tcp_notsent_lowat": 32768},
+            }
+            prof = prof_mod.build_profile(
+                meta={"name": "mock-optimal", "mode": mode, "goal": goal, "tags": {"iran_dc": "mock-ir", "node_dc": "mock-eu"}},
+                environment={"iran": {"kernel": "6.8.0", "cpus": 4, "ram_mb": 4096}, "node": {"kernel": "6.8.0", "cpus": 2, "ram_mb": 2048},
+                             "pmtu": {"forward_bytes": 1460, "reverse_bytes": 1460, "blackhole_detected": False}},
+                diagnostics=[{"code": "bufferbloat_high", "severity": "warning", "detail": "Resolved +111ms bloat with fq + tcp_notsent_lowat=32768"}],
+                benchmarks={"baseline": base_s, "winner": win_s, "top_candidates": [win_s, base_s],
+                            "carriers": {"raw-tcp": {"installed": True, "status": "tested", "throughput_mbps": 418.7}, "kcp": {"installed": True, "status": "ready", "recommended_profile": "balanced", "recommended_mtu": 1380}}},
+                iran_config=ir_c,
+                node_config={**ir_c, "recommended_carrier": {"lane": "kcp", "profile": "balanced", "mtu": 1380}},
+                non_kernel_recommendations={"nginx": [], "xray": [], "system": []},
+            )
+            return {"rc": 0, "out": json.dumps({
+                "ok": True, "elapsed_s": 0.3, "profile": prof, "profile_b64": prof_mod.encode_profile_b64(prof),
+                "benchmarks": prof["benchmarks"], "diagnostics": prof["diagnostics"], "pmtu": prof["environment"]["pmtu"],
+                "non_kernel_recommendations": prof["non_kernel_recommendations"],
+            }), "err": ""}
     if j.startswith("ratholenode set SERVER "):
         return {"rc": 0, "out": "tanzim shod: SERVER = %s\n[mock] tunnel-e asli be-ruz shod." % cmd_args[-1], "err": ""}
     return {"rc": 0, "out": "[mock] %s → %s" % (role, j), "err": ""}
@@ -1771,6 +1849,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, verify_audit_chain(AUDIT_PATH))
         if p == "/api/fleet/drift":
             return self._fleet_drift()
+        if p == "/api/tuner/jobs":
+            return self._tuner_jobs_list()
+        m_tj = re.match(r"^/api/tuner/jobs/([A-Za-z0-9_-]{1,64})$", p)
+        if m_tj:
+            return self._tuner_job_get(m_tj.group(1))
+        if p == "/api/tuner/profiles":
+            return self._tuner_profiles_list()
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/status$", p)
         if m:
             return self._status(m.group(1))
@@ -1909,6 +1994,27 @@ class Handler(BaseHTTPRequestHandler):
             if not scope_allows(info["scope"], "operate"):
                 return self._send(403, {"error": "insufficient scope", "required": "operate"})
             return self._prepare_ip_tls(self._body_json())
+        if p == "/api/tuner/start":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._tuner_start(self._body_json())
+        m_tc = re.match(r"^/api/tuner/jobs/([A-Za-z0-9_-]{1,64})/cancel$", p)
+        if m_tc:
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._tuner_job_cancel(m_tc.group(1))
+        if p == "/api/tuner/profiles":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._tuner_profiles_import(self._body_json())
+        if p == "/api/tuner/apply":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._tuner_apply(self._body_json())
+        if p == "/api/tuner/rollback":
+            if not scope_allows(info["scope"], "admin"):
+                return self._send(403, {"error": "insufficient scope", "required": "admin"})
+            return self._tuner_rollback(self._body_json())
         return self._send(404, {"error": "not found"})
 
     def do_PUT(self):
@@ -1933,6 +2039,9 @@ class Handler(BaseHTTPRequestHandler):
         m_tok = re.match(r"^/api/tokens/(tok_[a-f0-9]{12})$", p)
         if m_tok:
             return self._token_revoke(m_tok.group(1))
+        m_tp = re.match(r"^/api/tuner/profiles/([A-Za-z0-9_-]{1,64})$", p)
+        if m_tp:
+            return self._tuner_profiles_delete(m_tp.group(1))
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)$", p)
         if m:
             name = m.group(1)
@@ -2832,6 +2941,293 @@ class Handler(BaseHTTPRequestHandler):
         if iran_unsup:
             res["iran_unsupported"] = True
         return self._send(200, res)
+
+    def _load_tuner_profiles(self):
+        data = load_json(TUNER_PROFILES_PATH, {"profiles": []})
+        profs = data.get("profiles") if isinstance(data, dict) else []
+        return profs if isinstance(profs, list) else []
+
+    def _save_tuner_profiles(self, profiles):
+        with _lock:
+            save_json(TUNER_PROFILES_PATH, {"profiles": profiles})
+
+    def _tuner_jobs_list(self):
+        with _tuner_jobs_lock:
+            items = [{k: v for k, v in j.items() if k != "_stop_ev"} for j in _TUNER_JOBS.values()]
+        items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+        return self._send(200, {"jobs": items[:20]})
+
+    def _tuner_job_get(self, job_id):
+        with _tuner_jobs_lock:
+            job = _TUNER_JOBS.get(job_id)
+            if not job:
+                return self._send(404, {"error": "job not found"})
+            snap = {k: v for k, v in job.items() if k != "_stop_ev"}
+        return self._send(200, snap)
+
+    def _tuner_job_cancel(self, job_id):
+        with _tuner_jobs_lock:
+            job = _TUNER_JOBS.get(job_id)
+            if not job:
+                return self._send(404, {"error": "job not found"})
+            node_name = job.get("node", "")
+            job["cancelled"] = True
+            if job.get("status") == "running":
+                job["status"] = "cancelled"
+                job["phase"] = "cancelled"
+        node_srv = self._find(node_name) if node_name else None
+        if node_srv:
+            cmd = build_node_cmd("bench_listen_stop", {})
+            if cmd:
+                run_on_server(node_srv, cmd, timeout=15)
+        return self._send(200, {"ok": True, "job_id": job_id})
+
+    def _resolve_tuner_profile_spec(self, d):
+        prof_mod = _tuner_profile_mod()
+        pid = str(d.get("profile_id", "") or "").strip()
+        raw = d.get("profile")
+        if pid:
+            for item in self._load_tuner_profiles():
+                if item.get("id") == pid:
+                    raw = item.get("profile_b64") or item.get("profile")
+                    break
+            if raw is None:
+                return None, "profile_id not found"
+        if isinstance(raw, dict):
+            try:
+                p = prof_mod.load_profile_any(json.dumps(raw), verify_sha=False)
+                return p, None
+            except prof_mod.ProfileValidationError as e:
+                return None, str(e)
+        if isinstance(raw, str) and raw.strip():
+            try:
+                p = prof_mod.load_profile_any(raw.strip(), verify_sha=False)
+                return p, None
+            except prof_mod.ProfileValidationError as e:
+                return None, str(e)
+        return None, "profile is required"
+
+    def _tuner_start(self, d):
+        d = d if isinstance(d, dict) else {}
+        iran_name = str(d.get("iran", "") or "")
+        node_name = str(d.get("node", "") or "")
+        mode = str(d.get("mode", "brutal") or "brutal")
+        goal = str(d.get("goal", "balanced") or "balanced")
+        deep = bool(d.get("deep", False))
+        port = int(d.get("port", 29890) or 29890)
+        if not RE_NAME.match(iran_name) or not RE_NAME.match(node_name):
+            return self._send(400, {"error": "invalid iran or node server name"})
+        if not RE_TUNER_MODE.match(mode) or not RE_TUNER_GOAL.match(goal):
+            return self._send(400, {"error": "invalid mode or goal"})
+        if not RE_PORT.match(str(port)):
+            return self._send(400, {"error": "invalid port"})
+
+        iran_srv = self._find(iran_name)
+        node_srv = self._find(node_name)
+        if not iran_srv or iran_srv.get("role") != "iran" or not node_srv or node_srv.get("role") != "node":
+            return self._send(400, {"error": "iran/node pair not found"})
+
+        peer_host = str(node_srv.get("public_ip") or node_srv.get("host") or "").strip()
+        if not RE_HOST.match(peer_host):
+            return self._send(400, {"error": "node host invalid"})
+
+        prof_b64 = ""
+        if d.get("profile") or d.get("profile_id"):
+            prof_obj, perr = self._resolve_tuner_profile_spec(d)
+            if perr:
+                return self._send(400, {"error": perr})
+            prof_b64 = _tuner_profile_mod().encode_profile_b64(prof_obj)
+
+        job_id = "job_" + secrets.token_hex(6)
+        sess_tok = secrets.token_hex(16)
+        raw_tags = d.get("tags") if isinstance(d.get("tags"), dict) else {}
+        tags = {str(k): str(v) for k, v in raw_tags.items() if str(v or "").strip()}
+
+        start_cmd = build_node_cmd("bench_listen_start", {"port": port, "data_port": port + 1 if port < 65535 else 29891, "token": sess_tok, "idle_timeout": 900})
+        if prof_b64:
+            run_cmd = build_iran_cmd("bench_test_profile", {"peer": f"{peer_host}:{port}", "token": sess_tok, "profile": prof_b64, "mode": mode, "goal": goal})
+        else:
+            act = "bench_run_safe" if mode == "safe" else "bench_run_brutal"
+            run_cmd = build_iran_cmd(act, {"peer": f"{peer_host}:{port}", "token": sess_tok, "goal": goal, "deep": deep, "job_id": job_id, "tags": tags})
+        stop_cmd = build_node_cmd("bench_listen_stop", {})
+        if not start_cmd or not run_cmd or not stop_cmd:
+            return self._send(400, {"error": "failed to build validated bench command"})
+
+        user_actor = self._user()
+        job_rec = {
+            "job_id": job_id, "iran": iran_name, "node": node_name,
+            "mode": mode, "goal": goal, "deep": deep, "kind": ("test-profile" if prof_b64 else "sweep"),
+            "status": "running", "phase": "starting", "stage_index": 0, "stage_total": 6,
+            "completed_trials": 0, "estimated_trials": 12, "best_so_far": 0.0,
+            "created_at": int(time.time()), "elapsed_s": 0.0, "result": None, "error": None, "cancelled": False,
+        }
+        with _tuner_jobs_lock:
+            if len(_TUNER_JOBS) > 30:
+                oldest = sorted(_TUNER_JOBS.items(), key=lambda kv: kv[1].get("created_at", 0))[0][0]
+                _TUNER_JOBS.pop(oldest, None)
+            _TUNER_JOBS[job_id] = job_rec
+
+        def _worker():
+            t0 = time.monotonic()
+            done_flag = threading.Event()
+            try:
+                lr = run_on_server(node_srv, start_cmd, timeout=30)
+                if lr.get("rc") != 0:
+                    raise RuntimeError(lr.get("err") or lr.get("out") or "failed to start peer responder")
+
+                def _poll_prog():
+                    job_cmd = build_iran_cmd("bench_job", {"id": job_id})
+                    while not done_flag.wait(3.0):
+                        if MOCK:
+                            continue
+                        with _tuner_jobs_lock:
+                            if _TUNER_JOBS.get(job_id, {}).get("cancelled"):
+                                break
+                        pr = run_on_server(iran_srv, job_cmd, timeout=10)
+                        if pr.get("rc") == 0 and pr.get("out"):
+                            try:
+                                pdata = json.loads(pr["out"])
+                                with _tuner_jobs_lock:
+                                    j = _TUNER_JOBS.get(job_id)
+                                    if j and j["status"] == "running":
+                                        for fk in ("phase", "stage_index", "stage_total", "completed_trials", "estimated_trials", "best_so_far"):
+                                            if fk in pdata:
+                                                j[fk] = pdata[fk]
+                                        j["elapsed_s"] = round(time.monotonic() - t0, 1)
+                            except Exception:
+                                pass
+
+                pt = threading.Thread(target=_poll_prog, daemon=True)
+                pt.start()
+                rr = run_on_server(iran_srv, run_cmd, timeout=900)
+                done_flag.set()
+                pt.join(timeout=1.5)
+                if rr.get("rc") != 0:
+                    raise RuntimeError(rr.get("err") or rr.get("out") or "benchmark failed")
+                parsed = json.loads((rr.get("out") or "").strip())
+                with _tuner_jobs_lock:
+                    j = _TUNER_JOBS.get(job_id)
+                    if j and not j.get("cancelled"):
+                        j["status"] = "done"
+                        j["phase"] = "completed"
+                        j["stage_index"] = 6
+                        j["elapsed_s"] = round(time.monotonic() - t0, 2)
+                        j["result"] = parsed
+                audit_log(user_actor, f"{iran_name}->{node_name}", "tuner_run", f"{mode}/{goal}", 0)
+            except Exception as exc:
+                done_flag.set()
+                with _tuner_jobs_lock:
+                    j = _TUNER_JOBS.get(job_id)
+                    if j and not j.get("cancelled"):
+                        j["status"] = "error"
+                        j["phase"] = "error"
+                        j["error"] = str(exc)[:300]
+                        j["elapsed_s"] = round(time.monotonic() - t0, 2)
+                audit_log(user_actor, f"{iran_name}->{node_name}", "tuner_run", str(exc)[:120], 1)
+            finally:
+                try:
+                    run_on_server(node_srv, stop_cmd, timeout=15)
+                except Exception:
+                    pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return self._send(202, {"ok": True, "job_id": job_id, "job": job_rec})
+
+    def _tuner_profiles_list(self):
+        return self._send(200, {"profiles": self._load_tuner_profiles()})
+
+    def _tuner_profiles_import(self, d):
+        d = d if isinstance(d, dict) else {}
+        prof_obj, perr = self._resolve_tuner_profile_spec(d)
+        if perr:
+            return self._send(400, {"error": perr})
+        prof_mod = _tuner_profile_mod()
+        name = str(d.get("name") or (prof_obj.get("meta") or {}).get("name") or "custom").strip()[:80]
+        if name:
+            prof_obj["meta"]["name"] = name
+        raw_tags = d.get("tags")
+        if isinstance(raw_tags, dict):
+            prof_obj["meta"].setdefault("tags", {}).update({str(k): str(v) for k, v in raw_tags.items() if v})
+        prof_obj["integrity"] = {"sha256": prof_mod.compute_integrity_sha256(prof_obj)}
+        b64 = prof_mod.encode_profile_b64(prof_obj)
+        entry_id = str((prof_obj.get("meta") or {}).get("id") or f"prof_{secrets.token_hex(6)}")
+        entry = {
+            "id": entry_id,
+            "name": prof_obj["meta"]["name"],
+            "tags": prof_obj["meta"].get("tags") or {},
+            "goal": prof_obj["meta"].get("goal", "balanced"),
+            "created_at": prof_obj["meta"].get("created_at"),
+            "sha256": prof_obj["integrity"]["sha256"],
+            "summary": ((prof_obj.get("benchmarks") or {}).get("winner") or {}),
+            "profile": prof_obj,
+            "profile_b64": b64,
+        }
+        items = [x for x in self._load_tuner_profiles() if x.get("id") != entry_id]
+        items.insert(0, entry)
+        self._save_tuner_profiles(items[:100])
+        audit_log(self._user(), "-", "tuner_profile_save", name, 0)
+        return self._send(200, {"ok": True, "profile": entry})
+
+    def _tuner_profiles_delete(self, pid):
+        items = self._load_tuner_profiles()
+        new_items = [x for x in items if x.get("id") != pid]
+        if len(new_items) == len(items):
+            return self._send(404, {"error": "profile not found"})
+        self._save_tuner_profiles(new_items)
+        audit_log(self._user(), "-", "tuner_profile_delete", pid, 0)
+        return self._send(200, {"ok": True})
+
+    def _tuner_apply(self, d):
+        d = d if isinstance(d, dict) else {}
+        iran_name = str(d.get("iran", "") or "")
+        node_name = str(d.get("node", "") or "")
+        if not RE_NAME.match(iran_name) or not RE_NAME.match(node_name):
+            return self._send(400, {"error": "invalid iran or node server name"})
+        iran_srv = self._find(iran_name)
+        node_srv = self._find(node_name)
+        if not iran_srv or iran_srv.get("role") != "iran" or not node_srv or node_srv.get("role") != "node":
+            return self._send(400, {"error": "iran/node pair not found"})
+        prof_obj, perr = self._resolve_tuner_profile_spec(d)
+        if perr:
+            return self._send(400, {"error": perr})
+        b64 = _tuner_profile_mod().encode_profile_b64(prof_obj)
+        ir_cmd = build_iran_cmd("bench_apply", {"profile": b64, "side": "iran"})
+        nd_cmd = build_node_cmd("bench_apply", {"profile": b64, "side": "node"})
+        r_ir = run_on_server(iran_srv, ir_cmd, timeout=60)
+        if r_ir.get("rc") != 0:
+            audit_log(self._user(), iran_name, "tuner_apply", r_ir.get("err") or "failed", r_ir.get("rc", 1))
+            return self._send(200, {"ok": False, "iran": r_ir, "error": r_ir.get("err") or r_ir.get("out")})
+        r_nd = run_on_server(node_srv, nd_cmd, timeout=60)
+        if r_nd.get("rc") != 0:
+            # Rollback Iran cleanly so fleet does not stay half-applied
+            rb_cmd = build_iran_cmd("bench_rollback", {})
+            run_on_server(iran_srv, rb_cmd, timeout=30)
+            audit_log(self._user(), node_name, "tuner_apply", "node failed; rolled back iran", r_nd.get("rc", 1))
+            return self._send(200, {"ok": False, "iran": r_ir, "node": r_nd, "rolled_back_iran": True, "error": r_nd.get("err") or r_nd.get("out")})
+        audit_log(self._user(), f"{iran_name}+{node_name}", "tuner_apply", (prof_obj.get("meta") or {}).get("name", "profile"), 0)
+        return self._send(200, {"ok": True, "iran": r_ir, "node": r_nd})
+
+    def _tuner_rollback(self, d):
+        d = d if isinstance(d, dict) else {}
+        iran_name = str(d.get("iran", "") or "")
+        node_name = str(d.get("node", "") or "")
+        results = {}
+        ok_all = True
+        for role_k, sname, builder in (("iran", iran_name, build_iran_cmd), ("node", node_name, build_node_cmd)):
+            if not sname:
+                continue
+            if not RE_NAME.match(sname):
+                return self._send(400, {"error": f"invalid {role_k} name"})
+            srv = self._find(sname)
+            if not srv:
+                return self._send(404, {"error": f"{role_k} server not found"})
+            cmd = builder("bench_rollback", {})
+            res = run_on_server(srv, cmd, timeout=45)
+            results[role_k] = res
+            if res.get("rc") != 0:
+                ok_all = False
+        audit_log(self._user(), f"{iran_name}+{node_name}", "tuner_rollback", "rollback", 0 if ok_all else 1)
+        return self._send(200, {"ok": ok_all, **results})
 
 
 # ---------- UI (az disk، na inline) ----------

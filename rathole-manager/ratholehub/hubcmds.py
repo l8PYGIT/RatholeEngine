@@ -64,6 +64,11 @@ RE_UUID        = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9
 RE_HEX_SID     = re.compile(r"^[A-Fa-f0-9]{2,16}\Z")
 RE_B64URL      = re.compile(r"^[A-Za-z0-9_-]{40,50}\Z")
 RE_DOMAINS_CSV = re.compile(r"^[A-Za-z0-9.-]+(?:,[A-Za-z0-9.-]+){0,31}\Z")
+RE_TUNER_MODE    = re.compile(r"^(brutal|safe)\Z")
+RE_TUNER_GOAL    = re.compile(r"^(balanced|low-latency|max-throughput|anti-loss)\Z")
+RE_TUNER_PROFILE = re.compile(r"^rthprof1:[A-Za-z0-9_-]{16,65536}\Z")
+RE_TUNER_SIDE    = re.compile(r"^(iran|node)\Z")
+RE_TAG_STR       = re.compile(r"^[A-Za-z0-9_.:/-]{1,120}\Z")
 
 
 def _valid_ip(val):
@@ -87,9 +92,9 @@ def _valid_mtu(val):
 _INT_OK_KEYS = frozenset({
     "port", "inbound", "api_port", "remote_port", "lines",
     "interval", "failures", "recoveries", "value", "gre_key", "mtu", "count", "rev",
-    "conn", "top", "timeout",
+    "conn", "top", "timeout", "idle_timeout", "data_port",
 })
-_BOOL_OK_KEYS = frozenset({"probe_candidates", "allow_insecure", "tls_verify", "proxy_protocol", "tls"})
+_BOOL_OK_KEYS = frozenset({"probe_candidates", "allow_insecure", "tls_verify", "proxy_protocol", "tls", "deep"})
 
 class _SafeArgs(dict):
     # wrapper baraye dict: vorodi-haye gheyre-string (list/dict/bool/int baraye esm) be '\x00'
@@ -119,6 +124,74 @@ class _SafeArgs(dict):
 # adad HAMISHE sabet ast — hich vorodi-ye karbar be inja nemiresad.
 def _diag(argv, secs=90):
     return ["timeout", str(int(secs))] + argv
+
+
+def _build_bench_cmd(cli_bin, default_side, action, a):
+    if action == "bench_status":
+        return [cli_bin, "bench", "status", "--json"]
+    if action == "bench_job":
+        jid = a.get("id", "")
+        if not RE_ID.match(jid): return None
+        return [cli_bin, "bench", "job", jid]
+    if action == "bench_listen_start":
+        port = str(a.get("port", "") or "29890")
+        dport = str(a.get("data_port", "") or "29891")
+        token = a.get("token", "")
+        idle = str(a.get("idle_timeout", "") or "900")
+        if not RE_PORT.match(port) or not RE_PORT.match(dport) or not RE_KEY.match(token):
+            return None
+        if not idle.isdigit() or not (60 <= int(idle) <= 3600):
+            return None
+        return [cli_bin, "bench", "listen", "--daemon", "--port", port, "--data-port", dport, "--token", token, "--idle-timeout", idle]
+    if action == "bench_listen_stop":
+        return [cli_bin, "bench", "stop-listen"]
+    if action in ("bench_run_safe", "bench_run_brutal"):
+        peer = a.get("peer", "")
+        token = a.get("token", "")
+        goal = a.get("goal", "balanced") or "balanced"
+        mode = "safe" if action == "bench_run_safe" else "brutal"
+        if not RE_IPPORT.match(peer) or not RE_KEY.match(token) or not RE_TUNER_GOAL.match(goal):
+            return None
+        cmd = [cli_bin, "bench", "run", "--peer", peer, "--token", token, "--mode", mode, "--goal", goal]
+        deep = str(a.get("deep", "") or "").lower()
+        if deep in ("1", "true", "yes"):
+            cmd.append("--deep")
+        jid = str(a.get("job_id", "") or "").strip()
+        if jid:
+            if not RE_ID.match(jid): return None
+            cmd += ["--job-id", jid]
+        raw_tags = dict.get(a, "tags") if isinstance(a, dict) else None
+        if isinstance(raw_tags, dict):
+            for tk, tv in list(raw_tags.items())[:8]:
+                s_k = str(tk or "").strip()
+                s_v = str(tv or "").strip()
+                if not s_v:
+                    continue
+                if not RE_NAME.match(s_k) or not RE_TAG_STR.match(s_v):
+                    return None
+                cmd += ["--tag", f"{s_k}:{s_v}"]
+        cmd += ["--side", default_side, "--json"]
+        return cmd
+    if action == "bench_test_profile":
+        peer = a.get("peer", "")
+        token = a.get("token", "")
+        prof = a.get("profile", "")
+        mode = a.get("mode", "brutal") or "brutal"
+        goal = a.get("goal", "balanced") or "balanced"
+        if not RE_IPPORT.match(peer) or not RE_KEY.match(token):
+            return None
+        if not RE_TUNER_PROFILE.match(prof) or not RE_TUNER_MODE.match(mode) or not RE_TUNER_GOAL.match(goal):
+            return None
+        return [cli_bin, "bench", "test-profile", "--peer", peer, "--token", token, "--profile", prof, "--mode", mode, "--goal", goal, "--json"]
+    if action == "bench_apply":
+        prof = a.get("profile", "")
+        side = a.get("side", default_side) or default_side
+        if not RE_TUNER_PROFILE.match(prof) or not RE_TUNER_SIDE.match(side):
+            return None
+        return [cli_bin, "bench", "apply", prof, "--side", side, "--json"]
+    if action == "bench_rollback":
+        return [cli_bin, "bench", "rollback", "--json"]
+    return None
 
 # ---------- whitelist dstvrha (bedoon shl dlkhvah) ----------
 # har action → sazndhi argumenthaye amn. brmigrdand list arg baraye CLI.
@@ -495,6 +568,8 @@ def build_iran_cmd(action, a):
             cmd += ["--timeout", timeout_v]
         cmd.append("--json")
         return cmd
+    if action.startswith("bench_"):
+        return _build_bench_cmd("ratholectl", "iran", action, a)
     return None
 
 def build_node_cmd(action, a):
@@ -921,6 +996,8 @@ def build_node_cmd(action, a):
         elif pp_v not in ("", "0", "false", "no"):
             return None
         return cmd
+    if action.startswith("bench_"):
+        return _build_bench_cmd("ratholenode", "node", action, a)
     return None
 
 
@@ -951,6 +1028,8 @@ WRITE_ACTIONS = {
     "adaptive_on", "adaptive_off", "adaptive_run",
     "endpoints_add", "endpoints_rm", "endpoints_switch",
     "xray_setup", "xray_off",
+    "bench_listen_start", "bench_listen_stop", "bench_run_safe", "bench_run_brutal",
+    "bench_test_profile", "bench_apply", "bench_rollback",
 
 }
 

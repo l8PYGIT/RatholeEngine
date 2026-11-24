@@ -4154,6 +4154,7 @@ dstvrha:
   doctor                       barresi slamt system va tmaiz sait fik/rthvl
   logs [n] [--bundle]          log-e HAME chiz (service-ha + nginx + config-ha + doctor) — token-ha redact mishavand; --bundle = file-e .txt.gz baraye scp
   tune                         eemal BBR + limithaye system/nginx (rfa 502 zir burst)
+  bench <listen|stop-listen|run|test-profile|compare|export|validate|apply|rollback|status> ...   benchmarck bi-rahm-e MTU/MSS/kernel/carrier + profil-e rthprof1
   fakeweb <start|stop|rm|status> [port]   sait fik pishfarz rooye fake_port (rfa 502 rooye / dar srvrhai rlh)
   hub <on [port]|off|status>   panel web psht nginx zir haman damnh (masir pishfarz /hub/ — ba `set hub-path` avaz mishavad); bar-e aval hub ra khodkar nasb mikonad, baad faghat port avaz mikonad
   kcp <on [port] [profile]|off|status|show>   tunnel UDP+FEC ba estetar (port 443=QUIC; profile: balanced/lossy/aggressive)
@@ -4299,6 +4300,7 @@ main(){
     doctor) cmd_doctor ;;
     logs)   cmd_logs "$@" ;;
     tune)   cmd_tune ;;
+    bench)  rth_bench_exec iran "$@" ;;
     fakeweb) cmd_fakeweb "${1:-}" "${2:-}" ;;
     agent)  cmd_agent "$@" ;;
     hub)    cmd_hub "${1:-}" "${2:-}" ;;
@@ -4363,4 +4365,10 @@ rth_with_lock(){
   return $rc
 }
 
-if [ "${RATHOLECTL_LIB_ONLY:-0}" != 1 ]; then rth_with_lock main "$@"; fi
+if [ "${RATHOLECTL_LIB_ONLY:-0}" != 1 ]; then
+  if [ "${1:-}" = "bench" ]; then
+    main "$@"
+  else
+    rth_with_lock main "$@"
+  fi
+fi

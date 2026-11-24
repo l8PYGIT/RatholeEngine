@@ -1620,3 +1620,120 @@ else:
         print("\n[!] hich cover site ba TLSv1.3 + cert motabar peyda nashod.")
 PY
 }
+
+# ---------------------------------------------------------------------------
+# rathole-tuner CLI wrapper (moshtarak beyn-e ratholectl va ratholenode)
+# ---------------------------------------------------------------------------
+rth_bench_exec(){ # $1=role (iran|node) $2=subcommand $@=args
+  local role="$1"; shift || true
+  local sub="${1:-status}"; shift || true
+  local pidfile="${RATHOLE_TUNER_PIDFILE:-/run/rathole-tuner-responder.pid}"
+  local logfile="${RATHOLE_TUNER_LOG:-/var/log/rathole-tuner-responder.log}"
+  local jobs_dir="${RATHOLE_TUNER_JOBS_DIR:-/var/lib/rathole-tuner/jobs}"
+
+  if [ "$sub" = "stop-listen" ]; then
+    need_root
+    if [ -f "$pidfile" ]; then
+      local pid=""
+      pid="$(tr -d '[:space:]' < "$pidfile" 2>/dev/null || true)"
+      if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        local w=0
+        while [ "$w" -lt 30 ] && kill -0 "$pid" 2>/dev/null; do
+          w=$((w + 1)); sleep 0.1
+        done
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+      rm -f "$pidfile"
+    fi
+    echo '{"ok":true,"stopped":true}'
+    return 0
+  fi
+
+  if [ "$sub" = "job" ]; then
+    local jid="${1:-}"
+    [[ "$jid" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || die "job_id namotabar ast."
+    local pf="${jobs_dir}/${jid}/progress.json"
+    if [ -f "$pf" ]; then
+      cat "$pf"
+    else
+      printf '{"ok":false,"job_id":"%s","detail":"progress not found"}\n' "$jid"
+    fi
+    return 0
+  fi
+
+  command -v python3 >/dev/null 2>&1 || die "python3 baraye rathole-tuner lazem ast."
+  local tbin="" cand self_dir=""
+  [ -n "${BASH_SOURCE[0]:-}" ] && self_dir="${BASH_SOURCE[0]%/*}"
+  for cand in "${RATHOLE_TUNER_BIN:-}" /usr/local/bin/rathole-tuner "${self_dir:+$self_dir/rathole-tuner}" /opt/rathole-manager/rathole-tuner; do
+    if [ -n "$cand" ] && [ -f "$cand" ]; then
+      tbin="$cand"
+      break
+    fi
+  done
+  [ -n "$tbin" ] || die "rathole-tuner peyda nashod."
+
+  case "$sub" in
+    listen)
+      need_root
+      local is_daemon=0 arg port_hint="29890" prev=""
+      local -a fwd_args=()
+      for arg in "$@"; do
+        if [ "$arg" = "--daemon" ]; then
+          is_daemon=1
+        else
+          fwd_args+=("$arg")
+        fi
+        [ "$prev" = "--port" ] && port_hint="$arg"
+        prev="$arg"
+      done
+      if [ "$is_daemon" -eq 1 ]; then
+        if [ -f "$pidfile" ]; then
+          local old_pid=""
+          old_pid="$(tr -d '[:space:]' < "$pidfile" 2>/dev/null || true)"
+          if [[ "$old_pid" =~ ^[0-9]+$ ]] && kill -0 "$old_pid" 2>/dev/null; then
+            kill "$old_pid" 2>/dev/null || true
+            sleep 0.2
+          fi
+          rm -f "$pidfile"
+        fi
+        mkdir -p "$(dirname "$pidfile")" "$(dirname "$logfile")" 2>/dev/null || true
+        setsid python3 "$tbin" listen "${fwd_args[@]}" --pidfile "$pidfile" >"$logfile" 2>&1 < /dev/null &
+        local spawned_pid=$! i=0 ready=0
+        while [ "$i" -lt 30 ]; do
+          if [ -s "$pidfile" ]; then
+            ready=1; break
+          fi
+          kill -0 "$spawned_pid" 2>/dev/null || break
+          i=$((i + 1)); sleep 0.1
+        done
+        if [ "$ready" -eq 1 ]; then
+          printf '{"ok":true,"pid":%s,"port":%s}\n' "$(tr -d '[:space:]' < "$pidfile" 2>/dev/null || echo "$spawned_pid")" "$port_hint"
+          return 0
+        fi
+        err "responder daemon bala nayamad:"
+        tail -n 10 "$logfile" >&2 2>/dev/null || true
+        return 1
+      fi
+      python3 "$tbin" listen "${fwd_args[@]}"
+      ;;
+    run|test-profile|compare|apply|rollback)
+      need_root
+      local has_side=0 a
+      for a in "$@"; do
+        [ "$a" = "--side" ] && has_side=1
+      done
+      if { [ "$sub" = "run" ] || [ "$sub" = "apply" ]; } && [ "$has_side" -eq 0 ]; then
+        python3 "$tbin" "$sub" "$@" --side "$role"
+      else
+        python3 "$tbin" "$sub" "$@"
+      fi
+      ;;
+    export|validate|status)
+      python3 "$tbin" "$sub" "$@"
+      ;;
+    *)
+      die "zir-dastoor bench nashenakhte: $sub (listen|stop-listen|run|test-profile|compare|export|validate|apply|rollback|status|job)"
+      ;;
+  esac
+}

@@ -165,10 +165,12 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
       case "$role" in
         panel)
           echo /usr/local/bin/ratholectl
+          echo /usr/local/bin/rathole-tuner
           echo /usr/local/share/rathole/common.sh
           echo /usr/local/share/rathole/fakeweb.py
           echo /usr/local/share/rathole/ratholeagent.py
           echo /usr/local/share/rathole/install-agent.sh
+          echo /usr/local/share/rathole/tuner
           echo /etc/rathole-manager
           echo /etc/rathole
           echo /etc/frp
@@ -186,10 +188,12 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           ;;
         node)
           echo /usr/local/bin/ratholenode
+          echo /usr/local/bin/rathole-tuner
           echo /usr/local/share/rathole/common.sh
           echo /usr/local/share/rathole/fakeweb.py
           echo /usr/local/share/rathole/ratholeagent.py
           echo /usr/local/share/rathole/install-agent.sh
+          echo /usr/local/share/rathole/tuner
           echo /etc/rathole
           echo /etc/frp
           echo /etc/paqet
@@ -439,6 +443,16 @@ apply_update(){
     sed -i 's/\r$//' "$SCRIPT_DIR/install-agent.sh"
     install -m 755 "$SCRIPT_DIR/install-agent.sh" /usr/local/share/rathole/install-agent.sh
     ln -sf /usr/local/share/rathole/install-agent.sh /usr/local/bin/install-agent.sh 2>/dev/null || true
+  fi
+
+  if [ -f "$SCRIPT_DIR/rathole-tuner" ]; then
+    sed -i 's/\r$//' "$SCRIPT_DIR/rathole-tuner"
+    install -m 755 "$SCRIPT_DIR/rathole-tuner" /usr/local/bin/rathole-tuner
+  fi
+  if [ -d "$SCRIPT_DIR/tuner" ]; then
+    mkdir -p /usr/local/share/rathole/tuner
+    sed -i 's/\r$//' "$SCRIPT_DIR/tuner/"*.py 2>/dev/null || true
+    install -m 644 "$SCRIPT_DIR/tuner/"*.py /usr/local/share/rathole/tuner/ 2>/dev/null || true
   fi
 
   # core-e backhaul-e patch-shode (uTLS). binary-e backhaul-e nasb-shode az ghabl ba

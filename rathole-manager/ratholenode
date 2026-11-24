@@ -2854,6 +2854,7 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   set-main <server:port> [tls_hostname] [trusted_root]  dial + SNI + public CA atomik
   check                          fght barresi tadakhol port ba nginx node
   tune                           eemal BBR + limithaye system (rfa 502 zir burst)
+  bench <listen|stop-listen|run|test-profile|compare|export|validate|apply|rollback|status> ...   benchmarck bi-rahm-e MTU/MSS/kernel/carrier + profil-e rthprof1
   kcp on <iran_ip:udp_port> <key> [profile] | off | status   switch tunnel be UDP+FEC (kcptun) ba estetar/profile ya bargasht be 443
   plain on <iran_ip:port> | off | status   tunnel-e websocket bedoon-e TLS (mostaghim be port HTTP-e sade rooye Iran)
   noise on <iran_ip:port> <pubkey> [pattern] | off | status   tunnel-e ramznegari-shode (Noise) bedoon-e TLS/cert
@@ -3954,6 +3955,7 @@ main(){
     test)    shift; cmd_test "$@" ;;
     doctor)  cmd_doctor ;;
     tune)    cmd_tune ;;
+    bench)   shift; rth_bench_exec node "$@" ;;
     kcp)     shift; cmd_kcp "$@" ;;
     plain)   shift; cmd_plain "$@" ;;
     noise)   shift; cmd_noise "$@" ;;
@@ -4018,4 +4020,10 @@ rth_with_lock(){
   return $rc
 }
 
-if [ "${RATHOLENODE_LIB_ONLY:-0}" != 1 ]; then rth_with_lock main "$@"; fi
+if [ "${RATHOLENODE_LIB_ONLY:-0}" != 1 ]; then
+  if [ "${1:-}" = "bench" ]; then
+    main "$@"
+  else
+    rth_with_lock main "$@"
+  fi
+fi

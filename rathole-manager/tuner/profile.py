@@ -318,6 +318,8 @@ def _safe_gunzip(gz_bytes: bytes, max_bytes: int = MAX_PROFILE_JSON_BYTES) -> by
     tail = decomp.flush()
     if len(out) + len(tail) > max_bytes:
         raise ProfileValidationError(f"decompressed profile exceeds {max_bytes} bytes limit")
+    if decomp.unused_data:
+        raise ProfileValidationError("trailing bytes after gzip profile archive")
     return out + tail
 
 
@@ -336,6 +338,8 @@ def decode_profile_b64(text: str, verify_sha: bool = True) -> dict:
         gz = base64.urlsafe_b64decode((body + pad).encode("ascii"))
     except Exception as exc:
         raise ProfileValidationError(f"base64url decode failed: {exc}") from exc
+    if base64.urlsafe_b64encode(gz).decode("ascii").rstrip("=") != body:
+        raise ProfileValidationError("non-canonical base64url padding bits")
     try:
         raw = _safe_gunzip(gz, MAX_PROFILE_JSON_BYTES)
         obj = json.loads(raw.decode("utf-8"))

@@ -77,7 +77,7 @@ _INT_OK_KEYS = frozenset({
     "port", "inbound", "api_port", "remote_port", "lines",
     "interval", "failures", "recoveries", "value", "gre_key", "mtu", "count", "rev",
 })
-_BOOL_OK_KEYS = frozenset({"probe_candidates", "allow_insecure"})
+_BOOL_OK_KEYS = frozenset({"probe_candidates", "allow_insecure", "tls_verify"})
 
 class _SafeArgs(dict):
     # wrapper baraye dict: vorodi-haye gheyre-string (list/dict/bool/int baraye esm) be '\x00'
@@ -501,7 +501,21 @@ def build_node_cmd(action, a):
             # ws/wsmux bedoon-e ramz، wss/wssmux ba gvahi-ye self-signed-e samt-e Iran.
             if not RE_IPPORT.match(remote): return None
             if transport not in ("ws", "wsmux", "wss", "wssmux"): return None
-        return ["ratholenode", "backhaul", "on", remote, token, transport, profile]
+        cmd = ["ratholenode", "backhaul", "on", remote, token, transport, profile]
+        tls_ca = str(a.get("tls_ca", "") or "")
+        if tls_ca:
+            if not RE_PATH.match(tls_ca): return None
+            cmd.extend(["--ca", tls_ca])
+        tls_sni = str(a.get("tls_sni", "") or "")
+        if tls_sni:
+            if not RE_HOST.match(tls_sni): return None
+            cmd.extend(["--sni", tls_sni])
+        tv = str(a.get("tls_verify", "") or "").strip().lower()
+        if tv in ("1", "true", "yes"):
+            cmd.append("--verify")
+        elif tv not in ("", "0", "false", "no"):
+            return None
+        return cmd
     if action == "add_bh_svc":
         name = a.get("name", ""); token = a.get("token", ""); inbound = str(a.get("inbound", ""))
         if not RE_NAME.match(name) or not RE_BH_TOK.match(token) or not RE_PORT.match(inbound): return None

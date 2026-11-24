@@ -2,6 +2,8 @@
 *.pem
 *.key
 *.crt
+release-ed25519.key
+*.ed25519.key
 fullchain.pem
 privkey.pem
 /etc/ratholehub/config.json

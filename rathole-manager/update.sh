@@ -447,6 +447,11 @@ apply_update(){
     chmod +x /usr/local/share/rathole/core-backhaul/*/backhaul 2>/dev/null || true
     log "core-e backhaul (uTLS) berooz shod."
   fi
+  if [ -d "$SCRIPT_DIR/keys" ]; then
+    mkdir -p /usr/local/share/rathole/keys
+    cp -rf "$SCRIPT_DIR/keys/." /usr/local/share/rathole/keys/
+    chmod 644 /usr/local/share/rathole/keys/*.pub 2>/dev/null || true
+  fi
 
   # beroozresani abzarhaye CLI
   local t
@@ -590,6 +595,11 @@ UNIT
         sed -i 's/\r$//' "$HUB_DIR/tg_relay.py"
         install -m 644 "$HUB_DIR/tg_relay.py" /opt/ratholehub/tg_relay.py
         log "beroozresani shod: /opt/ratholehub/tg_relay.py"
+      fi
+      if [ -f "$HUB_DIR/hubupdate.py" ]; then
+        sed -i 's/\r$//' "$HUB_DIR/hubupdate.py"
+        install -m 644 "$HUB_DIR/hubupdate.py" /opt/ratholehub/hubupdate.py
+        log "beroozresani shod: /opt/ratholehub/hubupdate.py"
       fi
       if [ -f "$HUB_DIR/monitor.py" ]; then
         sed -i 's/\r$//' "$HUB_DIR/monitor.py"

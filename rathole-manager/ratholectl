@@ -3239,7 +3239,7 @@ print_backhaul_connect(){
   echo "nokte: token moshterak ast va secret — fght be node-haye backhaul bede. mode=${exposure}."
   if [ "$exposure" = direct_ip ]; then
     case "$tr" in
-      wss|wssmux) echo "nokte: gvahi self-signed ast va client an ra verify nemikonad — ramz dar barabar-e shenod-e ghayr-faal hast، MITM-e faal na." ;;
+      wss|wssmux) echo "nokte (zed-e MITM): public cert ra az 'ratholectl ip-cert-show ${ip:-<IRAN_IP>}' rooye node dar /etc/rathole/certs/${ip:-<IRAN_IP>}.crt zakhire kon va ba --ca pass bede (ya 'ratholenode backhaul on ... --ca /etc/rathole/certs/${ip:-<IRAN_IP>}.crt')." ;;
       *)          echo "HOSHDAR: '${tr}' direct-IP TLS NADARAD؛ baraye ramz haman dastoor ba 'wssmux'، ya nginx_tls/443، ya Noise." ;;
     esac
   fi
@@ -3844,33 +3844,59 @@ menu(){
 cmd_update(){
   need_root
   command -v curl >/dev/null 2>&1 || die "curl lazem ast (apt install -y curl)."
-  local gh="${RATHOLE_GH:-l8PYGIT/RatholeEngine}" rel="${RATHOLE_RELEASE:-latest}"
+  local gh="${RATHOLE_GH:-l8PYGIT/RatholeEngine}" rel="${RATHOLE_RELEASE:-latest}" want_beta=0
+  local proxy="${RATHOLE_UPDATE_PROXY:-}" req_sig="${RATHOLE_REQUIRE_SIG:-0}" pubkey="${RATHOLE_SIGNING_PUBKEY:-}"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --proxy)
+        [ $# -ge 2 ] || die "--proxy be URL-e proxy niaz darad."
+        proxy="$2"; shift 2 ;;
+      --proxy=*) proxy="${1#*=}"; shift ;;
+      --require-sig) req_sig=1; shift ;;
+      --pubkey)
+        [ $# -ge 2 ] || die "--pubkey be masir-e kelid-e omumi niaz darad."
+        pubkey="$2"; shift 2 ;;
+      --pubkey=*) pubkey="${1#*=}"; shift ;;
+      beta) want_beta=1; shift ;;
+      stable|latest|'') shift ;;
+      v[0-9]*|[0-9]*) rel="$1"; shift ;;   # pin-e sarih: ratholectl update v1.8.0
+      *) die "estefade: ratholectl update [beta|stable|vX.Y.Z] [--proxy <url>] [--require-sig] [--pubkey <path>]" ;;
+    esac
+  done
+  if [ -n "$proxy" ]; then
+    rth_valid_proxy_url "$proxy" || die "URL-e proxy namotabar ast: $(rth_redact_proxy_url "$proxy")"
+  fi
+  if [ -n "$pubkey" ]; then
+    rth_valid_path "$pubkey" || die "masir kelid-e omumi namotabar ast: '$pubkey'"
+  fi
   # 'ratholectl update beta' → kanal-e pre-release. chon releases/latest/download pre-release ha
   # ra nadide migirad, aval bayad tag-e daghigh ra az atom peyda konim.
-  case "${1:-}" in
-    beta)
-      log "peyda kardan-e akharin noskhe-ye beta..."
-      rel="$(resolve_beta_tag "$gh")" || die "hich noskhe-ye beta-i montasher nashode (ya dastresi be GitHub nist)."
-      warn "kanal-e BETA: $rel — in noskhe azmayeshi ast va momken ast paydar nabashad."
-      ;;
-    stable|latest|'') ;;
-    v[0-9]*|[0-9]*) rel="$1" ;;   # pin-e sarih: ratholectl update v1.8.0
-    *) die "estefade: ratholectl update [beta|stable|vX.Y.Z]" ;;
-  esac
+  if [ "$want_beta" -eq 1 ]; then
+    log "peyda kardan-e akharin noskhe-ye beta..."
+    rel="$(resolve_beta_tag "$gh" "$proxy")" || die "hich noskhe-ye beta-i montasher nashode (ya dastresi be GitHub nist)."
+    warn "kanal-e BETA: $rel — in noskhe azmayeshi ast va momken ast paydar nabashad."
+  fi
   # tag dar URL miayad — etebar-sanji kon (jelogiri az path-traversal/tazrigh dar masir).
   [ "$rel" = "latest" ] || printf '%s' "$rel" | grep -qE '^[0-9A-Za-z._-]+$' \
     || die "tag-e noskhe namotabar: '$rel'."
   local path; if [ "$rel" = "latest" ]; then path="releases/latest/download/install.sh"; else path="releases/download/${rel}/install.sh"; fi
   local mirrors=("" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/")
   local tmp m ok=0; tmp="$(mktemp)"
-  log "download install.sh az GitHub Release: $gh ($rel)..."
-  for m in "${mirrors[@]}"; do
-    if curl -fSL --retry 1 --connect-timeout 15 --speed-limit 1024 --speed-time 20 "${m}https://github.com/${gh}/${path}" -o "$tmp" 2>/dev/null; then ok=1; break; fi
-    [ -n "$m" ] && warn "in mirror javab nadad, badi..."
-  done
+  if [ -n "$proxy" ]; then
+    log "download install.sh az tarigh-e proxy ($(rth_redact_proxy_url "$proxy")): $gh ($rel)..."
+    if printf 'proxy = "%s"\n' "$proxy" | curl --config - -fSL --retry 1 --connect-timeout 15 --speed-limit 1024 --speed-time 20 "https://github.com/${gh}/${path}" -o "$tmp" 2>/dev/null; then
+      ok=1
+    fi
+  else
+    log "download install.sh az GitHub Release: $gh ($rel)..."
+    for m in "${mirrors[@]}"; do
+      if curl -fSL --retry 1 --connect-timeout 15 --speed-limit 1024 --speed-time 20 "${m}https://github.com/${gh}/${path}" -o "$tmp" 2>/dev/null; then ok=1; break; fi
+      [ -n "$m" ] && warn "in mirror javab nadad, badi..."
+    done
+  fi
   [ "$ok" -eq 1 ] || { rm -f "$tmp"; die "download install.sh az hameye mirror-ha shekast khord (filtering/slug/release ra barresi kon)."; }
   log "ejra-ye update-e kamel (snapshot + health-check + rollback-e khodkar)..."
-  RATHOLE_GH="$gh" RATHOLE_RELEASE="$rel" bash "$tmp" --update
+  RATHOLE_GH="$gh" RATHOLE_RELEASE="$rel" RATHOLE_UPDATE_PROXY="$proxy" RATHOLE_REQUIRE_SIG="$req_sig" RATHOLE_SIGNING_PUBKEY="$pubkey" bash "$tmp" --update
   local rc=$?
   rm -f "$tmp"
   return "$rc"
@@ -3929,7 +3955,7 @@ dstvrha:
                                pas node-haye berooz-nashode GHAT NEMISHAVAND.
   restart                      restart kamel rathole-server (tunnelha lhzhai ghat)
   enable                       faalsazi va start rathole-server
-  update [beta|stable|vX.Y.Z]  beroozresani-e kamel az GitHub (snapshot + rollback-e khodkar). 'beta' = akharin pre-release؛ tag = noskhe-ye khas
+  update [beta|stable|vX.Y.Z] [--proxy URL] [--require-sig]  beroozresani-e kamel az GitHub (snapshot + rollback + tayid-e Ed25519)
   version                      chap-e noskhe-ye manager + rathole
   menu                         mnvi taamoli (pishfarz)
 USAGE
@@ -4068,7 +4094,7 @@ main(){
     game)   cmd_game "$@" ;;
     restart) need_root; systemctl restart "$RATHOLE_SVC" && log "$RATHOLE_SVC restart shod (hame tunnelha lhzhai ghat shdnd)." ;;
     enable) need_root; systemctl enable --now "$RATHOLE_SVC"; log "$RATHOLE_SVC faal shod." ;;
-    update) cmd_update "${1:-}" ;;
+    update) cmd_update "$@" ;;
     version|--version|-V) print_version panel ;;
     menu)   menu ;;
     -h|--help|help) usage ;;

@@ -42,7 +42,7 @@ if ! declare -F rth_commit_config >/dev/null 2>&1; then
   exit 1
 fi
 
-NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN ADAPTIVE_CHAIN ADAPTIVE_PROBE_CANDIDATES ADAPTIVE_AUTO_RECOVER PRIMARY_SERVER BACKUP_SERVERS FRP_REMOTE FRP_TOKEN FRP_TRANSPORT FRP_REMOTE_PORT FRP_PROXY_PROTOCOL GRE_REMOTE GRE_TUNNEL_IP GRE_NAME GRE_FAMILY GRE_KEY GRE_MTU"
+NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE BH_TLS_CA BH_TLS_SNI BH_TLS_VERIFY ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN ADAPTIVE_CHAIN ADAPTIVE_PROBE_CANDIDATES ADAPTIVE_AUTO_RECOVER PRIMARY_SERVER BACKUP_SERVERS FRP_REMOTE FRP_TOKEN FRP_TRANSPORT FRP_REMOTE_PORT FRP_PROXY_PROTOCOL GRE_REMOTE GRE_TUNNEL_IP GRE_NAME GRE_FAMILY GRE_KEY GRE_MTU"
 
 load_env_file(){
   local file="$1" line key val old_key
@@ -875,6 +875,20 @@ gen_backhaul_client_toml(){
 }
 
 gen_backhaul_client_unit(){
+  load_env
+  local env_lines="" vname=""
+  if [ -n "${BH_REMOTE_ADDR:-}" ]; then
+    vname="${BH_REMOTE_ADDR%:*}"
+    vname="${vname#[}"; vname="${vname%]}"
+  fi
+  if [ -n "${BH_TLS_CA:-}" ]; then
+    env_lines+="Environment=\"BACKHAUL_TLS_CA=${BH_TLS_CA}\""$'\n'
+    [ -n "$vname" ] && env_lines+="Environment=\"BACKHAUL_TLS_VERIFY_NAME=${vname}\""$'\n'
+  elif [ "${BH_TLS_VERIFY:-0}" = "1" ]; then
+    env_lines+='Environment="BACKHAUL_TLS_VERIFY=1"'$'\n'
+    [ -n "$vname" ] && env_lines+="Environment=\"BACKHAUL_TLS_VERIFY_NAME=${vname}\""$'\n'
+  fi
+  [ -n "${BH_TLS_SNI:-}" ] && env_lines+="Environment=\"BACKHAUL_TLS_SNI=${BH_TLS_SNI}\""$'\n'
   cat > "$BH_CLI_UNIT" <<UNIT
 [Unit]
 Description=backhaul client (SMUX core, foreign node)
@@ -882,7 +896,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/backhaul-client -c ${BH_TOML}
+${env_lines}ExecStart=/usr/local/bin/backhaul-client -c ${BH_TOML}
 Restart=always
 RestartSec=2
 NoNewPrivileges=yes
@@ -966,10 +980,35 @@ cmd_backhaul(){
   local sub="${1:-status}"; shift || true
   case "$sub" in
     on)
-      local target="${1:-}" token="${2:-}" transport="${3:-wssmux}" profile="${4:-balanced}" remote
-      [ -n "$target" ] && [ -n "$token" ] || die "estefade: ratholenode backhaul on <domain|host:port> <token> [wssmux|wss|wsmux|ws] [profile]"
+      local ca="" sni="" want_verify=0 no_verify=0
+      local -a pos=()
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --ca)
+            [ $# -ge 2 ] || die "--ca be masir-e file cert niaz darad."
+            ca="$2"; shift 2 ;;
+          --ca=*) ca="${1#*=}"; shift ;;
+          --sni)
+            [ $# -ge 2 ] || die "--sni be hostname niaz darad."
+            sni="$2"; shift 2 ;;
+          --sni=*) sni="${1#*=}"; shift ;;
+          --verify) want_verify=1; shift ;;
+          --no-verify) no_verify=1; shift ;;
+          *) pos+=("$1"); shift ;;
+        esac
+      done
+      [ "${#pos[@]}" -le 4 ] || die "estefade: ratholenode backhaul on <domain|host:port> <token> [wssmux|wss|wsmux|ws] [profile] [--ca <path>] [--sni <host>] [--verify|--no-verify]"
+      local target="${pos[0]:-}" token="${pos[1]:-}" transport="${pos[2]:-wssmux}" profile="${pos[3]:-balanced}" remote
+      [ -n "$target" ] && [ -n "$token" ] || die "estefade: ratholenode backhaul on <domain|host:port> <token> [wssmux|wss|wsmux|ws] [profile] [--ca <path>] [--sni <host>] [--verify|--no-verify]"
       echo "$target" | grep -qE '^[A-Za-z0-9_.-]+(:[0-9]{1,5})?$' || die "endpoint namotabar ast."
       echo "$token" | grep -qE '^[A-Za-z0-9._=+/-]+$' || die "token namotabar ast."
+      if [ -n "$ca" ]; then
+        rth_valid_path "$ca" || die "masir CA namotabar ast: $ca"
+        [ -s "$ca" ] || die "file CA peyda nashod ya khali ast: $ca"
+      fi
+      if [ -n "$sni" ]; then
+        echo "$sni" | grep -qE '^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$' || die "SNI namotabar ast."
+      fi
       # domain-e bedoon port = masir-e ghadimi TLS/443; endpoint-e port-dar mitavanad direct-IP bashad.
       case "$transport" in
         wss|wssmux) remote="$target"; echo "$target" | grep -q ':' || remote="${target}:443" ;;
@@ -978,12 +1017,46 @@ cmd_backhaul(){
       esac
       # profile bayad ba samt-e Iran YEKSAN bashad vagarna parametrhaye SMUX nemikhanand.
       backhaul_mux_profile "$profile" >/dev/null || die "profile namotabar (balanced|lossy|aggressive)."
+      load_env
+      local rhost="${remote%:*}" final_ca="" final_verify="" cand
+      case "$transport" in
+        wss|wssmux)
+          if [ "$no_verify" -eq 1 ]; then
+            final_ca=""; final_verify=""
+          elif echo "$rhost" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+            if [ -n "$ca" ]; then
+              final_ca="$ca"
+            else
+              for cand in "${TLS_TRUSTED_ROOT:-}" "/etc/rathole/certs/${rhost}.crt" "/etc/rathole/ip-root-ca.crt"; do
+                [ -n "$cand" ] && [ -s "$cand" ] || continue
+                if command -v openssl >/dev/null 2>&1; then
+                  openssl x509 -in "$cand" -noout -checkip "$rhost" >/dev/null 2>&1 && { final_ca="$cand"; break; }
+                elif [ "$cand" = "/etc/rathole/certs/${rhost}.crt" ]; then
+                  final_ca="$cand"; break
+                fi
+              done
+            fi
+            [ -n "$final_ca" ] && final_verify="1"
+          else
+            if [ -n "$ca" ]; then
+              final_ca="$ca"; final_verify="1"
+            elif [ "$want_verify" -eq 1 ] || [ "$no_verify" -eq 0 ]; then
+              final_verify="1"
+            fi
+          fi
+          ;;
+        ws|wsmux)
+          final_ca=""; final_verify=""; sni="" ;;
+      esac
       install_backhaul client || return 1
       env_set BH_REMOTE_ADDR "$remote"
       sed -i '/^BH_REMOTE=/d' "$ENV_FILE" 2>/dev/null || true
       env_set BH_TOKEN "$token"
       env_set BH_TRANSPORT "$transport"
       env_set BH_PROFILE "$profile"
+      if [ -n "$final_ca" ]; then env_set BH_TLS_CA "$final_ca"; else sed -i '/^BH_TLS_CA=/d' "$ENV_FILE" 2>/dev/null || true; fi
+      if [ -n "$final_verify" ]; then env_set BH_TLS_VERIFY "$final_verify"; else sed -i '/^BH_TLS_VERIFY=/d' "$ENV_FILE" 2>/dev/null || true; fi
+      if [ -n "$sni" ]; then env_set BH_TLS_SNI "$sni"; else sed -i '/^BH_TLS_SNI=/d' "$ENV_FILE" 2>/dev/null || true; fi
       gen_backhaul_client_toml || return 1
       gen_backhaul_client_unit || return 1
       systemctl enable "$BH_CLI_SVC" >/dev/null 2>&1 || true
@@ -991,11 +1064,13 @@ cmd_backhaul(){
       case "$transport" in
         ws|wsmux) warn "in masir TLS nadarad؛ baraye ramznegari/camouflage az wss/wssmux ya Noise estefade kon." ;;
         wss|wssmux)
-          # be IP-e khali yaani gvahi-ye self-signed-e samt-e Iran. client-e backhaul gvahi ra
-          # verify NEMIKONAD (InsecureSkipVerify dar upstream) — in ra sarih begoo ta operator
-          # khial nakonad hefazat dar barabar-e MITM-e faal ham darad.
-          echo "$remote" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}:' && \
-            warn "TLS be IP-e khali: gvahi verify NEMISHAVAD — ramz dar barabar-e shenod-e ghayr-faal bargharar ast، vali MITM-e faal daf nemishavad." ;;
+          if [ -n "$final_ca" ]; then
+            log "TLS pin faal shod (zed-e MITM): CA=${final_ca} (verify=${rhost})"
+          elif [ "$final_verify" = "1" ]; then
+            log "TLS ba CA-ye system verify mishavad (verify=${rhost})."
+          elif echo "$remote" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}:'; then
+            warn "TLS be IP-e khali bedoon-e pin: gvahi verify NEMISHAVAD — baraye daf-e MITM gvahi-ye 'ratholectl ip-cert-show' ra pin kon: --ca /etc/rathole/certs/${rhost}.crt"
+          fi ;;
       esac
       start_rathole_lane_if_present || return 1
       if ! svc_file_has_entries "$BH_SVC_FILE"; then
@@ -1009,7 +1084,7 @@ cmd_backhaul(){
       systemctl disable --now "$BH_CLI_SVC" 2>/dev/null || true
       rm -f "$BH_CLI_UNIT" "$BH_TOML"; systemctl daemon-reload 2>/dev/null || true
       # pak kardan env-haye backhaul az node.env
-      sed -i '/^BH_REMOTE=/d;/^BH_REMOTE_ADDR=/d;/^BH_TOKEN=/d;/^BH_TRANSPORT=/d;/^BH_PROFILE=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^BH_REMOTE=/d;/^BH_REMOTE_ADDR=/d;/^BH_TOKEN=/d;/^BH_TRANSPORT=/d;/^BH_PROFILE=/d;/^BH_TLS_CA=/d;/^BH_TLS_SNI=/d;/^BH_TLS_VERIFY=/d' "$ENV_FILE" 2>/dev/null || true
       # migration-e state-e ghadimi: TUNNEL=backhaul dige jozv carrier-haye rathole nist.
       [ "$old_mode" = "backhaul" ] && env_set TUNNEL ws
       start_rathole_lane_if_present || return 1
@@ -1022,7 +1097,10 @@ cmd_backhaul(){
     status)
       load_env
       if systemctl is-active --quiet "$BH_CLI_SVC"; then
-        echo "backhaul client: $(c_g 'active')  → ${BH_REMOTE_ADDR:-${BH_REMOTE:-?}:443} (transport=${BH_TRANSPORT:-wssmux}, profile=${BH_PROFILE:-balanced}, services=$(grep -cvE '^[[:space:]]*(#|$)' "$BH_SVC_FILE" 2>/dev/null || echo 0))"
+        local _tv="off"
+        [ -n "${BH_TLS_CA:-}" ] && _tv="pinned(${BH_TLS_CA})"
+        [ -z "${BH_TLS_CA:-}" ] && [ "${BH_TLS_VERIFY:-0}" = "1" ] && _tv="system"
+        echo "backhaul client: $(c_g 'active')  → ${BH_REMOTE_ADDR:-${BH_REMOTE:-?}:443} (transport=${BH_TRANSPORT:-wssmux}, profile=${BH_PROFILE:-balanced}, tls_verify=${_tv}, services=$(grep -cvE '^[[:space:]]*(#|$)' "$BH_SVC_FILE" 2>/dev/null || echo 0))"
       else
         echo "backhaul client: $(c_y 'inactive')"
       fi
@@ -2249,32 +2327,58 @@ cmd_migrate(){
 cmd_update(){
   need_root
   command -v curl >/dev/null 2>&1 || die "curl lazem ast (apt install -y curl)."
-  local gh="${RATHOLE_GH:-l8PYGIT/RatholeEngine}" rel="${RATHOLE_RELEASE:-latest}"
+  local gh="${RATHOLE_GH:-l8PYGIT/RatholeEngine}" rel="${RATHOLE_RELEASE:-latest}" want_beta=0
+  local proxy="${RATHOLE_UPDATE_PROXY:-}" req_sig="${RATHOLE_REQUIRE_SIG:-0}" pubkey="${RATHOLE_SIGNING_PUBKEY:-}"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --proxy)
+        [ $# -ge 2 ] || die "--proxy be URL-e proxy niaz darad."
+        proxy="$2"; shift 2 ;;
+      --proxy=*) proxy="${1#*=}"; shift ;;
+      --require-sig) req_sig=1; shift ;;
+      --pubkey)
+        [ $# -ge 2 ] || die "--pubkey be masir-e kelid-e omumi niaz darad."
+        pubkey="$2"; shift 2 ;;
+      --pubkey=*) pubkey="${1#*=}"; shift ;;
+      beta) want_beta=1; shift ;;
+      stable|latest|'') shift ;;
+      v[0-9]*|[0-9]*) rel="$1"; shift ;;   # pin-e sarih: ratholenode update v1.8.0
+      *) die "estefade: ratholenode update [beta|stable|vX.Y.Z] [--proxy <url>] [--require-sig] [--pubkey <path>]" ;;
+    esac
+  done
+  if [ -n "$proxy" ]; then
+    rth_valid_proxy_url "$proxy" || die "URL-e proxy namotabar ast: $(rth_redact_proxy_url "$proxy")"
+  fi
+  if [ -n "$pubkey" ]; then
+    rth_valid_path "$pubkey" || die "masir kelid-e omumi namotabar ast: '$pubkey'"
+  fi
   # 'ratholenode update beta' → kanal-e pre-release (releases/latest/download an ra nadide migirad).
-  case "${1:-}" in
-    beta)
-      log "peyda kardan-e akharin noskhe-ye beta..."
-      rel="$(resolve_beta_tag "$gh")" || die "hich noskhe-ye beta-i montasher nashode (ya dastresi be GitHub nist)."
-      warn "kanal-e BETA: $rel — in noskhe azmayeshi ast va momken ast paydar nabashad."
-      ;;
-    stable|latest|'') ;;
-    v[0-9]*|[0-9]*) rel="$1" ;;   # pin-e sarih: ratholenode update v1.8.0
-    *) die "estefade: ratholenode update [beta|stable|vX.Y.Z]" ;;
-  esac
+  if [ "$want_beta" -eq 1 ]; then
+    log "peyda kardan-e akharin noskhe-ye beta..."
+    rel="$(resolve_beta_tag "$gh" "$proxy")" || die "hich noskhe-ye beta-i montasher nashode (ya dastresi be GitHub nist)."
+    warn "kanal-e BETA: $rel — in noskhe azmayeshi ast va momken ast paydar nabashad."
+  fi
   # tag dar URL miayad — etebar-sanji kon (jelogiri az path-traversal/tazrigh dar masir).
   [ "$rel" = "latest" ] || printf '%s' "$rel" | grep -qE '^[0-9A-Za-z._-]+$' \
     || die "tag-e noskhe namotabar: '$rel'."
   local path; if [ "$rel" = "latest" ]; then path="releases/latest/download/install.sh"; else path="releases/download/${rel}/install.sh"; fi
   local mirrors=("" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/")
   local tmp m ok=0; tmp="$(mktemp)"
-  log "download install.sh az GitHub Release: $gh ($rel)..."
-  for m in "${mirrors[@]}"; do
-    if curl -fSL --retry 1 --connect-timeout 15 --speed-limit 1024 --speed-time 20 "${m}https://github.com/${gh}/${path}" -o "$tmp" 2>/dev/null; then ok=1; break; fi
-    [ -n "$m" ] && warn "in mirror javab nadad, badi..."
-  done
+  if [ -n "$proxy" ]; then
+    log "download install.sh az tarigh-e proxy ($(rth_redact_proxy_url "$proxy")): $gh ($rel)..."
+    if printf 'proxy = "%s"\n' "$proxy" | curl --config - -fSL --retry 1 --connect-timeout 15 --speed-limit 1024 --speed-time 20 "https://github.com/${gh}/${path}" -o "$tmp" 2>/dev/null; then
+      ok=1
+    fi
+  else
+    log "download install.sh az GitHub Release: $gh ($rel)..."
+    for m in "${mirrors[@]}"; do
+      if curl -fSL --retry 1 --connect-timeout 15 --speed-limit 1024 --speed-time 20 "${m}https://github.com/${gh}/${path}" -o "$tmp" 2>/dev/null; then ok=1; break; fi
+      [ -n "$m" ] && warn "in mirror javab nadad, badi..."
+    done
+  fi
   [ "$ok" -eq 1 ] || { rm -f "$tmp"; die "download install.sh az hameye mirror-ha shekast khord (filtering/slug/release ra barresi kon)."; }
   log "ejra-ye update-e kamel (snapshot + health-check + rollback-e khodkar)..."
-  RATHOLE_GH="$gh" RATHOLE_RELEASE="$rel" bash "$tmp" --update
+  RATHOLE_GH="$gh" RATHOLE_RELEASE="$rel" RATHOLE_UPDATE_PROXY="$proxy" RATHOLE_REQUIRE_SIG="$req_sig" RATHOLE_SIGNING_PUBKEY="$pubkey" bash "$tmp" --update
   local rc=$?
   rm -f "$tmp"
   return "$rc"
@@ -2314,7 +2418,7 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   backup [--offsite] [file]      backup tanzimat node
   backup offsite <set <argv... {}>|show|off|test [file]>   ersal khodkar-e backup be maghsad-e bironi (bedoon shell)
   restore [--test] <file>        restore tanzimat node (--test = barresi bedoon taghir)
-  update [beta|stable|vX.Y.Z]    beroozresani-e kamel az GitHub (snapshot + rollback-e khodkar). 'beta' = akharin pre-release؛ tag = noskhe-ye khas
+  update [beta|stable|vX.Y.Z] [--proxy URL] [--require-sig]  beroozresani-e kamel az GitHub (snapshot + rollback + tayid-e Ed25519)
   test [--count N] [--json]      test-e masir carrier/RTT/jitter/loss + backend-haye mahalli + GRE
   doctor                         barresi-ye salamat node va poshtibanei core az control_path
   control-path show              masir-e jari (pishfarz: /)
@@ -3407,7 +3511,7 @@ main(){
     control-path) shift; cmd_control_path "$@" ;;
     show)    cmd_show ;;
     status)  shift; cmd_status "${1:-}" ;;
-    update)  shift; cmd_update "${1:-}" ;;
+    update)  shift; cmd_update "$@" ;;
     adaptive) shift; cmd_adaptive "$@" ;;
     endpoints) shift; cmd_endpoints "$@" ;;
     agent)   shift; cmd_agent "$@" ;;

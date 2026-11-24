@@ -1005,3 +1005,47 @@ test('adaptiveOnNode forwards chain and openEndpointsModal escapes endpoint HTML
  assert.ok(shownHtml.includes('&lt;script&gt;bad&lt;/script&gt;:443'));
  assert.ok(shownHtml.includes('ep_score'));
 });
+
+test('Backhaul direct_ip wssmux calls ip-tls/prepare and pins tls_ca + saveUpdateSettings saves config', async () => {
+ const c = context();
+ const prepCalls = [];
+ let savedUpd = null;
+ c.api = async (method, url, body) => {
+  c.calls.push({ method, url, ...body });
+  if (url === 'api/ip-tls/prepare') {
+   prepCalls.push(JSON.parse(JSON.stringify(body)));
+   return { status: 200, j: { ok: true, rc: 0, tls_trusted_root: '/etc/rathole/ip-root-ca.crt' } };
+  }
+  if (url === 'api/config') {
+   savedUpd = JSON.parse(JSON.stringify(body));
+   return { status: 200, j: { ok: true, changed: ['update_channel', 'update_relay_mode', 'update_require_sig'] } };
+  }
+  if (url.endsWith('/overview')) return { status: 200, j: c.OVS.node };
+  if (url.includes('/nodeconnect/')) return { status: 200, j: { ok: true, name: 'node', token: '1'.repeat(32), inbound: '8080', remote_port: '21001', transport: 'ws' } };
+  if (url.endsWith('/backhaulconnect')) return { status: 200, j: { ok: true, mode: 'direct_ip', remote_addr: '192.0.2.1:3080', transport: 'wssmux', profile: 'balanced', token: '4'.repeat(32) } };
+  if (body && body.action === 'status') return { status: 200, j: { rc: 0, out: JSON.stringify({ public_ip: '192.0.2.1', ports: {}, features: { backhaul: { configured: true, active: true, port: 3080, transport: 'wssmux', profile: 'balanced' } }, nodes: [{ name: 'node', port: 21001, inbound_port: 8080, transport: 'ws' }] }) } };
+  return { status: 200, j: { rc: 0, out: '' } };
+ };
+ await c.configureServiceCarrier('iran', 'node', 'backhaul', 8080, { bh_transport: 'wssmux' });
+ assert.equal(prepCalls.length, 1);
+ assert.deepEqual(prepCalls[0], { iran: 'iran', node: 'node' });
+ const bhCall = action(c, 'backhaul_on');
+ assert.equal(bhCall.args.tls_ca, '/etc/rathole/ip-root-ca.crt');
+
+ const els = {
+  upd_chan: { value: 'beta' },
+  upd_relay: { value: 'relay' },
+  upd_proxy: { value: 'socks5h://127.0.0.1:1080' },
+  upd_req_sig: { checked: true },
+ };
+ c.$ = id => els[id] || null;
+ c.t = key => key;
+ vm.runInContext(definition('saveUpdateSettings'), c);
+ await c.saveUpdateSettings();
+ assert.deepEqual(savedUpd, {
+  update_channel: 'beta',
+  update_relay_mode: 'relay',
+  update_proxy: 'socks5h://127.0.0.1:1080',
+  update_require_sig: true,
+ });
+});

@@ -46,6 +46,11 @@ U="$tmp/src/internal/client/transport/utls.go"
 [ -f "$U" ] || { echo "not ok - utls.go sakhte nashod" >&2; exit 1; }
 grep -qF 'utls.HelloChrome_Auto' "$U" || { echo "not ok - profile-e Chrome estefade nashode" >&2; exit 1; }
 grep -qF 'InsecureSkipVerify: true' "$U" || { echo "not ok - raftar-e upstream (verify nakardan) hefz nashode" >&2; exit 1; }
+grep -qF 'VerifyPeerCertificate' "$U" || { echo "not ok - VerifyPeerCertificate baraye pin-e CA ezafe nashode" >&2; exit 1; }
+grep -qF 'BACKHAUL_TLS_CA' "$U" || { echo "not ok - BACKHAUL_TLS_CA poshtibani nemishavad" >&2; exit 1; }
+grep -qF 'BACKHAUL_TLS_VERIFY_NAME' "$U" || { echo "not ok - BACKHAUL_TLS_VERIFY_NAME poshtibani nemishavad" >&2; exit 1; }
+grep -qF 'VerifyHostname' "$U" || { echo "not ok - VerifyHostname check nemishavad" >&2; exit 1; }
+grep -qF 'x509.VerifyOptions' "$U" || { echo "not ok - x509.VerifyOptions barresi nashod" >&2; exit 1; }
 # ALPN bayad be http/1.1 mahdood shavad vagarna server HTTP/2 mozakere mikonad va
 # WebSocket-e HTTP/1.1-e Upgrade mishkanad ("bogus greeting" / "malformed HTTP response").
 grep -qF '"http/1.1"' "$U" || { echo "not ok - ALPN be http/1.1 mahdood nashode" >&2; exit 1; }

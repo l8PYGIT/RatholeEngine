@@ -129,6 +129,21 @@ jobs:
           cd "$GITHUB_WORKSPACE/rathole-manager/core-backhaul"
           sha256sum -c SHA256SUMS --strict
 
+      - name: Sign core SHA256SUMS (Ed25519)
+        if: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY != '' }}
+        env:
+          SIGN_KEY: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY }}
+        run: |
+          K="$(umask 077 && mktemp)"
+          trap 'rm -f "$K"' EXIT
+          printf '%s\n' "$SIGN_KEY" > "$K"
+          bash tools/release-sign.sh sign "$K" rathole-manager/core/SHA256SUMS rathole-manager/core/SHA256SUMS.sig
+          bash tools/release-sign.sh sign "$K" rathole-manager/core-backhaul/SHA256SUMS rathole-manager/core-backhaul/SHA256SUMS.sig
+          if [ -s rathole-manager/keys/release-ed25519.pub ]; then
+            bash tools/release-sign.sh verify rathole-manager/keys/release-ed25519.pub rathole-manager/core/SHA256SUMS rathole-manager/core/SHA256SUMS.sig
+            bash tools/release-sign.sh verify rathole-manager/keys/release-ed25519.pub rathole-manager/core-backhaul/SHA256SUMS rathole-manager/core-backhaul/SHA256SUMS.sig
+          fi
+
       - name: Build bundle (package.sh)
         run: RATHOLE_REQUIRE_CORE=1 bash package.sh
 
@@ -139,7 +154,28 @@ jobs:
           [ -f rathole-manager.tar.gz ] && cp rathole-manager.tar.gz dist/
           cp bootstrap.sh dist/
           cp install.sh dist/
+          (
+            cd dist
+            files=()
+            for f in rathole-manager.zip rathole-manager.tar.gz bootstrap.sh install.sh; do
+              [ -f "$f" ] && files+=("$f")
+            done
+            sha256sum "${files[@]}" > SHA256SUMS
+          )
           ls -lh dist/
+
+      - name: Sign dist/SHA256SUMS (Ed25519)
+        if: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY != '' }}
+        env:
+          SIGN_KEY: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY }}
+        run: |
+          K="$(umask 077 && mktemp)"
+          trap 'rm -f "$K"' EXIT
+          printf '%s\n' "$SIGN_KEY" > "$K"
+          bash tools/release-sign.sh sign "$K" dist/SHA256SUMS dist/SHA256SUMS.sig
+          if [ -s rathole-manager/keys/release-ed25519.pub ]; then
+            bash tools/release-sign.sh verify rathole-manager/keys/release-ed25519.pub dist/SHA256SUMS dist/SHA256SUMS.sig
+          fi
 
       - name: Extract release notes from CHANGELOG.md
         id: notes
@@ -191,6 +227,8 @@ jobs:
             dist/rathole-manager.tar.gz
             dist/bootstrap.sh
             dist/install.sh
+            dist/SHA256SUMS
+            dist/SHA256SUMS.sig
           fail_on_unmatched_files: false
           generate_release_notes: ${{ steps.notes.outputs.found != '1' }}
 

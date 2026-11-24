@@ -62,8 +62,90 @@ rth_read(){   # estefade: rth_read VAR "prompt"
 # porsesh-haye makhrab (hazf/bazneveshtan).
 ask_yn(){ local a; rth_read a "$1 [y/N]: "; [[ "$a" =~ ^[Yy]$ ]]; }
 
-# mirror-haye ghproxy baraye dor-zadan-e filtering-e Iran (hamsan-e install.sh/install-panel.sh).
+# mirror-haye ghproxy baraye dor-zadan-e filtering-e Iran (hamsan-e install-panel.sh).
 RTH_MIRRORS=("" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/")
+
+# etebar-sanji-ye proxy URL (bedoon-e metacharacter-e shell va query/fragment)
+rth_valid_proxy_url(){
+  local v="${1:-}"
+  [ -n "$v" ] || return 0
+  case "$v" in
+    *[[:space:]]*|*[[:cntrl:]]*|*';'*|*'|'*|*'&'*|*'$'*|*'`'*|*'"'*|*"'"*|*'?'*|*'#'*|*'<'*|*'>'*|*'\\'*|*'..'*) return 1 ;;
+  esac
+  [[ "$v" =~ ^(http|https|socks5|socks5h)://[A-Za-z0-9._:@%+-]+(:[0-9]{1,5})?/?$ ]] || return 1
+  return 0
+}
+
+rth_redact_proxy_url(){
+  printf '%s' "${1:-}" | sed -E 's#^([A-Za-z0-9+.-]+://)[^/@]+@#\1***@#'
+}
+
+# peyda kardan-e kelid-e omumi-ye Ed25519 baraye tayid-e SHA256SUMS.sig
+rth_find_signing_pubkey(){
+  local cand base=""
+  [ -n "${BASH_SOURCE[0]:-}" ] && base="${BASH_SOURCE[0]%/*}"
+  for cand in "${RATHOLE_SIGNING_PUBKEY:-}" /usr/local/share/rathole/keys/release-ed25519.pub "${base:+$base/keys/release-ed25519.pub}"; do
+    [ -n "$cand" ] && [ -s "$cand" ] && { printf '%s\n' "$cand"; return 0; }
+  done
+  return 1
+}
+
+# tayid-e emza-ye Ed25519 (SHA256SUMS + SHA256SUMS.sig).
+# ghaede:
+#   - agar sig mojood bashad va namotabar bashad → HAMISHE error (hatta agar require_sig=0).
+#   - agar require_sig=1 bashad → naboodan-e sig ya pubkey ya openssl error midahad.
+# $1=file $2=sig_file (default $1.sig) $3=pubkey (optional) $4=require_sig (default ${RATHOLE_REQUIRE_SIG:-0})
+rth_verify_ed25519(){
+  local file="${1:-}" sig="${2:-${1:-}.sig}" pub="${3:-}" req="${4:-${RATHOLE_REQUIRE_SIG:-0}}"
+  [ -f "$file" ] || { err "file baraye tayid peyda nashod: $file"; return 1; }
+  if [ ! -s "$sig" ]; then
+    if [ "$req" = "1" ]; then
+      err "emza-ye Ed25519 elzami ast vali peyda nashod: $sig"
+      return 1
+    fi
+    return 0
+  fi
+  if [ -z "$pub" ]; then
+    pub="$(rth_find_signing_pubkey || true)"
+  fi
+  if [ -z "$pub" ] || [ ! -s "$pub" ]; then
+    if [ "$req" = "1" ]; then
+      err "emza-ye Ed25519 elzami ast vali kelid-e omumi (release-ed25519.pub) peyda nashod."
+      return 1
+    fi
+    warn "file-e emza ($sig) vojood darad vali kelid-e omumi nasb nist; tayid-e Ed25519 rad shod."
+    return 0
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    err "openssl baraye tayid-e Ed25519 lazem ast ($sig)."
+    return 1
+  fi
+  local raw_sig ok=0 sz=0
+  raw_sig="$(mktemp)"
+  if tr -d ' \t\r\n' < "$sig" | base64 -d > "$raw_sig" 2>/dev/null; then
+    sz="$(wc -c < "$raw_sig" | tr -d '[:space:]')"
+    [ "$sz" = "64" ] && ok=1
+  fi
+  if [ "$ok" -eq 0 ]; then
+    sz="$(wc -c < "$sig" | tr -d '[:space:]')"
+    if [ "$sz" = "64" ] && cp "$sig" "$raw_sig" 2>/dev/null; then
+      ok=1
+    fi
+  fi
+  if [ "$ok" -ne 1 ]; then
+    rm -f "$raw_sig"
+    err "format-e emza-ye Ed25519 namotabar ast: $sig"
+    return 1
+  fi
+  if ! openssl pkeyutl -verify -pubin -inkey "$pub" -rawin -sigfile "$raw_sig" -in "$file" >/dev/null 2>&1; then
+    rm -f "$raw_sig"
+    err "emza-ye Ed25519 motabar NIST! ehtemal-e dastkari: $file"
+    return 1
+  fi
+  rm -f "$raw_sig"
+  log "emza-ye Ed25519 tayid shod ($(basename "$file"))."
+  return 0
+}
 
 # akharin tag-e pre-release (beta/rc/alpha) ra peyda mikonad. $1 = slug-e owner/repo.
 # CHERA atom va na API: masir-e `releases/latest/download` dar GitHub pre-release ha ra
@@ -71,7 +153,18 @@ RTH_MIRRORS=("" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.g
 # ghproxy obur nemikonad vali github.com/<slug>/releases.atom mikonad — va atom ham be jq niaz
 # nadarad (dar node-e taze-nasb momken ast jq nabashad). tartib-e atom: jadidtarin aval.
 resolve_beta_tag(){
-  local gh="$1" m out tag
+  local gh="$1" proxy="${2:-${RATHOLE_UPDATE_PROXY:-}}" m out tag
+  if [ -n "$proxy" ]; then
+    rth_valid_proxy_url "$proxy" || return 1
+    out="$(printf 'proxy = "%s"\n' "$proxy" | curl --config - -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 15 --retry 1 "https://github.com/${gh}/releases.atom" 2>/dev/null)" || return 1
+    tag="$(printf '%s' "$out" \
+      | grep -oE 'releases/tag/v[0-9A-Za-z._-]+' \
+      | sed 's#.*releases/tag/##' \
+      | grep -E -- '-(beta|rc|alpha)' \
+      | head -n1)"
+    [ -n "$tag" ] && { printf '%s\n' "$tag"; return 0; }
+    return 1
+  fi
   for m in "${RTH_MIRRORS[@]}"; do
     out="$(curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 15 --retry 1 "${m}https://github.com/${gh}/releases.atom" 2>/dev/null)" || continue
     tag="$(printf '%s' "$out" \
@@ -240,6 +333,41 @@ install_backhaul_core(){
   for d in "${RATHOLE_CORE_BACKHAUL_DIR:-}" /usr/local/share/rathole/core-backhaul \
            "${BASH_SOURCE[0]%/*}/core-backhaul"; do
     [ -n "$d" ] && [ -f "$d/$target/backhaul" ] && [ -f "$d/SHA256SUMS" ] || continue
+    if declare -F rth_verify_ed25519 >/dev/null 2>&1; then
+      rth_verify_ed25519 "$d/SHA256SUMS" "$d/SHA256SUMS.sig" "${RATHOLE_SIGNING_PUBKEY:-}" "${RATHOLE_REQUIRE_SIG:-0}" || {
+        err "emza-ye Ed25519 core-e backhaul motabar nist ($d) — rad shod."; continue; }
+    elif [ -s "$d/SHA256SUMS.sig" ] || [ "${RATHOLE_REQUIRE_SIG:-0}" = 1 ]; then
+      local _bh_sig="$d/SHA256SUMS.sig" _bh_pub="${RATHOLE_SIGNING_PUBKEY:-}" _bh_req="${RATHOLE_REQUIRE_SIG:-0}" _bh_raw _bh_ok=0 _bh_c _bh_sz=0
+      if [ -z "$_bh_pub" ]; then
+        for _bh_c in /usr/local/share/rathole/keys/release-ed25519.pub "${BASH_SOURCE[0]%/*}/keys/release-ed25519.pub" "$d/../keys/release-ed25519.pub"; do
+          [ -n "$_bh_c" ] && [ -s "$_bh_c" ] && { _bh_pub="$_bh_c"; break; }
+        done
+      fi
+      if [ ! -s "$_bh_sig" ]; then
+        [ "$_bh_req" = 1 ] && { err "emza-ye SHA256SUMS.sig peyda nashod ($d) — rad shod."; continue; }
+      elif [ -z "$_bh_pub" ] || [ ! -s "$_bh_pub" ]; then
+        [ "$_bh_req" = 1 ] && { err "kelid-e Ed25519 peyda nashod baraye core-e backhaul ($d) — rad shod."; continue; }
+        warn "SHA256SUMS.sig vojood darad vali kelid-e omumi nasb nist ($d) — rad shod."
+      elif ! command -v openssl >/dev/null 2>&1; then
+        err "openssl baraye tayid-e Ed25519 lazem ast ($d) — rad shod."; continue
+      else
+        _bh_raw="$(mktemp)"
+        if tr -d ' \t\r\n' < "$_bh_sig" | base64 -d > "$_bh_raw" 2>/dev/null; then
+          _bh_sz="$(wc -c < "$_bh_raw" | tr -d '[:space:]')"
+          [ "$_bh_sz" = "64" ] && _bh_ok=1
+        fi
+        if [ "$_bh_ok" -eq 0 ]; then
+          _bh_sz="$(wc -c < "$_bh_sig" | tr -d '[:space:]')"
+          [ "$_bh_sz" = "64" ] && cp "$_bh_sig" "$_bh_raw" 2>/dev/null && _bh_ok=1
+        fi
+        if [ "$_bh_ok" -ne 1 ] || ! openssl pkeyutl -verify -pubin -inkey "$_bh_pub" -rawin -sigfile "$_bh_raw" -in "$d/SHA256SUMS" >/dev/null 2>&1; then
+          rm -f "$_bh_raw"
+          err "emza-ye Ed25519 core-e backhaul motabar nist ($d) — rad shod."
+          continue
+        fi
+        rm -f "$_bh_raw"
+      fi
+    fi
     ( cd "$d" && sha256sum -c SHA256SUMS --ignore-missing --quiet ) 2>/dev/null || {
       err "checksum-e core-e backhaul motabar nist ($d) — rad shod."; continue; }
     want="$(sha256sum "$d/$target/backhaul" 2>/dev/null | cut -d' ' -f1)"

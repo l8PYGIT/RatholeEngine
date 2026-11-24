@@ -1774,7 +1774,12 @@ async function configureServiceCarrier(iranSrv, nodeName, carrier, port, extra =
     if (targetLane === 'backhaul') {
       await A(iranSrv, 'backhaul_node_on', {name:nodeName});
       // lane-e backhaul joda ast; service ra dar registry-e dorost sabt kon.
-      await A(sNode.name, 'backhaul_on', {mode:connection.mode,remote_addr:connection.remote_addr || connection.domain,token:connection.token,transport:connection.transport,profile:connection.profile});
+      const bhArgs = {mode:connection.mode,remote_addr:connection.remote_addr || connection.domain,token:connection.token,transport:connection.transport,profile:connection.profile};
+      if (connection.mode === 'direct_ip' && /^wss/.test(connection.transport || '')) {
+        const prep = await serviceRequest('POST', 'api/ip-tls/prepare', {iran:iranSrv, node:sNode.name}).catch(()=>null);
+        if (prep && prep.ok && prep.tls_trusted_root) bhArgs.tls_ca = prep.tls_trusted_root;
+      }
+      await A(sNode.name, 'backhaul_on', bhArgs);
       await A(sNode.name, 'add_bh_svc', {name:conn.name,token:connection.token,inbound:conn.inbound});
       if ((nov.services || []).some(x=>x.name===conn.name)) await A(sNode.name,'rm_svc',{name:conn.name});
     } else {
@@ -2159,6 +2164,27 @@ async function renderSettingsPage(){
     <div id="tok_list" style="margin-top:10px"><div class="empty">${t('loading')}</div></div>
    </section>
    <section class="settings-section" style="grid-column:1 / -1"><h3>${h(t('mon_title'))}</h3><div id="mon_card"><div class="empty">${t('loading')}</div></div></section>
+   <section class="settings-section" style="grid-column:1 / -1"><h3>${h(t('upd_sec_title'))}</h3>
+    <div class="sub" style="margin-bottom:10px">${h(t('upd_sec_desc'))}</div>
+    <div class="settings-form" style="max-width:540px">
+     <div class="field"><label for="upd_chan">${h(t('upd_channel'))}</label>
+      <select id="upd_chan">
+       <option value="stable"${(c.update_channel||'stable')==='stable'?' selected':''}>stable</option>
+       <option value="beta"${c.update_channel==='beta'?' selected':''}>beta</option>
+      </select>
+     </div>
+     <div class="field"><label for="upd_relay">${h(t('upd_relay_mode'))}</label>
+      <select id="upd_relay">
+       <option value="auto"${(c.update_relay_mode||'auto')==='auto'?' selected':''}>${h(t('upd_relay_auto'))}</option>
+       <option value="direct"${c.update_relay_mode==='direct'?' selected':''}>${h(t('upd_relay_direct'))}</option>
+       <option value="relay"${c.update_relay_mode==='relay'?' selected':''}>${h(t('upd_relay_relay'))}</option>
+      </select>
+     </div>
+     <div class="field"><label for="upd_proxy">${h(t('upd_proxy'))}</label><input id="upd_proxy" type="text" value="${h(c.update_proxy||'')}" placeholder="socks5h://127.0.0.1:1080"></div>
+     <div class="field"><label><input id="upd_req_sig" type="checkbox"${c.update_require_sig?' checked':''}> ${h(t('upd_require_sig'))}</label></div>
+     <div class="btns"><button class="g" type="button" onclick="saveUpdateSettings()">${h(t('upd_save'))}</button></div>
+    </div>
+   </section>
    <section class="settings-section" style="grid-column:1 / -1"><h3>${t('chpw')}</h3><div class="settings-form" style="max-width:460px">
     <div class="field"><label for="cpw">${t('l_curpw')}</label><input id="cpw" type="password" autocomplete="current-password"></div>
     <div class="field"><label for="npw">${t('l_newpw')}</label><input id="npw" type="password" autocomplete="new-password" placeholder="${t('pw_hint')}"></div>
@@ -2193,6 +2219,18 @@ async function enable2faSubmit(){
   <div class="code-grid">${codes}</div>
   <div class="modal-actions"><button class="g" type="button" onclick="closeModal()">${h(t('close'))}</button></div>`);
  renderSettingsPage();
+}
+
+async function saveUpdateSettings(){
+ const payload={
+  update_channel:($('upd_chan')&&$('upd_chan').value)||'stable',
+  update_relay_mode:($('upd_relay')&&$('upd_relay').value)||'auto',
+  update_proxy:($('upd_proxy')&&$('upd_proxy').value||'').trim(),
+  update_require_sig:!!($('upd_req_sig')&&$('upd_req_sig').checked),
+ };
+ const {status,j}=await api('POST','api/config',payload);
+ if(status!==200){toast('error: '+((j&&j.error)||status));return;}
+ toast(t('upd_saved'));
 }
 
 function disable2faModal(){

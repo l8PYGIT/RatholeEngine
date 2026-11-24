@@ -105,6 +105,11 @@ if [ -f "$SCRIPT_DIR/core-backhaul/SHA256SUMS" ]; then
   chmod +x /usr/local/share/rathole/core-backhaul/*/backhaul 2>/dev/null || true
   log "core-e backhaul (uTLS) nasb shod."
 fi
+if [ -d "$SCRIPT_DIR/keys" ]; then
+  mkdir -p /usr/local/share/rathole/keys
+  cp -rf "$SCRIPT_DIR/keys/." /usr/local/share/rathole/keys/
+  chmod 644 /usr/local/share/rathole/keys/*.pub 2>/dev/null || true
+fi
 
 # ---------- service systemd (tunnel asli) ----------
 log "nasb service systemd..."

@@ -6,7 +6,7 @@
 #
 # tanzimat:  /etc/ratholehub/config.json   , inventory: /etc/ratholehub/inventory.json
 # mtghirhai mhiti baraye tst lvkal: RATHOLEHUB_CONF, RATHOLEHUB_INV, RATHOLEHUB_MOCK=1
-import os, sys, json, hmac, hashlib, time, subprocess, re, secrets, threading, shlex, shutil, traceback, ipaddress
+import os, sys, json, hmac, hashlib, time, subprocess, re, secrets, threading, shlex, shutil, traceback, ipaddress, tempfile
 
 
 from concurrent.futures import ThreadPoolExecutor
@@ -352,6 +352,7 @@ from hubsec import (
     render_prometheus_metrics,
 )
 from tg_relay import diagnose_relay, TelegramRelayManager, TelegramClient, redact_secrets
+import hubupdate
 from monitor import (
     load_monitor_config, save_monitor_config, validate_monitor_update,
     public_monitor_config,
@@ -602,14 +603,60 @@ def iran_public_host(server, fallback=""):
     return domain or reported or inventory or usable(fallback)
 
 
-def deploy_to_server(server):
+def _relay_deploy_to_server(server, cfg, gh, chan, proxy_url, req_sig):
+    work_dir = tempfile.mkdtemp(prefix="rth-hub-deploy-")
+    try:
+        dl = hubupdate.download_verified_release(
+            gh_repo=gh,
+            channel=chan,
+            proxy_url=proxy_url,
+            inventory=get_inventory(),
+            ssh_cfg=cfg,
+            pubkey_path=str(cfg.get("update_pubkey_path", "") or ""),
+            require_sig=bool(req_sig),
+            dest_dir=work_dir,
+        )
+        ssh_base = _ssh_base(cfg, server)
+        res = hubupdate.push_and_run_update(
+            server,
+            ssh_base,
+            dl["bootstrap_path"],
+            dl["bundle_path"],
+            dl["bundle_name"],
+            gh,
+            dl["release"],
+            require_sig=bool(req_sig),
+            timeout=600,
+        )
+        sig_tag = "Ed25519 verified" if (dl.get("sig") or {}).get("verified") else "SHA256 checked"
+        hdr = "[hub-relay via=%s release=%s %s]\n" % (dl.get("via", "?"), dl.get("release", chan), sig_tag)
+        res["out"] = hdr + (res.get("out") or "")
+        return res
+    except Exception as exc:
+        return {"rc": 1, "out": "", "err": redact_secrets(str(exc), [proxy_url] if proxy_url else ())}
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def deploy_to_server(server, opts=None):
     # apdit az GitHub: install.sh-e akharin Release ra rooye server migirad (ba mirror-haye
-    # ghproxy baraye dor zadan-e filtering) va ba --update ejra mikonad. digar be bundle-e
-    # mahalli-ye hub vabaste nist — server hamishe akharin noskhe-ye montasher-shode ra migirad.
-    if MOCK:
-        _chan = str(get_config().get("update_channel", "stable"))
-        return {"rc": 0, "out": "[mock deploy→%s] github install.sh --update (kanal=%s)" % (server.get("name"), _chan), "err": ""}
+    # ghproxy baraye dor zadan-e filtering) va ba --update ejra mikonad. agar direct dar Iran
+    # filter bashad va relay_mode='auto' ya 'relay' bashad, Hub khodesh az proxy/node relay
+    # release ra ba Ed25519 migirad va ba SSH stdin push mikonad.
+    o = opts if isinstance(opts, dict) else {}
+    relay_ov = str(o.get("relay", "") or "").strip()
+    if relay_ov and relay_ov not in hubupdate.UPDATE_RELAY_MODES:
+        return {"rc": 1, "out": "", "err": "update relay mode namotabar: %r" % relay_ov}
+    req_sig_ov = o.get("require_sig", None)
+    if req_sig_ov is not None and not isinstance(req_sig_ov, (bool, int)):
+        return {"rc": 1, "out": "", "err": "require_sig namotabar"}
     cfg = get_config()
+    chan = str(cfg.get("update_channel", "stable"))
+    relay_mode = relay_ov or str(cfg.get("update_relay_mode", "auto") or "auto")
+    req_sig = bool(req_sig_ov) if req_sig_ov is not None else bool(cfg.get("update_require_sig", False))
+    if MOCK:
+        return {"rc": 0, "out": "[mock deploy→%s] github install.sh --update (kanal=%s, relay=%s, sig=%s)" % (
+            server.get("name"), chan, relay_mode, "on" if req_sig else "off"), "err": ""}
     # slug az config (sabet، na vorodi-ye karbar) va ba regex etebarsanji mishavad.
     gh = str(cfg.get("gh_repo", "l8PYGIT/RatholeEngine"))
     if not RE_SLUG.match(gh):
@@ -619,28 +666,50 @@ def deploy_to_server(server):
     # agar server rooye beta bashad va bدون in latest=noskhe-ye stable-e ghadimi tar bashad،
     # apdit an ra DOWNGRADE mikonad va backhaul/features-e jadid ra kharab mikonad. baraye
     # server-haye beta bayad kanal='beta' bashad ta tag-e daghigh (releases.atom) resolve shavad.
-    chan = str(cfg.get("update_channel", "stable"))
     if not RE_CHAN.match(chan):
         return {"rc": 1, "out": "", "err": "update_channel namotabar dar config: %r (stable|beta)" % chan}
+    if relay_mode not in hubupdate.UPDATE_RELAY_MODES:
+        return {"rc": 1, "out": "", "err": "update_relay_mode namotabar dar config: %r" % relay_mode}
+    uproxy = str(cfg.get("update_proxy", "") or "").strip()
+    if uproxy and not valid_proxy_url(uproxy):
+        return {"rc": 1, "out": "", "err": "update_proxy namotabar dar config"}
+    hub_dl_proxy = uproxy or get_proxy(server)
+
     if server.get("transport") == "api":
         cli = "ratholectl" if server.get("role") == "iran" else "ratholenode"
-        return run_on_server(server, [cli, "update", chan], timeout=600)
+        cmd = [cli, "update", chan]
+        if uproxy:
+            cmd += ["--proxy", uproxy]
+        if req_sig:
+            cmd.append("--require-sig")
+        return run_on_server(server, cmd, timeout=600)
+
+    if relay_mode == "relay":
+        return _relay_deploy_to_server(server, cfg, gh, chan, hub_dl_proxy, req_sig)
+
     # yek script-e khoddATka ke rooye server ejra mishavad. tanha meghdar-haye tazrigh-shode
-    # slug (RE_SLUG) va kanal (RE_CHAN) hastand — har do etebarsanji-shode. mirror-ha hamsan-e install.sh.
-    # baraye kanal-e beta: tag-e pre-release ra rooye KHODE server az releases.atom peyda mikonim
-    # (api.github.com az mirror obur nemikonad vali releases.atom mikonad — hamsan-e resolve_beta_tag).
+    # slug (RE_SLUG), kanal (RE_CHAN), req_sig (0|1) va uproxy (valid_proxy_url) hastand.
+    req_sig_flag = "1" if req_sig else "0"
+    uproxy_q = shlex.quote(uproxy) if uproxy else "''"
     remote = r'''set -e
 GH="%s"
 CHAN="%s"
+UPROXY=%s
+REQ_SIG="%s"
 MIRRORS=("" "https://ghproxy.net/" "https://gh-proxy.com/" "https://mirror.ghproxy.com/")
 REL="latest"
 if [ "$CHAN" = "beta" ]; then
   TAG=""
-  for M in "${MIRRORS[@]}"; do
-    AT="$(curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 15 --retry 1 "${M}https://github.com/${GH}/releases.atom" 2>/dev/null)" || continue
+  if [ -n "$UPROXY" ]; then
+    AT="$(printf 'proxy = "%%s"\n' "$UPROXY" | curl --config - -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 15 --retry 1 "https://github.com/${GH}/releases.atom" 2>/dev/null || true)"
     TAG="$(printf '%%s' "$AT" | grep -oE 'releases/tag/v[0-9A-Za-z._-]+' | sed 's#.*releases/tag/##' | grep -E -- '-(beta|rc|alpha)' | head -n1 || true)"
-    [ -n "$TAG" ] && break
-  done
+  else
+    for M in "${MIRRORS[@]}"; do
+      AT="$(curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 15 --retry 1 "${M}https://github.com/${GH}/releases.atom" 2>/dev/null)" || continue
+      TAG="$(printf '%%s' "$AT" | grep -oE 'releases/tag/v[0-9A-Za-z._-]+' | sed 's#.*releases/tag/##' | grep -E -- '-(beta|rc|alpha)' | head -n1 || true)"
+      [ -n "$TAG" ] && break
+    done
+  fi
   [ -n "$TAG" ] || { echo "hich noskhe-ye beta peyda nashod (releases.atom)" >&2; exit 1; }
   REL="$TAG"
 fi
@@ -648,13 +717,27 @@ if [ "$REL" = "latest" ]; then PATH_SEG="releases/latest/download/install.sh"; e
 T="$(mktemp)"
 trap 'rm -f "$T"' EXIT
 ok=0
-for M in "${MIRRORS[@]}"; do
-  if curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 1 "${M}https://github.com/${GH}/${PATH_SEG}" -o "$T" 2>/dev/null; then ok=1; break; fi
-done
+if [ -n "$UPROXY" ]; then
+  if printf 'proxy = "%%s"\n' "$UPROXY" | curl --config - -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 1 "https://github.com/${GH}/${PATH_SEG}" -o "$T" 2>/dev/null; then ok=1; fi
+else
+  for M in "${MIRRORS[@]}"; do
+    if curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 20 --retry 1 "${M}https://github.com/${GH}/${PATH_SEG}" -o "$T" 2>/dev/null; then ok=1; break; fi
+  done
+fi
 [ "$ok" = 1 ] || { echo "download install.sh az hameye mirror-ha shekast khord (filtering?)" >&2; exit 1; }
-RATHOLE_GH="$GH" RATHOLE_RELEASE="$REL" bash "$T" --update
-''' % (gh, chan)
-    return run_on_server(server, ["bash", "-c", remote], timeout=600)
+RATHOLE_GH="$GH" RATHOLE_RELEASE="$REL" RATHOLE_UPDATE_PROXY="$UPROXY" RATHOLE_REQUIRE_SIG="$REQ_SIG" bash "$T" --update
+''' % (gh, chan, uproxy_q, req_sig_flag)
+    res = run_on_server(server, ["bash", "-c", remote], timeout=600)
+    if relay_mode == "auto" and hubupdate.looks_like_network_failure(res):
+        r2 = _relay_deploy_to_server(server, cfg, gh, chan, hub_dl_proxy, req_sig)
+        if r2.get("rc") == 0:
+            r2["out"] = "[auto-relay] direct GitHub fetch failed; retrying via Hub tunnel relay...\n" + (r2.get("out") or "")
+            return r2
+        err1 = (res.get("err") or "").strip()
+        err2 = (r2.get("err") or "").strip()
+        return {"rc": r2.get("rc", 1), "out": (res.get("out") or "") + (r2.get("out") or ""),
+                "err": f"{err1} | auto-relay: {err2}".strip(" |")}
+    return res
 
 # ---------- provision khodkar (ba ramz SSH → nصب kelid + deploy + sabt) ----------
 def ensure_hub_key():
@@ -1830,16 +1913,22 @@ class Handler(BaseHTTPRequestHandler):
         # hrgz ramz/token ra brnmigrdanim; fght mtaditai bikhtr.
         cfg = get_config()
         tok = cfg.get("api_token", "")
+        uproxy = str(cfg.get("update_proxy", "") or "")
         return self._send(200, {
             "listen_host": cfg.get("listen_host"),
             "listen_port": cfg.get("listen_port"),
-            "proxy": cfg.get("proxy", ""),
+            "proxy": _redact_proxy_creds(cfg.get("proxy", "")),
             "ssh_key_path": cfg.get("ssh_key_path"),
             "ssh_opts": cfg.get("ssh_opts"),
             "insecure": cfg.get("_insecure", False),
             "api_token_hint": (tok[:4] + "…" + tok[-4:]) if len(tok) >= 8 else "(unset)",
             "totp_enabled": bool((cfg.get("totp") or {}).get("enabled")),
             "scoped_tokens_count": len(cfg.get("tokens") or []),
+            "update_channel": cfg.get("update_channel", "stable"),
+            "update_relay_mode": cfg.get("update_relay_mode", "auto"),
+            "update_proxy": _redact_proxy_creds(uproxy),
+            "update_proxy_set": bool(uproxy),
+            "update_require_sig": bool(cfg.get("update_require_sig", False)),
             "mock": MOCK,
         })
 
@@ -2130,9 +2219,34 @@ class Handler(BaseHTTPRequestHandler):
                 cfg["api_token"] = new_token
                 changed.append("api_token")
             if "proxy" in d:
-                if not isinstance(d["proxy"], str) or not valid_proxy_url(d["proxy"]):
+                if not isinstance(d["proxy"], str):
                     return self._send(400, {"error": "invalid proxy"})
-                cfg["proxy"] = d["proxy"].strip(); changed.append("proxy")
+                if "***@" not in d["proxy"]:
+                    if not valid_proxy_url(d["proxy"]):
+                        return self._send(400, {"error": "invalid proxy"})
+                    cfg["proxy"] = d["proxy"].strip(); changed.append("proxy")
+            if "update_channel" in d:
+                uchan = str(d["update_channel"] or "").strip()
+                if not RE_CHAN.match(uchan):
+                    return self._send(400, {"error": "invalid update_channel"})
+                cfg["update_channel"] = uchan; changed.append("update_channel")
+            if "update_relay_mode" in d:
+                umode = str(d["update_relay_mode"] or "").strip()
+                if umode not in hubupdate.UPDATE_RELAY_MODES:
+                    return self._send(400, {"error": "invalid update_relay_mode"})
+                cfg["update_relay_mode"] = umode; changed.append("update_relay_mode")
+            if "update_proxy" in d:
+                if not isinstance(d["update_proxy"], str):
+                    return self._send(400, {"error": "invalid update_proxy"})
+                if "***@" not in d["update_proxy"]:
+                    if not valid_proxy_url(d["update_proxy"]):
+                        return self._send(400, {"error": "invalid update_proxy"})
+                    cfg["update_proxy"] = d["update_proxy"].strip(); changed.append("update_proxy")
+            if "update_require_sig" in d:
+                ur = d["update_require_sig"]
+                if not isinstance(ur, (bool, int)):
+                    return self._send(400, {"error": "invalid update_require_sig"})
+                cfg["update_require_sig"] = bool(ur); changed.append("update_require_sig")
             # ssh_key_path: masir-e file (reshte). ssh_opts: HATMAN list-e reshte
             # (chvn _ssh_base list(...)-esh mikonad; reshte be karaktr-ha shekaste mishavad).
             if "ssh_key_path" in d:
@@ -2255,7 +2369,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "server not found"})
         action = str(d.get("action", "")); args = d.get("args", {}) or {}
         if action == "deploy":
-            res = deploy_to_server(s)
+            res = deploy_to_server(s, opts=args)
             audit_log(self._user(), name, "deploy", "github-update (install.sh --update)", res.get("rc"))
             return self._send(200, {"server": name, "cmd": "github-update (install.sh --update)", **res})
         cmd = build_cmd(s.get("role"), action, args)
@@ -2383,13 +2497,17 @@ class Handler(BaseHTTPRequestHandler):
             remote = info.get("domain")
             client_transport = info.get("transport", "wssmux")
         # direct-IP ba wss/wssmux ham TLS darad (khod-e backhaul terminate mikonad، ba gvahi-ye
-        # self-signed-e ip-cert). pas 'tls' ra be mode sakht-kod nakon — be transport negah kon.
-        # 'verified' joda ast: dar direct-IP gvahi verify nemishavad (InsecureSkipVerify).
+        # self-signed-e ip-cert). ba pin kardan-e gvahi (--ca)، direct-IP ham verify mishavad.
         tls = mode == "nginx_tls" or client_transport in ("wss", "wssmux")
-        return self._send(200, {"ok": True, "domain": info.get("domain", ""), "remote_addr": remote,
-                                "mode": mode, "token": info["token"], "transport": client_transport,
-                                "tls": tls, "encrypted": tls, "verified": mode == "nginx_tls",
-                                "profile": info.get("profile", "balanced")})
+        out = {"ok": True, "domain": info.get("domain", ""), "remote_addr": remote,
+               "mode": mode, "token": info["token"], "transport": client_transport,
+               "tls": tls, "encrypted": tls, "verified": mode == "nginx_tls",
+               "profile": info.get("profile", "balanced")}
+        if mode == "direct_ip" and client_transport in ("wss", "wssmux"):
+            ip_tls = status.get("ip_tls") if isinstance(status.get("ip_tls"), dict) else {}
+            out["ip_tls_ip"] = ip_tls.get("ip") or status.get("public_ip") or s.get("host") or ""
+            out["ca_pin_supported"] = True
+        return self._send(200, out)
 
     def _nodeconnect(self, name, node):
         # az server Iran, meshkhassat-e yek node (name/token/inbound) ra migirad ta betavan

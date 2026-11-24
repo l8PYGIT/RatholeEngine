@@ -1,0 +1,167 @@
+diff --git a/internal/client/transport/utls.go b/internal/client/transport/utls.go
+--- a/internal/client/transport/utls.go
++++ b/internal/client/transport/utls.go
+@@ -1,41 +1,152 @@
+ package transport
+ 
+ import (
++	"bytes"
+ 	"context"
++	"crypto/x509"
++	"encoding/pem"
+ 	"fmt"
+ 	"net"
+ 	"os"
++	"strings"
++	"time"
+ 
+ 	utls "github.com/refraction-networking/utls"
+ )
+ 
++func splitDialHost(addr string) string {
++	host, _, err := net.SplitHostPort(addr)
++	if err != nil {
++		host = addr
++	}
++	return strings.Trim(host, "[]")
++}
++
++func buildBackhaulTLSVerifier(dialHost string) (func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error, error) {
++	caPath := strings.TrimSpace(os.Getenv("BACKHAUL_TLS_CA"))
++	verifyFlag := strings.ToLower(strings.TrimSpace(os.Getenv("BACKHAUL_TLS_VERIFY")))
++	if caPath == "" && verifyFlag != "1" && verifyFlag != "true" {
++		return nil, nil
++	}
++
++	verifyName := strings.TrimSpace(os.Getenv("BACKHAUL_TLS_VERIFY_NAME"))
++	if verifyName == "" {
++		verifyName = dialHost
++	}
++
++	var roots *x509.CertPool
++	var pinnedCerts []*x509.Certificate
++	if caPath != "" {
++		pemBytes, err := os.ReadFile(caPath)
++		if err != nil {
++			return nil, fmt.Errorf("read BACKHAUL_TLS_CA: %w", err)
++		}
++		roots = x509.NewCertPool()
++		rest := pemBytes
++		for {
++			var block *pem.Block
++			block, rest = pem.Decode(rest)
++			if block == nil {
++				break
++			}
++			if block.Type != "CERTIFICATE" {
++				continue
++			}
++			c, perr := x509.ParseCertificate(block.Bytes)
++			if perr != nil {
++				return nil, fmt.Errorf("parse certificate in BACKHAUL_TLS_CA: %w", perr)
++			}
++			roots.AddCert(c)
++			pinnedCerts = append(pinnedCerts, c)
++		}
++		if len(pinnedCerts) == 0 {
++			return nil, fmt.Errorf("no valid certificate found in BACKHAUL_TLS_CA")
++		}
++	} else {
++		var err error
++		roots, err = x509.SystemCertPool()
++		if err != nil || roots == nil {
++			return nil, fmt.Errorf("load system cert pool: %w", err)
++		}
++	}
++
++	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
++		if len(rawCerts) == 0 {
++			return fmt.Errorf("server presented no TLS certificates")
++		}
++		certs := make([]*x509.Certificate, 0, len(rawCerts))
++		for _, raw := range rawCerts {
++			c, err := x509.ParseCertificate(raw)
++			if err != nil {
++				return fmt.Errorf("parse peer certificate: %w", err)
++			}
++			certs = append(certs, c)
++		}
++		intermediates := x509.NewCertPool()
++		for _, ic := range certs[1:] {
++			intermediates.AddCert(ic)
++		}
++		opts := x509.VerifyOptions{
++			Roots:         roots,
++			Intermediates: intermediates,
++			DNSName:       verifyName,
++			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
++		}
++		_, verifyErr := certs[0].Verify(opts)
++		if verifyErr == nil {
++			return nil
++		}
++		// Self-signed IP/leaf cert pinning without BasicConstraints CA=true
++		now := time.Now()
++		for _, pinned := range pinnedCerts {
++			if bytes.Equal(certs[0].Raw, pinned.Raw) {
++				if now.Before(certs[0].NotBefore) || now.After(certs[0].NotAfter) {
++					return fmt.Errorf("pinned certificate expired or not yet valid")
++				}
++				if verifyName != "" {
++					if herr := certs[0].VerifyHostname(verifyName); herr != nil {
++						return fmt.Errorf("pinned certificate identity mismatch (%s): %w", verifyName, herr)
++					}
++				}
++				return nil
++			}
++		}
++		return fmt.Errorf("tls certificate verification failed: %w", verifyErr)
++	}, nil
++}
++
+ // uTLSHandshake yek conn-e TCP-e bargharar-shode ra ba ClientHello-ye Chrome mizanad.
+ //
+ // CHERA: crypto/tls-e Go yek asar-angosht-e (JA3/JA4) mokhtas-e khodesh darad — DPI mitavanad
+ // az roo-ye haman «in yek client-e Go ast، na morurgar» ra tashkhis dahad، hatta vaghti hedar-haye
+ // HTTP (User-Agent va ...) kamelan tabiei bashand. uTLS ClientHello-ye vaghei-ye Chrome ra baztolid mikonad.
+ //
+-// gvahi verify NEMISHAVAD — daghighan haman raftar-e upstream (InsecureSkipVerify): tunnel ba
+-// token ehraz-e hoviat mishavad، na ba PKI.
++// gvahi: pishfarz (bedoon-e BACKHAUL_TLS_CA/BACKHAUL_TLS_VERIFY) raftar-e upstream hefz mishavad
++// (InsecureSkipVerify: true), vali ba BACKHAUL_TLS_CA (pin) ya BACKHAUL_TLS_VERIFY=1 (system CA)
++// VerifyPeerCertificate zanjireh va DNS/IP SAN ra barresi mikonad ta MITM dar direct-IP daf shavad.
+ //
+ // SNI: agar BACKHAUL_TLS_SNI set bashad haman estefade mishavad (baraye camouflage roo-ye IP-e
+ // khali، ke vagarna SNI khali mimanad va yek Chrome-e bedoon-e SNI khodesh gheyr-adi ast).
+ func uTLSHandshake(ctx context.Context, conn net.Conn, addr string) (net.Conn, error) {
+-	sni := os.Getenv("BACKHAUL_TLS_SNI")
++	dialHost := splitDialHost(addr)
++	sni := strings.TrimSpace(os.Getenv("BACKHAUL_TLS_SNI"))
+ 	if sni == "" {
+-		host, _, err := net.SplitHostPort(addr)
+-		if err != nil {
+-			host = addr
+-		}
+ 		// SNI-e IP-e kham mojaz nist (RFC 6066) — khali migozarim، mesl-e crypto/tls.
+-		if host != "" && net.ParseIP(host) == nil {
+-			sni = host
++		if dialHost != "" && net.ParseIP(dialHost) == nil {
++			sni = dialHost
+ 		}
+ 	}
+ 
++	verifyPeer, err := buildBackhaulTLSVerifier(dialHost)
++	if err != nil {
++		conn.Close()
++		return nil, err
++	}
++
+ 	uconn := utls.UClient(conn, &utls.Config{
+-		ServerName:         sni,
+-		InsecureSkipVerify: true,
++		ServerName:            sni,
++		InsecureSkipVerify:    true,
++		VerifyPeerCertificate: verifyPeer,
+ 	}, utls.HelloChrome_Auto)
+ 
+ 	// ALPN bayad FAGHAT http/1.1 bashad. profile-e Chrome «h2» ham elam mikonad va an vaght

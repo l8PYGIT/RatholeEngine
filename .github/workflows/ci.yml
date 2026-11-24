@@ -41,8 +41,8 @@ jobs:
 
       - name: python py_compile (hub.py + fakeweb.py)
         run: |
-          python3 -m py_compile rathole-manager/ratholehub/hub.py rathole-manager/ratholehub/hubcmds.py rathole-manager/ratholehub/hubdiag.py rathole-manager/ratholehub/hubsec.py rathole-manager/ratholehub/tg_relay.py rathole-manager/ratholehub/monitor.py rathole-manager/fakeweb.py
-          echo "hub.py, hubcmds.py, hubdiag.py, hubsec.py, tg_relay.py, monitor.py & fakeweb.py compile OK"
+          python3 -m py_compile rathole-manager/ratholehub/hub.py rathole-manager/ratholehub/hubcmds.py rathole-manager/ratholehub/hubdiag.py rathole-manager/ratholehub/hubsec.py rathole-manager/ratholehub/tg_relay.py rathole-manager/ratholehub/monitor.py rathole-manager/ratholehub/hubupdate.py rathole-manager/fakeweb.py
+          echo "hub.py, hubcmds.py, hubdiag.py, hubsec.py, tg_relay.py, monitor.py, hubupdate.py & fakeweb.py compile OK"
 
       - name: manager regression tests
         run: |
@@ -90,6 +90,9 @@ jobs:
 
       - name: M5 adaptive fallback chain & backup endpoint tests
         run: bash tests/test_m5_adaptive_and_endpoints.sh
+
+      - name: M6 relayed updates, Ed25519 signing & Backhaul TLS verification tests
+        run: bash tests/test_m6_updates_signing_and_backhaul_verify.sh
 
       - name: adaptive probe + controller tests
         run: |

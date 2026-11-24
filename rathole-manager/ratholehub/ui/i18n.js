@@ -302,7 +302,18 @@ service_config:"حامل و پروتکل",service_health:"تست سلامت",ser
   ep_test:'تست همه آدرس‌ها',
   ep_addr:'آدرس (host:port)',
   ep_score:'امتیاز سلامت',
-  ep_switch:'سوییچ'
+  ep_switch:'سوییچ',
+  upd_sec_title:'به‌روزرسانی و تایید امضا',
+  upd_sec_desc:'دریافت ایمن نسخه جدید (مستقیم یا از طریق رله نود) با تایید امضای Ed25519',
+  upd_channel:'کانال نسخه',
+  upd_relay_mode:'حالت رله دریافت',
+  upd_proxy:'پروکسی به‌روزرسانی (اختیاری)',
+  upd_require_sig:'الزام تایید امضای Ed25519 (SHA256SUMS.sig)',
+  upd_save:'ذخیره تنظیمات به‌روزرسانی',
+  upd_saved:'تنظیمات به‌روزرسانی ذخیره شد ✓',
+  upd_relay_auto:'خودکار (مستقیم ← رله هاب)',
+  upd_relay_direct:'فقط مستقیم روی سرور',
+  upd_relay_relay:'همیشه از طریق رله هاب'
 
  },
  en:{
@@ -608,7 +619,18 @@ service_config:"Carrier and protocol",service_health:"Health test",service_copy:
   ep_test:'Test All Endpoints',
   ep_addr:'Address (host:port)',
   ep_score:'Health Score',
-  ep_switch:'Switch'
+  ep_switch:'Switch',
+  upd_sec_title:'Updates & Verification',
+  upd_sec_desc:'Tunnel-relayed release delivery with optional Ed25519 SHA256SUMS verification',
+  upd_channel:'Release Channel',
+  upd_relay_mode:'Delivery Relay Mode',
+  upd_proxy:'Update Proxy URL (optional)',
+  upd_require_sig:'Require Ed25519 Signature (SHA256SUMS.sig)',
+  upd_save:'Save Update Settings',
+  upd_saved:'Update settings saved ✓',
+  upd_relay_auto:'Auto (direct → Hub relay)',
+  upd_relay_direct:'Direct on server only',
+  upd_relay_relay:'Always push via Hub relay'
 
  }
 };

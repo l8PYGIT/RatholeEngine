@@ -78,6 +78,9 @@ if [ "${1:-}" = "--workflow" ]; then
   ok 'release.yml: core build matrix vojood darad'
   grep -q 'sha256sum\|SHA256SUMS' "$CIY" || fail 'release.yml SHA256SUMS generation nadarad'
   ok 'release.yml: SHA256SUMS generation vojood darad'
+  grep -q 'dist/SHA256SUMS' "$CIY" || fail 'release.yml dist/SHA256SUMS generation/upload nadarad'
+  grep -q 'RELEASE_ED25519_PRIVATE_KEY' "$CIY" || fail 'release.yml Ed25519 signing step nadarad'
+  ok 'release.yml: dist SHA256SUMS + Ed25519 signing step vojood darad'
   grep -q 'RATHOLE_REQUIRE_CORE' "$CIY" || fail 'release.yml RATHOLE_REQUIRE_CORE nadarad'
   ok 'release.yml: RATHOLE_REQUIRE_CORE enforcement vojood darad'
 fi

@@ -6,7 +6,7 @@
   <img src="docs/assets/banner-dark.png" alt="RatholeEngine — Multi-Location Reverse Tunnel System" width="100%">
 </picture>
 
-**Multi-location reverse-tunnel engine built on `rathole` + `Nginx`** — _One port · one domain · 8 carriers · central Web Hub_
+**Multi-location reverse-tunnel engine built on `rathole` + `Nginx`** — _One port · one domain · 9 carriers · central Web Hub & Managed Xray_
 
 [![CI](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/ci.yml)
 [![Docs](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/docs.yml/badge.svg)](https://l8pygit.github.io/RatholeEngine/)
@@ -84,14 +84,16 @@ ratholectl doctor                 # end-to-end health check
 | **FRP** | `fatedier/frp` | `:7000/TCP` (`tcp`/`ws`) + `:7000/UDP` (`kcp`/`quic`) | Flexible mux carrier off `:443` |
 | **GRE** | Linux kernel `ip_gre` | IP Proto 47 (`/30` · `MTU 1476`) | Direct L3 IP link without proxy |
 | **FRP + GRE** | FRP inside GRE `/30` | Kernel GRE + internal `:7000` | Strict DPI resistance combining L3 + mux |
+| **Paqet (Direct PCK)** | `paqet` raw TCP+KCP | Random raw-TCP (`PCAP`/iptables) | Censorship evasion without any TLS handshake |
 
-*Ingress modes (not tunnel carriers):* **Game / SNI** (L4 `:443` passthrough), **Direct-IP** (`:8081` + `X-Cdn-Id`), **Proxy** (`/<name>/` upstream), and **Fakeweb** (`:8080`). Full details: [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [فارسی](docs/transport-modes.md).
+*Ingress & Edge modes:* **Managed Xray** (`VLESS+REALITY+Vision`, `VLESS+XHTTP` + concurrent **TLS 1.3 + ALPN `h2` Cover Scanner**), **Game / SNI** (L4 `:443` passthrough + PROXY protocol), **Direct-IP** (`:8081` + `X-Cdn-Id`), **Proxy** (`/<name>/` upstream), and **Fakeweb** (`:8080`). Full details: [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [فارسی](docs/transport-modes.md).
 
-## RatholeHub web panel (`v2.1.0`)
+## RatholeHub web panel (`v2.2.0`)
 
 - **Apple Glass UI (100% offline, stdlib Python)** — Light / Dark / System themes, bundled `vazirmatn.woff2`, Persian RTL / English LTR, native `<dialog>` modals, and **`⌘K / Ctrl+K` Command Palette**.
-- **Fast KPI Dashboard & Two-Sided Sync** — 4 KPI cards, live filters, parallel status loading with TTL cache, inline per-node carrier dropdown with auto-revert on node failure, and compact `⋯` service controls (carrier modal, `doctor` check, VLESS link generator, peer jump, dual-side delete).
-- **SSH or REST Agent** — drives servers via strict regex-validated `argv` lists over key-auth SSH or token-protected HTTP(S) REST Agent (`:8089`).
+- **Security, Observability & Fleet Controls** — Scoped API keys (`read`/`operate`/`admin`), opt-in TOTP 2FA + recovery codes, CSRF Origin guard, SHA-256 hash-chained `audit.log` (`Verify chain`), `state.json` history & undo, Prometheus `/metrics`, Bidirectional Link Test, and Read-Only Fleet Drift detection.
+- **Standalone Fleet Monitor, Telegram Relay & Signed Relayed Updates** — Independent `ratholemonitor.service` with hysteresis alerts and multi-path Telegram bot relay (`direct` / `proxy` / `node_tunnel`), adaptive fallback chain + EWMA backup endpoints, and Hub-relayed self-updates verified by Ed25519 `SHA256SUMS.sig`.
+- **Fast KPI Dashboard, Paqet & Managed Xray UI** — 4 KPI cards, live filters, parallel status loading, inline carrier controls, Paqet client/server autofill + node Xray REALITY/XHTTP setup, VLESS URI generator, and TLS 1.3 cover scanner over SSH or REST Agent (`:8089`).
 
 <div align="center">
 <picture>
@@ -156,12 +158,12 @@ sudo bash bootstrap.sh --uninstall   # add --purge --yes to remove binaries & hu
 | [**Docs Site & Wiki**](https://l8pygit.github.io/RatholeEngine/) | Complete Persian + English MkDocs Material site & Wiki ([Troubleshooting](https://l8pygit.github.io/RatholeEngine/wiki/Troubleshooting/)) |
 | [`docs/quickstart.md`](docs/quickstart.md) · [`en`](docs/quickstart.en.md) | Interactive install walkthrough & troubleshooting |
 | [`docs/architecture.md`](docs/architecture.md) · [`en`](docs/architecture.en.md) | 4 roles, management plane & `state→regenerate→reload` |
-| [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [`fa`](docs/transport-modes.md) | All 8 carriers, FRP `7000/TCP+UDP`, GRE, Backhaul & ingress modes |
+| [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [`fa`](docs/transport-modes.md) | All 9 carriers, `paqet`, Managed Xray (`REALITY`/`XHTTP`), FRP, GRE & ingress modes |
 | [`docs/traffic-flow.md`](docs/traffic-flow.md) · [`en`](docs/traffic-flow.en.md) | Layer-by-layer packet flow & SVG reference |
-| [`docs/hub.en.md`](docs/hub.en.md) · [`fa`](docs/hub.md) | RatholeHub UI, REST Agent & security model |
+| [`docs/hub.en.md`](docs/hub.en.md) · [`fa`](docs/hub.md) | RatholeHub UI, REST Agent, 2FA/RBAC, `/metrics`, Monitor Bot & security model |
 | [`docs/performance.md`](docs/performance.md) · [`README.fa.md`](docs/README.fa.md) | BBR/KCP tuning & full Persian CLI reference |
-| [`tools/telegram-bot-worker/`](tools/telegram-bot-worker/README.md) | Serverless Telegram announcer (GitHub Actions reusable workflow + Cloudflare Worker) |
-| [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Release notes (`v2.1.1`), tests, LF & code rules ([CoC](CODE_OF_CONDUCT.md)) |
+| [`tools/telegram-bot-worker/`](tools/telegram-bot-worker/README.md) | Serverless Telegram announcer & Hub fleet monitor relay |
+| [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Release notes (`v2.2.0`), tests, LF & code rules ([CoC](CODE_OF_CONDUCT.md)) |
 
 ## Community & Donate
 
@@ -176,4 +178,4 @@ sudo bash bootstrap.sh --uninstall   # add --purge --yes to remove binaries & hu
 
 ## خلاصه‌ی فارسی
 
-**RatholeEngine** یک سیستم تونل معکوس چند-موقعیتی روی **rathole + Nginx** است: یک سرور ایران (پشت یک دامنه، یک گواهی TLS و پورت `443`) جلوی چندین نود خارج قرار می‌گیرد و ترافیک بر اساس **path** هدایت می‌شود. شامل ۴ نقش است: پنل ایران (`ratholectl`)، نود خارج (`ratholenode`)، پنل وب **RatholeHub** (رابط شیشه‌ای Apple Glass در `v2.1.0`، تم روشن/تاریک، پالت فرمان `Ctrl+K`، کارت‌های KPI، بارگذاری موازی و همگام‌سازی صریح دوطرفه) و **REST Agent** اختیاری (`:8089` بدون SSH). از ۸ حامل (**WebSocket/TLS**، **KCP+FEC**، **Plain**، **Noise**، **Backhaul SMUX**، **FRP روی پورت `7000/TCP+UDP`**، **GRE لایه ۳** و **FRP+GRE**) پشتیبانی می‌کند. شروع سریع و مستندات کامل فارسی: [`docs/quickstart.md`](docs/quickstart.md) · [`docs/README.fa.md`](docs/README.fa.md) · [**@l8PY4NET**](https://t.me/l8PY4NET).
+**RatholeEngine (`v2.2.0`)** یک سیستم تونل معکوس چند-موقعیتی روی **rathole + Nginx** است: یک سرور ایران (پشت یک دامنه، یک گواهی TLS و پورت `443`) جلوی چندین نود خارج قرار می‌گیرد و ترافیک بر اساس **path** هدایت می‌شود. شامل ۴ نقش است: پنل ایران (`ratholectl`)، نود خارج (`ratholenode`)، پنل وب **RatholeHub** (رابط شیشه‌ای Apple Glass، توکن‌های باسطح دسترسی، تایید دومرحله‌ای 2FA/TOTP، گزارش ممیزی زنجیره‌ای SHA-256، `/metrics` پرومتئوس، مانیتور مستقل و ربات تلگرام، رلهٔ آپدیت با امضای Ed25519) و **REST Agent** اختیاری (`:8089` بدون SSH). از ۹ حامل (**WebSocket/TLS**، **KCP+FEC**، **Plain**، **Noise**، **Backhaul SMUX**، **FRP**، **GRE لایه ۳**، **FRP+GRE** و **Paqet Direct PCK**) به‌علاوه‌ی **Managed Xray** (`REALITY+Vision` / `XHTTP` + اسکنر سایت کاور TLS 1.3) پشتیبانی می‌کند. شروع سریع و مستندات کامل فارسی: [`docs/quickstart.md`](docs/quickstart.md) · [`docs/README.fa.md`](docs/README.fa.md) · [**@l8PY4NET**](https://t.me/l8PY4NET).

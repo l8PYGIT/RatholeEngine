@@ -94,6 +94,9 @@ jobs:
       - name: M6 relayed updates, Ed25519 signing & Backhaul TLS verification tests
         run: bash tests/test_m6_updates_signing_and_backhaul_verify.sh
 
+      - name: M7 paqet Direct PCK, Managed Xray & cover scanner tests
+        run: bash tests/test_m7_paqet_and_xray.sh
+
       - name: adaptive probe + controller tests
         run: |
           bash tests/test_adaptive.sh

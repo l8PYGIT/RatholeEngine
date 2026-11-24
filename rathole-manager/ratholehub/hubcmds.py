@@ -53,6 +53,17 @@ RE_PP_TOGGLE = re.compile(r"^(on|off|status)\Z")
 RE_PP_VER    = re.compile(r"^(v1|v2|off|status)\Z")
 RE_COUNT     = re.compile(r"^(?:[1-9]|1[0-9]|20)\Z")
 RE_CHAIN     = re.compile(r"^(?:ws|noise|kcp|frp|plain)(?:,(?:ws|noise|kcp|frp|plain)){0,4}\Z")
+RE_PAQET_MODE  = re.compile(r"^(normal|fast|fast2|fast3)\Z")
+RE_PAQET_BLOCK = re.compile(r"^(aes|aes-128|aes-128-gcm|salsa20|xor|sm4|none)\Z")
+RE_PAQET_KEY   = re.compile(r"^[A-Za-z0-9._=+/-]{8,255}\Z")
+RE_MAC         = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\Z")
+RE_IFACE       = re.compile(r"^[A-Za-z0-9._:-]{1,32}\Z")
+RE_XRAY_MODE   = re.compile(r"^(reality|xhttp)\Z")
+RE_XHTTP_MODE  = re.compile(r"^(auto|packet-up|stream-up|stream-one)\Z")
+RE_UUID        = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
+RE_HEX_SID     = re.compile(r"^[A-Fa-f0-9]{2,16}\Z")
+RE_B64URL      = re.compile(r"^[A-Za-z0-9_-]{40,50}\Z")
+RE_DOMAINS_CSV = re.compile(r"^[A-Za-z0-9.-]+(?:,[A-Za-z0-9.-]+){0,31}\Z")
 
 
 def _valid_ip(val):
@@ -76,8 +87,9 @@ def _valid_mtu(val):
 _INT_OK_KEYS = frozenset({
     "port", "inbound", "api_port", "remote_port", "lines",
     "interval", "failures", "recoveries", "value", "gre_key", "mtu", "count", "rev",
+    "conn", "top", "timeout",
 })
-_BOOL_OK_KEYS = frozenset({"probe_candidates", "allow_insecure", "tls_verify"})
+_BOOL_OK_KEYS = frozenset({"probe_candidates", "allow_insecure", "tls_verify", "proxy_protocol", "tls"})
 
 class _SafeArgs(dict):
     # wrapper baraye dict: vorodi-haye gheyre-string (list/dict/bool/int baraye esm) be '\x00'
@@ -439,6 +451,50 @@ def build_iran_cmd(action, a):
         rev = str(a.get("rev", "1") or "1")
         if not RE_COUNT.match(rev): return None
         return ["ratholectl", "undo", "--dry-run", rev]
+    # ---- paqet: Direct PCK raw TCP+KCP client ----
+    if action == "paqet_status": return ["ratholectl", "paqet", "status"]
+    if action == "paqet_show":   return ["ratholectl", "paqet", "show"]
+    if action == "paqet_off":    return ["ratholectl", "paqet", "off"]
+    if action == "paqet_on":
+        remote = str(a.get("remote", "") or "")
+        key    = str(a.get("key", "") or "")
+        mode   = str(a.get("mode", "fast") or "fast")
+        block  = str(a.get("block", "aes-128-gcm") or "aes-128-gcm")
+        conn   = str(a.get("conn", "1") or "1")
+        if not RE_IPPORT.match(remote) or not RE_PAQET_KEY.match(key): return None
+        if not RE_PAQET_MODE.match(mode) or not RE_PAQET_BLOCK.match(block): return None
+        if not conn.isdigit() or not (1 <= int(conn) <= 256): return None
+        cmd = ["ratholectl", "paqet", "on", remote, key, "--mode", mode, "--block", block, "--conn", conn]
+        for flag, val, chk in (
+            ("--iface", str(a.get("iface", "") or ""), lambda v: bool(RE_IFACE.match(v))),
+            ("--local-ip", str(a.get("local_ip", "") or ""), lambda v: bool(RE_IP.match(v))),
+            ("--router-mac", str(a.get("router_mac", "") or ""), lambda v: bool(RE_MAC.match(v))),
+        ):
+            if val:
+                if not chk(val): return None
+                cmd += [flag, val]
+        return cmd
+    if action in ("paqet_node_on", "paqet_node_off"):
+        name = a.get("name", "")
+        if not RE_NAME.match(name): return None
+        return ["ratholectl", "paqet", "node", name, ("on" if action == "paqet_node_on" else "off")]
+    # ---- Managed Xray cover scanner ----
+    if action == "xray_scan":
+        cmd = ["ratholectl", "xray", "scan"]
+        domains   = str(a.get("domains", "") or "").strip()
+        top       = str(a.get("top", "") or "").strip()
+        timeout_v = str(a.get("timeout", "") or "").strip()
+        if domains:
+            if not RE_DOMAINS_CSV.match(domains): return None
+            cmd += ["--domains", domains]
+        if top:
+            if not top.isdigit() or not (1 <= int(top) <= 50): return None
+            cmd += ["--top", top]
+        if timeout_v:
+            if not timeout_v.isdigit() or not (1 <= int(timeout_v) <= 30): return None
+            cmd += ["--timeout", timeout_v]
+        cmd.append("--json")
+        return cmd
     return None
 
 def build_node_cmd(action, a):
@@ -746,6 +802,125 @@ def build_node_cmd(action, a):
         if not RE_IPPORT.match(addr): return None
         sub = action.split("_", 1)[1]
         return ["ratholenode", "endpoints", sub, addr]
+    # ---- paqet: Direct PCK raw TCP+KCP server ----
+    if action == "paqet_status": return ["ratholenode", "paqet", "status"]
+    if action == "paqet_show":   return ["ratholenode", "paqet", "show"]
+    if action == "paqet_off":    return ["ratholenode", "paqet", "off"]
+    if action == "paqet_on":
+        port  = str(a.get("port", "9999") or "9999")
+        key   = str(a.get("key", "") or "")
+        mode  = str(a.get("mode", "fast") or "fast")
+        block = str(a.get("block", "aes-128-gcm") or "aes-128-gcm")
+        conn  = str(a.get("conn", "1") or "1")
+        if not RE_PORT.match(port): return None
+        if key and not RE_PAQET_KEY.match(key): return None
+        if not RE_PAQET_MODE.match(mode) or not RE_PAQET_BLOCK.match(block): return None
+        if not conn.isdigit() or not (1 <= int(conn) <= 256): return None
+        cmd = ["ratholenode", "paqet", "on", port]
+        if key:
+            cmd.append(key)
+        cmd += ["--mode", mode, "--block", block, "--conn", conn]
+        for flag, val, chk in (
+            ("--iface", str(a.get("iface", "") or ""), lambda v: bool(RE_IFACE.match(v))),
+            ("--local-ip", str(a.get("local_ip", "") or ""), lambda v: bool(RE_IP.match(v))),
+            ("--router-mac", str(a.get("router_mac", "") or ""), lambda v: bool(RE_MAC.match(v))),
+        ):
+            if val:
+                if not chk(val): return None
+                cmd += [flag, val]
+        return cmd
+    # ---- Managed Xray (REALITY+Vision / XHTTP + Cover Scanner) ----
+    if action == "xray_status": return ["ratholenode", "xray", "status", "--json"]
+    if action == "xray_off":    return ["ratholenode", "xray", "off"]
+    if action == "xray_scan":
+        cmd = ["ratholenode", "xray", "scan"]
+        domains   = str(a.get("domains", "") or "").strip()
+        top       = str(a.get("top", "") or "").strip()
+        timeout_v = str(a.get("timeout", "") or "").strip()
+        if domains:
+            if not RE_DOMAINS_CSV.match(domains): return None
+            cmd += ["--domains", domains]
+        if top:
+            if not top.isdigit() or not (1 <= int(top) <= 50): return None
+            cmd += ["--top", top]
+        if timeout_v:
+            if not timeout_v.isdigit() or not (1 <= int(timeout_v) <= 30): return None
+            cmd += ["--timeout", timeout_v]
+        cmd.append("--json")
+        return cmd
+    if action == "xray_uri":
+        host = str(a.get("host", "") or "").strip()
+        port = str(a.get("port", "") or "").strip()
+        cmd = ["ratholenode", "xray", "uri"]
+        if port and not host: return None
+        if host:
+            if not RE_HOST.match(host): return None
+            cmd.append(host)
+            if port:
+                if not RE_PORT.match(port): return None
+                cmd.append(port)
+        return cmd
+    if action == "xray_setup":
+        mode = str(a.get("mode", "reality") or "reality")
+        if not RE_XRAY_MODE.match(mode): return None
+        cmd = ["ratholenode", "xray", "setup", mode]
+        port   = str(a.get("port", "") or "").strip()
+        listen = str(a.get("listen", "") or "").strip()
+        uuid_v = str(a.get("uuid", "") or "").strip()
+        dest   = str(a.get("dest", "") or "").strip()
+        sni    = str(a.get("sni", "") or "").strip()
+        sid    = str(a.get("short_id", "") or "").strip()
+        priv_k = str(a.get("private_key", "") or "").strip()
+        pub_k  = str(a.get("public_key", "") or "").strip()
+        xpath  = str(a.get("path", "") or "").strip()
+        xmode  = str(a.get("xhttp_mode", "") or "").strip()
+        xhost  = str(a.get("host", "") or "").strip()
+        tls_v  = str(a.get("tls", "") or "").strip().lower()
+        cert_f = str(a.get("cert", "") or "").strip()
+        key_f  = str(a.get("key", "") or "").strip()
+        pp_v   = str(a.get("proxy_protocol", "") or "").strip().lower()
+        if port:
+            if not RE_PORT.match(port): return None
+            cmd += ["--port", port]
+        if listen:
+            if not _valid_ip(listen): return None
+            cmd += ["--listen", listen]
+        if uuid_v:
+            if not RE_UUID.match(uuid_v): return None
+            cmd += ["--uuid", uuid_v]
+        if mode == "reality":
+            if dest:
+                if not RE_IPPORT.match(dest): return None
+                cmd += ["--dest", dest]
+            if sni:
+                if not RE_HOST.match(sni): return None
+                cmd += ["--sni", sni]
+            if sid:
+                if not RE_HEX_SID.match(sid): return None
+                cmd += ["--short-id", sid]
+            if priv_k or pub_k:
+                if not (RE_B64URL.match(priv_k) and RE_B64URL.match(pub_k)): return None
+                cmd += ["--private-key", priv_k, "--public-key", pub_k]
+        else:
+            if xpath:
+                if not RE_PATH.match(xpath): return None
+                cmd += ["--path", xpath]
+            if xmode:
+                if not RE_XHTTP_MODE.match(xmode): return None
+                cmd += ["--mode", xmode]
+            if xhost:
+                if not RE_HOST.match(xhost): return None
+                cmd += ["--host", xhost]
+            if tls_v in ("1", "true", "yes"):
+                if not (RE_PATH.match(cert_f) and RE_PATH.match(key_f)): return None
+                cmd += ["--tls", "--cert", cert_f, "--key", key_f]
+            elif tls_v not in ("", "0", "false", "no"):
+                return None
+        if pp_v in ("1", "true", "yes"):
+            cmd.append("--proxy-protocol")
+        elif pp_v not in ("", "0", "false", "no"):
+            return None
+        return cmd
     return None
 
 
@@ -762,6 +937,7 @@ WRITE_ACTIONS = {
     "proxy_add", "proxy_rm",
     "frp_on", "frp_off", "frp_node_on", "frp_node_off", "frp_proxy_protocol",
     "gre_on", "gre_off", "gre_auto_mtu", "game_proxy_protocol",
+    "paqet_on", "paqet_off", "paqet_node_on", "paqet_node_off",
 
     "backup", "state_undo", "enable", "regen_full", "regen",
     # node
@@ -774,6 +950,7 @@ WRITE_ACTIONS = {
     "watchdog_on", "watchdog_off", "migrate", "deploy",
     "adaptive_on", "adaptive_off", "adaptive_run",
     "endpoints_add", "endpoints_rm", "endpoints_switch",
+    "xray_setup", "xray_off",
 
 }
 

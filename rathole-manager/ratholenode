@@ -42,7 +42,7 @@ if ! declare -F rth_commit_config >/dev/null 2>&1; then
   exit 1
 fi
 
-NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE BH_TLS_CA BH_TLS_SNI BH_TLS_VERIFY ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN ADAPTIVE_CHAIN ADAPTIVE_PROBE_CANDIDATES ADAPTIVE_AUTO_RECOVER PRIMARY_SERVER BACKUP_SERVERS FRP_REMOTE FRP_TOKEN FRP_TRANSPORT FRP_REMOTE_PORT FRP_PROXY_PROTOCOL GRE_REMOTE GRE_TUNNEL_IP GRE_NAME GRE_FAMILY GRE_KEY GRE_MTU"
+NODE_ENV_KEYS="SERVER HOST TLS_HOSTNAME TLS_TRUSTED_ROOT RATHOLE_VERSION TUNNEL KCP_LOCAL KCP_REMOTE KCP_PROFILE PLAIN_REMOTE NOISE_REMOTE NOISE_PUBKEY NOISE_PATTERN CONTROL_PATH WS_PATH HEARTBEAT_TIMEOUT KCP_HEARTBEAT_TIMEOUT BH_REMOTE BH_REMOTE_ADDR BH_TOKEN BH_TRANSPORT BH_PROFILE BH_TLS_CA BH_TLS_SNI BH_TLS_VERIFY PAQET_PORT PAQET_KEY PAQET_MODE PAQET_BLOCK PAQET_CONN PAQET_IFACE PAQET_LOCAL_IP PAQET_ROUTER_MAC ALLOW_INSECURE ADAPTIVE_ENABLED ADAPTIVE_INTERVAL ADAPTIVE_FAILURES ADAPTIVE_RECOVERIES ADAPTIVE_COOLDOWN ADAPTIVE_CHAIN ADAPTIVE_PROBE_CANDIDATES ADAPTIVE_AUTO_RECOVER PRIMARY_SERVER BACKUP_SERVERS FRP_REMOTE FRP_TOKEN FRP_TRANSPORT FRP_REMOTE_PORT FRP_PROXY_PROTOCOL GRE_REMOTE GRE_TUNNEL_IP GRE_NAME GRE_FAMILY GRE_KEY GRE_MTU"
 
 load_env_file(){
   local file="$1" line key val old_key
@@ -645,6 +645,15 @@ KCP_LOCAL_DEF="127.0.0.1:29900"
 BH_CLI_SVC=rathole-backhaul-client
 BH_CLI_UNIT="/etc/systemd/system/${BH_CLI_SVC}.service"
 BH_TOML=/etc/rathole/backhaul-client.toml
+
+# ---------- paqet (Direct PCK) + Managed Xray samt node ----------
+PAQET_SRV_SVC="rathole-paqet-server"
+PAQET_SRV_UNIT="/etc/systemd/system/${PAQET_SRV_SVC}.service"
+PAQET_SRV_YAML="/etc/paqet/server.yaml"
+XRAY_SVC="rathole-xray"
+XRAY_UNIT="/etc/systemd/system/${XRAY_SVC}.service"
+XRAY_CONF="/etc/xray/config.json"
+XRAY_ENV="/etc/rathole/xray.env"
 
 env_set(){ # $1=key $2=value (dar node.env)
   touch "$ENV_FILE"; chmod 600 "$ENV_FILE" 2>/dev/null || true
@@ -1271,6 +1280,456 @@ cmd_frp_status(){
     echo "  remote: ${FRP_REMOTE:-?}   transport: ${FRP_TRANSPORT:-tcp}"
     systemctl is-active --quiet "$FRP_CLI_SVC" && echo "  $FRP_CLI_SVC: $(c_g 'active')" || echo "  $FRP_CLI_SVC: $(c_r 'inactive')"
   fi
+}
+
+# ---------- paqet (Direct PCK): raw TCP/KCP server rooye node ----------
+gen_paqet_server_yaml(){
+  load_env
+  local port="${PAQET_PORT:-}" key="${PAQET_KEY:-}" mode="${PAQET_MODE:-fast}" block="${PAQET_BLOCK:-aes-128-gcm}"
+  local conn="${PAQET_CONN:-1}" iface="${PAQET_IFACE:-}" lip="${PAQET_LOCAL_IP:-}" mac="${PAQET_ROUTER_MAC:-}"
+  [ -n "$port" ] && [ -n "$key" ] || die "PAQET_PORT/PAQET_KEY dar node.env nist."
+  mkdir -p "$(dirname "$PAQET_SRV_YAML")"
+  local tmp; tmp="$(rth_mktemp)"
+  {
+    echo "# tvlid khodkar tvst ratholenode — paqet server (Direct PCK)"
+    echo 'role: "server"'
+    echo
+    echo "log:"
+    echo '  level: "info"'
+    echo
+    echo "listen:"
+    echo "  addr: \":${port}\""
+    echo
+    echo "network:"
+    echo "  interface: \"${iface}\""
+    echo "  ipv4:"
+    echo "    addr: \"${lip}:${port}\""
+    echo "    router_mac: \"${mac}\""
+    echo
+    echo "transport:"
+    echo '  protocol: "kcp"'
+    echo "  conn: ${conn:-1}"
+    echo "  kcp:"
+    echo "    mode: \"${mode}\""
+    echo "    block: \"${block}\""
+    echo "    key: \"${key}\""
+  } > "$tmp"
+  rth_commit_config "$tmp" "$PAQET_SRV_YAML"
+  chmod 600 "$PAQET_SRV_YAML" 2>/dev/null || true
+}
+
+gen_paqet_server_unit(){
+  local bin="${RATHOLE_BIN_DIR:-/usr/local/bin}/paqet"
+  cat > "$PAQET_SRV_UNIT" <<UNIT
+[Unit]
+Description=rathole paqet server (Direct PCK)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${bin} run -c ${PAQET_SRV_YAML}
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload 2>/dev/null || true
+}
+
+cmd_paqet(){
+  need_root
+  local sub="${1:-status}"; shift || true
+  case "$sub" in
+    on)
+      load_env
+      local port="${PAQET_PORT:-9999}" key="${PAQET_KEY:-}" mode="${PAQET_MODE:-fast}" block="${PAQET_BLOCK:-aes-128-gcm}"
+      local conn="${PAQET_CONN:-1}" iface="${PAQET_IFACE:-}" lip="${PAQET_LOCAL_IP:-}" mac="${PAQET_ROUTER_MAC:-}" skip_ipt=0
+      local -a pos=()
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --mode) [ $# -ge 2 ] || die "--mode meghdar mikhahad."; mode="$2"; shift 2 ;;
+          --mode=*) mode="${1#*=}"; shift ;;
+          --block) [ $# -ge 2 ] || die "--block meghdar mikhahad."; block="$2"; shift 2 ;;
+          --block=*) block="${1#*=}"; shift ;;
+          --conn) [ $# -ge 2 ] || die "--conn adad mikhahad."; conn="$2"; shift 2 ;;
+          --conn=*) conn="${1#*=}"; shift ;;
+          --iface) [ $# -ge 2 ] || die "--iface nam-e interface mikhahad."; iface="$2"; shift 2 ;;
+          --iface=*) iface="${1#*=}"; shift ;;
+          --local-ip) [ $# -ge 2 ] || die "--local-ip IPv4 mikhahad."; lip="$2"; shift 2 ;;
+          --local-ip=*) lip="${1#*=}"; shift ;;
+          --router-mac) [ $# -ge 2 ] || die "--router-mac MAC mikhahad."; mac="$2"; shift 2 ;;
+          --router-mac=*) mac="${1#*=}"; shift ;;
+          --skip-iptables) skip_ipt=1; shift ;;
+          *) pos+=("$1"); shift ;;
+        esac
+      done
+      [ -n "${pos[0]:-}" ] && port="${pos[0]}"
+      [ -n "${pos[1]:-}" ] && key="${pos[1]}"
+      [ -n "${pos[2]:-}" ] && mode="${pos[2]}"
+      [ -n "$key" ] || key="$(openssl rand -hex 16 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(16))')"
+      rth_valid_port "$port" || die "port paqet namotabar ast."
+      rth_valid_kcp_key "$key" || die "key paqet namotabar ast."
+      rth_valid_paqet_mode "$mode" || die "mode namotabar (normal|fast|fast2|fast3)."
+      rth_valid_paqet_block "$block" || die "block cipher namotabar."
+      [[ "$conn" =~ ^[0-9]{1,3}$ ]] && (( 10#$conn >= 1 && 10#$conn <= 256 )) || die "conn bayad 1..256 bashad."
+      if [ -z "$iface" ] || [ -z "$lip" ] || [ -z "$mac" ]; then
+        local d_if d_ip d_mac
+        IFS='|' read -r d_if d_ip d_mac <<<"$(paqet_detect_net || true)"
+        [ -n "$iface" ] || iface="$d_if"
+        [ -n "$lip" ] || lip="$d_ip"
+        [ -n "$mac" ] || mac="$d_mac"
+      fi
+      [[ "$iface" =~ ^[A-Za-z0-9._:-]{1,32}$ ]] || die "interface shabake peyda nashod (--iface bede)."
+      rth_is_ipv4 "$lip" || die "IPv4 mahalli namotabar ast (--local-ip bede)."
+      rth_valid_mac "$mac" || die "router_mac namotabar ast (--router-mac aa:bb:cc:dd:ee:ff bede)."
+
+      install_paqet || return 1
+      env_set PAQET_PORT "$port"
+      env_set PAQET_KEY "$key"
+      env_set PAQET_MODE "$mode"
+      env_set PAQET_BLOCK "$block"
+      env_set PAQET_CONN "$conn"
+      env_set PAQET_IFACE "$iface"
+      env_set PAQET_LOCAL_IP "$lip"
+      env_set PAQET_ROUTER_MAC "$mac"
+      gen_paqet_server_yaml || return 1
+      gen_paqet_server_unit || return 1
+      [ "$skip_ipt" -eq 1 ] || paqet_iptables_apply "$port" server
+      command -v ufw >/dev/null 2>&1 && ufw allow "$port/tcp" >/dev/null 2>&1 || true
+      systemctl enable "$PAQET_SRV_SVC" >/dev/null 2>&1 || true
+      systemctl restart "$PAQET_SRV_SVC" 2>/dev/null && log "$PAQET_SRV_SVC start shod (listen=:${port}, mode=${mode}, block=${block})." || \
+        { err "start-e $PAQET_SRV_SVC nashod."; return 1; }
+      cmd_paqet show
+      ;;
+    off)
+      load_env
+      local old_port="${PAQET_PORT:-}"
+      systemctl disable --now "$PAQET_SRV_SVC" 2>/dev/null || true
+      rm -f "$PAQET_SRV_UNIT" "$PAQET_SRV_YAML"; systemctl daemon-reload 2>/dev/null || true
+      [ -n "$old_port" ] && paqet_iptables_remove "$old_port" server
+      sed -i '/^PAQET_/d' "$ENV_FILE" 2>/dev/null || true
+      log "paqet server khamoosh va pak shod."
+      ;;
+    show)
+      load_env
+      [ -n "${PAQET_PORT:-}" ] && [ -n "${PAQET_KEY:-}" ] || { warn "paqet server faal nist."; return 1; }
+      local pub_ip; pub_ip="${PAQET_LOCAL_IP:-$(detect_ip)}"
+      echo "ratholectl paqet on ${pub_ip}:${PAQET_PORT} ${PAQET_KEY} ${PAQET_MODE:-fast} --block ${PAQET_BLOCK:-aes-128-gcm}"
+      ;;
+    status)
+      load_env
+      if [ -n "${PAQET_PORT:-}" ]; then
+        local act="inactive"
+        systemctl is-active --quiet "$PAQET_SRV_SVC" && act="active"
+        echo "paqet server: $([ "$act" = active ] && c_g "$act" || c_y "$act")  listen=:${PAQET_PORT} mode=${PAQET_MODE:-fast} block=${PAQET_BLOCK:-aes-128-gcm} iface=${PAQET_IFACE:-?}"
+      else
+        echo "paqet server: $(c_y 'inactive')"
+      fi
+      ;;
+    logs) journalctl -u "$PAQET_SRV_SVC" -n "${1:-40}" --no-pager 2>/dev/null || true ;;
+    *) die "estefade: ratholenode paqet <on [port] [key] [mode] [--block ...] [--iface ...]|off|status|show|logs>" ;;
+  esac
+}
+
+# ---------- Managed Xray (VLESS+REALITY+Vision & VLESS+XHTTP + Cover Scanner) ----------
+XRAY_ENV_KEYS="XRAY_MODE XRAY_PORT XRAY_LISTEN XRAY_UUID XRAY_DEST XRAY_SNI XRAY_PUBLIC_KEY XRAY_SHORT_ID XRAY_PATH XRAY_XHTTP_MODE XRAY_HOST XRAY_TLS XRAY_PP"
+
+_xray_load_env(){
+  local k
+  for k in $XRAY_ENV_KEYS; do unset "$k"; done
+  [ -f "$XRAY_ENV" ] || return 1
+  local line key val
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in ''|\#*|*=*) ;; *) continue ;; esac
+    case "$line" in ''|\#*) continue ;; esac
+    key="${line%%=*}"; val="${line#*=}"
+    case " $XRAY_ENV_KEYS " in *" $key "*) ;; *) continue ;; esac
+    printf '%s' "$val" | grep -qE '[$` ;\\|&<>()]' && continue
+    printf -v "$key" '%s' "$val"
+  done < "$XRAY_ENV"
+}
+
+gen_xray_unit(){
+  local xbin="${RATHOLE_BIN_DIR:-/usr/local/bin}/xray"
+  cat > "$XRAY_UNIT" <<UNIT
+[Unit]
+Description=rathole managed Xray inbound service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${xbin} run -config ${XRAY_CONF}
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload 2>/dev/null || true
+}
+
+cmd_xray(){
+  local sub="${1:-status}"; shift || true
+  case "$sub" in
+    scan)
+      rth_xray_scan_cover "$@"
+      ;;
+    setup)
+      need_root
+      local mode="${1:-}"; shift || true
+      case "$mode" in reality|xhttp) ;; *) die "estefade: ratholenode xray setup <reality|xhttp> [--port N] [--dest host:port] [--sni host] [--path /xhttp] [--proxy-protocol]" ;; esac
+      local port="" listen="127.0.0.1" uuid="" dest="" sni="" sid="" priv_key="" pub_key="" xpath="/xhttp" xmode="auto" xhost="" use_tls=0 cert_file="" key_file="" pp=0
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --port) [ $# -ge 2 ] || die "--port adad mikhahad."; port="$2"; shift 2 ;;
+          --port=*) port="${1#*=}"; shift ;;
+          --listen) [ $# -ge 2 ] || die "--listen IP mikhahad."; listen="$2"; shift 2 ;;
+          --listen=*) listen="${1#*=}"; shift ;;
+          --uuid) [ $# -ge 2 ] || die "--uuid UUID mikhahad."; uuid="$2"; shift 2 ;;
+          --uuid=*) uuid="${1#*=}"; shift ;;
+          --dest) [ $# -ge 2 ] || die "--dest host:port mikhahad."; dest="$2"; shift 2 ;;
+          --dest=*) dest="${1#*=}"; shift ;;
+          --sni) [ $# -ge 2 ] || die "--sni host mikhahad."; sni="$2"; shift 2 ;;
+          --sni=*) sni="${1#*=}"; shift ;;
+          --short-id) [ $# -ge 2 ] || die "--short-id hex mikhahad."; sid="$2"; shift 2 ;;
+          --short-id=*) sid="${1#*=}"; shift ;;
+          --private-key) [ $# -ge 2 ] || die "--private-key meghdar mikhahad."; priv_key="$2"; shift 2 ;;
+          --private-key=*) priv_key="${1#*=}"; shift ;;
+          --public-key) [ $# -ge 2 ] || die "--public-key meghdar mikhahad."; pub_key="$2"; shift 2 ;;
+          --public-key=*) pub_key="${1#*=}"; shift ;;
+          --path) [ $# -ge 2 ] || die "--path masir mikhahad."; xpath="$2"; shift 2 ;;
+          --path=*) xpath="${1#*=}"; shift ;;
+          --mode) [ $# -ge 2 ] || die "--mode meghdar mikhahad."; xmode="$2"; shift 2 ;;
+          --mode=*) xmode="${1#*=}"; shift ;;
+          --host) [ $# -ge 2 ] || die "--host domain mikhahad."; xhost="$2"; shift 2 ;;
+          --host=*) xhost="${1#*=}"; shift ;;
+          --tls) use_tls=1; shift ;;
+          --cert) [ $# -ge 2 ] || die "--cert masir mikhahad."; cert_file="$2"; shift 2 ;;
+          --cert=*) cert_file="${1#*=}"; shift ;;
+          --key) [ $# -ge 2 ] || die "--key masir mikhahad."; key_file="$2"; shift 2 ;;
+          --key=*) key_file="${1#*=}"; shift ;;
+          --proxy-protocol) pp=1; shift ;;
+          *) die "flag nashenakhte baraye xray setup: $1" ;;
+        esac
+      done
+      if [ -z "$port" ]; then
+        [ "$mode" = "reality" ] && port=8443 || port=2087
+      fi
+      rth_valid_port "$port" || die "port xray namotabar ast."
+      rth_valid_ip "$listen" || die "adres listen xray namotabar ast: $listen"
+      if [ -z "$uuid" ]; then
+        if [ -r /proc/sys/kernel/random/uuid ]; then
+          uuid="$(cat /proc/sys/kernel/random/uuid)"
+        else
+          uuid="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+        fi
+      fi
+      rth_valid_uuid "$uuid" || die "UUID namotabar ast."
+      install_xray || return 1
+
+      if [ "$mode" = "reality" ]; then
+        dest="${dest:-www.microsoft.com:443}"
+        rth_valid_hostport "$dest" || die "--dest bayad host:port motabar bashad."
+        sni="${sni:-${dest%%:*}}"
+        echo "$sni" | grep -qE '^[A-Za-z0-9][A-Za-z0-9.-]{1,253}$' || die "--sni namotabar ast."
+        if [ -z "$sid" ]; then
+          sid="$(openssl rand -hex 8 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(8))')"
+        fi
+        echo "$sid" | grep -qE '^[A-Fa-f0-9]{2,16}$' || die "--short-id bayad 2..16 hex bashad."
+        if [ -z "$priv_key" ] || [ -z "$pub_key" ]; then
+          local kp
+          kp="$(rth_xray_gen_x25519)" || die "tolid kelid X25519 baraye REALITY shekast khord."
+          IFS='|' read -r priv_key pub_key <<<"$kp"
+        fi
+        echo "$priv_key" | grep -qE '^[A-Za-z0-9_-]{40,50}$' || die "--private-key namotabar ast."
+        echo "$pub_key"  | grep -qE '^[A-Za-z0-9_-]{40,50}$' || die "--public-key namotabar ast."
+      else
+        rth_valid_path "$xpath" || die "--path namotabar ast."
+        case "$xmode" in auto|packet-up|stream-up|stream-one) ;; *) die "--mode xhttp namotabar (auto|packet-up|stream-up|stream-one)." ;; esac
+        [ -z "$xhost" ] || echo "$xhost" | grep -qE '^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$' || die "--host namotabar ast."
+        if [ "$use_tls" -eq 1 ]; then
+          rth_valid_path "$cert_file" && [ -s "$cert_file" ] || die "baraye --tls, --cert file-e motabar lazem ast."
+          rth_valid_path "$key_file"  && [ -s "$key_file" ]  || die "baraye --tls, --key file-e motabar lazem ast."
+        fi
+      fi
+
+      mkdir -p "$(dirname "$XRAY_CONF")" "$(dirname "$XRAY_ENV")"
+      local tmp_json; tmp_json="$(rth_mktemp)"
+      python3 - "$mode" "$listen" "$port" "$uuid" "$dest" "$sni" "$priv_key" "$sid" "$xpath" "$xmode" "$xhost" "$use_tls" "$cert_file" "$key_file" "$pp" > "$tmp_json" <<'PY'
+import json, sys
+mode, listen, port_s, uuid_v, dest, sni, priv_k, sid, xpath, xmode, xhost, tls_s, cert_f, key_f, pp_s = sys.argv[1:16]
+client = {"id": uuid_v}
+if mode == "reality":
+    client["flow"] = "xtls-rprx-vision"
+    stream = {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+            "show": False,
+            "dest": dest,
+            "xver": 0,
+            "serverNames": [sni],
+            "privateKey": priv_k,
+            "shortIds": [sid],
+        },
+    }
+else:
+    xhttp_settings = {"path": xpath, "mode": xmode}
+    if xhost:
+        xhttp_settings["host"] = xhost
+    stream = {
+        "network": "xhttp",
+        "security": "tls" if tls_s == "1" else "none",
+        "xhttpSettings": xhttp_settings,
+    }
+    if tls_s == "1":
+        stream["tlsSettings"] = {"certificates": [{"certificateFile": cert_f, "keyFile": key_f}]}
+if pp_s == "1":
+    stream["sockopt"] = {"acceptProxyProtocol": True}
+cfg = {
+    "log": {"loglevel": "warning"},
+    "inbounds": [{
+        "tag": "rathole-in",
+        "listen": listen,
+        "port": int(port_s),
+        "protocol": "vless",
+        "settings": {"clients": [client], "decryption": "none"},
+        "streamSettings": stream,
+    }],
+    "outbounds": [
+        {"tag": "direct", "protocol": "freedom"},
+        {"tag": "block", "protocol": "blackhole"},
+    ],
+}
+print(json.dumps(cfg, indent=2))
+PY
+      python3 -m json.tool "$tmp_json" >/dev/null 2>&1 || { rm -f "$tmp_json"; die "JSON-e Xray namotabar ast."; }
+      local xbin="${RATHOLE_BIN_DIR:-/usr/local/bin}/xray"
+      if [ "${RATHOLE_SKIP_XRAY_TEST:-0}" != "1" ] && [ -x "$xbin" ]; then
+        "$xbin" run -test -c "$tmp_json" >/dev/null 2>&1 || { rm -f "$tmp_json"; die "test config-e Xray shekast khord."; }
+      fi
+      rth_commit_config "$tmp_json" "$XRAY_CONF"
+      chmod 600 "$XRAY_CONF" 2>/dev/null || true
+
+      local tmp_env; tmp_env="$(umask 077 && rth_mktemp)"
+      cat > "$tmp_env" <<XENV
+XRAY_MODE=${mode}
+XRAY_PORT=${port}
+XRAY_LISTEN=${listen}
+XRAY_UUID=${uuid}
+XRAY_DEST=${dest}
+XRAY_SNI=${sni}
+XRAY_PUBLIC_KEY=${pub_key}
+XRAY_SHORT_ID=${sid}
+XRAY_PATH=${xpath}
+XRAY_XHTTP_MODE=${xmode}
+XRAY_HOST=${xhost}
+XRAY_TLS=${use_tls}
+XRAY_PP=${pp}
+XENV
+      rth_commit_config "$tmp_env" "$XRAY_ENV"
+      chmod 600 "$XRAY_ENV" 2>/dev/null || true
+
+      gen_xray_unit || return 1
+      systemctl enable "$XRAY_SVC" >/dev/null 2>&1 || true
+      systemctl restart "$XRAY_SVC" 2>/dev/null && log "$XRAY_SVC start shod (mode=${mode}, listen=${listen}:${port})." || \
+        { err "start-e $XRAY_SVC nashod."; return 1; }
+      ;;
+    status)
+      local as_json=0; [ "${1:-}" = "--json" ] && as_json=1
+      _xray_load_env || true
+      local active=false
+      systemctl is-active --quiet "$XRAY_SVC" 2>/dev/null && active=true
+      if [ "$as_json" -eq 1 ]; then
+        python3 - "${XRAY_MODE:-}" "${XRAY_PORT:-0}" "${XRAY_LISTEN:-}" "${XRAY_DEST:-}" "${XRAY_SNI:-}" "${XRAY_PUBLIC_KEY:-}" "${XRAY_SHORT_ID:-}" "${XRAY_PATH:-}" "${XRAY_XHTTP_MODE:-}" "${XRAY_TLS:-0}" "${XRAY_PP:-0}" "$active" <<'PY'
+import json, sys
+mode, port_s, listen, dest, sni, pbk, sid, xpath, xmode, tls_s, pp_s, act_s = sys.argv[1:13]
+print(json.dumps({
+    "configured": bool(mode),
+    "active": act_s == "true",
+    "mode": mode,
+    "listen": listen,
+    "port": int(port_s or 0) if port_s.isdigit() else 0,
+    "dest": dest,
+    "sni": sni,
+    "public_key": pbk,
+    "short_id": sid,
+    "path": xpath,
+    "xhttp_mode": xmode,
+    "tls": tls_s == "1",
+    "proxy_protocol": pp_s == "1",
+}, separators=(",", ":")))
+PY
+        return 0
+      fi
+      if [ -z "${XRAY_MODE:-}" ]; then
+        echo "managed xray: $(c_y 'unconfigured')"
+        return 0
+      fi
+      echo "managed xray: $([ "$active" = true ] && c_g 'active' || c_y 'inactive')  mode=${XRAY_MODE} listen=${XRAY_LISTEN:-127.0.0.1}:${XRAY_PORT:-?}"
+      if [ "${XRAY_MODE}" = "reality" ]; then
+        echo "  dest=${XRAY_DEST:-?} sni=${XRAY_SNI:-?} pbk=${XRAY_PUBLIC_KEY:-?} sid=${XRAY_SHORT_ID:-?} pp=${XRAY_PP:-0}"
+      else
+        echo "  path=${XRAY_PATH:-/xhttp} xhttp_mode=${XRAY_XHTTP_MODE:-auto} tls=${XRAY_TLS:-0} pp=${XRAY_PP:-0}"
+      fi
+      ;;
+    uri)
+      _xray_load_env || die "managed xray tanzim nashode; aval: ratholenode xray setup ..."
+      local pub_host="${1:-}" pub_port="${2:-}"
+      [ -n "$pub_host" ] || pub_host="$(detect_ip)"
+      [ -n "$pub_host" ] || pub_host="127.0.0.1"
+      [ -n "$pub_port" ] || pub_port="${XRAY_PORT:-443}"
+      rth_valid_port "$pub_port" || die "port omomi namotabar ast."
+      python3 - "$pub_host" "$pub_port" "${XRAY_MODE:-}" "${XRAY_UUID:-}" "${XRAY_SNI:-}" "${XRAY_PUBLIC_KEY:-}" "${XRAY_SHORT_ID:-}" "${XRAY_PATH:-}" "${XRAY_XHTTP_MODE:-}" "${XRAY_HOST:-}" "${XRAY_TLS:-0}" <<'PY'
+import sys
+from urllib.parse import quote, urlencode
+host, port, mode, uuid_v, sni, pbk, sid, xpath, xmode, xhost, tls_s = sys.argv[1:12]
+if mode == "reality":
+    qs = urlencode({
+        "type": "tcp",
+        "security": "reality",
+        "encryption": "none",
+        "flow": "xtls-rprx-vision",
+        "sni": sni,
+        "fp": "chrome",
+        "pbk": pbk,
+        "sid": sid,
+    })
+else:
+    params = {
+        "type": "xhttp",
+        "encryption": "none",
+        "path": xpath or "/xhttp",
+        "mode": xmode or "auto",
+        "security": "tls" if tls_s == "1" else "none",
+    }
+    if xhost:
+        params["host"] = xhost
+    qs = urlencode(params)
+h_disp = f"[{host}]" if ":" in host else host
+print(f"vless://{quote(uuid_v)}@{h_disp}:{port}?{qs}#rathole-{quote(mode)}")
+PY
+      ;;
+    off)
+      need_root
+      systemctl disable --now "$XRAY_SVC" 2>/dev/null || true
+      rm -f "$XRAY_UNIT" "$XRAY_CONF" "$XRAY_ENV"
+      systemctl daemon-reload 2>/dev/null || true
+      log "managed xray khamoosh va hazf shod."
+      ;;
+    *) die "estefade: ratholenode xray <setup <reality|xhttp> ...|status [--json]|uri [host] [port]|scan|off>" ;;
+  esac
 }
 
 # ---------- GRE: tunnel-e shabake-ye L3 Linux (ip link/tunnel: gre / ip6gre) ----------
@@ -2401,6 +2860,8 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   backhaul on <domain|host:port> <token> [transport] [profile] | off | status   lane-e joda: TLS/443=wss/wssmux, direct-IP=ws/wsmux
   backhaul add-svc <name> <token> <port> | rm-svc <name> | ls   registry-e servicehaye lane-e backhaul
   frp on <iran_ip:port> <token> [transport] [remote_port] | off | status | proxy-protocol <v2|v1|off|status>   tunnel-e FRP (tcp/kcp/quic/websocket)
+  paqet on [port] [key] [mode] [--block cipher] [--iface dev] | off | status | show   tunnel-e Direct PCK
+  xray setup <reality|xhttp> ... | status [--json] | uri [host] [port] | scan | off   inbound Xray REALITY/XHTTP
   gre on <iran_ip> [tunnel_ip] [gre_name] [--key N] [--mtu N] | off [gre_name] | status | probe <peer_ip> [gre_name] | auto-mtu <peer_ip> [gre_name]   tunnel-e L3 GRE/IP6GRE
 
   fakeweb <start|stop|rm|status> [port] web fik sabok baraye fallback inbound TLS (pishfarz 8081)
@@ -3498,6 +3959,8 @@ main(){
     noise)   shift; cmd_noise "$@" ;;
     backhaul) shift; cmd_backhaul "$@" ;;
     frp)     shift; cmd_frp "$@" ;;
+    paqet)   shift; cmd_paqet "$@" ;;
+    xray)    shift; cmd_xray "$@" ;;
     gre)     shift; cmd_gre "$@" ;;
     restart) need_root; load_env
              if [ "${TUNNEL:-ws}" = frp ]; then cmd_apply; else restart_svc; fi ;;

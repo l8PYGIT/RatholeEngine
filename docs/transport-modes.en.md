@@ -20,6 +20,7 @@ The rathole lane has **four carriers**: WebSocket/TLS, KCP, plain WebSocket, and
 | **frp** | `ratholectl frp on <port> [token] [tcp\|kcp\|quic\|websocket]` | `ratholenode frp on <iran_ip:port> <token> [transport] [remote_port]` | `fatedier/frp` core; default 7000 |
 | **gre** | `ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]` | `ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]` | L3 `ip tunnel`; default `gre1` on a /30 |
 | **frp_gre** | hub service controls (or `gre on` + `frp on` over the virtual IP) | same two steps on the node side | FRP multiplexed inside GRE |
+| **paqet** | `ratholectl paqet on <node_ip:port> <key> [mode]` + `paqet node <name> on` | `ratholenode paqet on [port] [key] [mode]` | Raw TCP+KCP Direct PCK without TLS handshake |
 
 ## Carrier Protocol Reporting and Switching via Service Controls
 
@@ -286,6 +287,19 @@ ratholenode adaptive test [--json]
 ---
 
 **Key rule:** In all tunnel modes, user paths, tokens, and inbound configs remain untouched; only the underlying tunnel carrier changes. For packet-level traffic flow details, see [`traffic-flow.md`](traffic-flow.md).
+
+---
+
+## 15) paqet (Direct PCK raw TCP+KCP without TLS)
+
+> Transmits raw packet streams encapsulated as TCP/KCP without a TLS handshake (`CAP_NET_RAW`/`CAP_NET_ADMIN` + `iptables RAW NOTRACK`) to bypass strict DPI inspection.
+
+- **Client/Server split:** the foreign node runs `paqet` in server mode (`ratholenode paqet on`) while the Iran edge runs `paqet` in client mode (`ratholectl paqet on <node_ip:port> <key>` and `ratholectl paqet node <name> on`), forwarding each node's Iran data port to `127.0.0.1:<inbound_port>` without colliding with `server.toml`.
+
+## 16) Managed Xray (`REALITY+Vision` / `XHTTP`) & Cover Site Scanner
+
+- One-command Xray inbound lifecycle on foreign nodes (`ratholenode xray setup reality|xhttp`), atomic X25519 keypair generation (`xray x25519` or OpenSSL fallback), optional `acceptProxyProtocol`, redacted `status --json` (omitting `privateKey`), and ready `vless://` URIs (`ratholenode xray uri`).
+- **Concurrent Cover Site Scanner:** `ratholectl xray scan` / `ratholenode xray scan` probes candidate cover domains over TLS 1.3 + ALPN `h2` and ranks passing sites by RTT.
 
 ---
 

@@ -204,6 +204,19 @@ def _redact_cmd_for_audit(action, cmd):
     elif action == "frp_on" and len(parts) > 4:
         if parts[0] == "ratholenode" or parts[4] not in ("tcp", "kcp", "quic", "websocket"):
             parts[4] = "***REDACTED***"
+    elif action == "paqet_on" and parts:
+        if parts[0] == "ratholectl" and len(parts) > 4:
+            parts[4] = "***REDACTED***"
+        elif parts[0] == "ratholenode" and len(parts) > 4 and not parts[4].startswith("--"):
+            parts[4] = "***REDACTED***"
+    elif action == "xray_setup":
+        for i in range(1, len(parts)):
+            if parts[i] in ("--private-key", "--uuid") and i + 1 < len(parts):
+                parts[i + 1] = "***REDACTED***"
+            elif parts[i].startswith("--private-key="):
+                parts[i] = "--private-key=***REDACTED***"
+            elif parts[i].startswith("--uuid="):
+                parts[i] = "--uuid=***REDACTED***"
     return " ".join(parts)
 
 def _redact_proxy_creds(proxy):
@@ -900,11 +913,12 @@ def mock_run(server, cmd_args):
                      "key": f"/etc/letsencrypt/live/{dom}/privkey.pem",
                      "exists": "yes", "expiry": "Oct 12 09:00:00 2026 GMT", "self_signed": "no"},
             "services": {"rathole_server": "yes", "nginx": "yes", "nginx_config_ok": "yes",
-                         "noise": "yes", "backhaul": "yes", "fakeweb": "yes", "frps": "yes"},
+                         "noise": "yes", "backhaul": "yes", "fakeweb": "yes", "frps": "yes", "paqet": "no"},
             "features": {"fakeweb": {"configured": True, "active": True, "port": 8080},
                          "direct": {"configured": True, "active": True, "port": 8443},
                          "frp": {"configured": True, "active": True, "port": 7000},
-                         "gre": {"configured": True, "active": True, "name": "gre1"}},
+                         "gre": {"configured": True, "active": True, "name": "gre1"},
+                         "paqet": {"configured": False, "active": False, "remote": "", "mode": "fast", "block": "aes-128-gcm", "nodes": []}},
             "sni_count": 1, "node_count": 7,
             "nodes": [
                 {"name": "trk01", "port": 1005, "inbound_port": 8444, "api_local_port": None,
@@ -1075,6 +1089,44 @@ def mock_run(server, cmd_args):
         }), "err": ""}
     if cmd_args[:3] in (["ratholenode", "endpoints", "add"], ["ratholenode", "endpoints", "rm"], ["ratholenode", "endpoints", "switch"]) and len(cmd_args) >= 4:
         return {"rc": 0, "out": f"endpoints {cmd_args[2]}: {cmd_args[3]}", "err": ""}
+    if cmd_args[:2] == ["ratholectl", "paqet"]:
+        sub = cmd_args[2] if len(cmd_args) > 2 else "status"
+        if sub == "status":
+            return {"rc": 0, "out": "paqet (Direct PCK client): khamoosh", "err": ""}
+        if sub == "show":
+            return {"rc": 0, "out": "paqet remote=198.51.100.5:9999 mode=fast block=aes-128-gcm", "err": ""}
+        return {"rc": 0, "out": f"[mock] ratholectl paqet {sub} ok", "err": ""}
+    if cmd_args[:2] == ["ratholenode", "paqet"]:
+        sub = cmd_args[2] if len(cmd_args) > 2 else "status"
+        if sub == "status":
+            return {"rc": 0, "out": "paqet server: active  listen=:9999 mode=fast block=aes-128-gcm iface=eth0", "err": ""}
+        if sub == "show":
+            ip = server.get("host") or "198.51.100.5"
+            return {"rc": 0, "out": f"ratholectl paqet on {ip}:9999 0123456789abcdef0123456789abcdef fast --block aes-128-gcm", "err": ""}
+        return {"rc": 0, "out": f"[mock] ratholenode paqet {sub} ok", "err": ""}
+    if len(cmd_args) >= 3 and cmd_args[0] in ("ratholectl", "ratholenode") and cmd_args[1] == "xray" and cmd_args[2] == "scan":
+        return {"rc": 0, "out": json.dumps({
+            "ok": True, "port": 443, "recommended": "www.microsoft.com",
+            "results": [
+                {"domain": "www.microsoft.com", "ok": True, "verdict": "GOOD", "tls_version": "TLSv1.3", "alpn": "h2", "rtt_ms": 18.4, "detail": ""},
+                {"domain": "aws.amazon.com", "ok": True, "verdict": "GOOD", "tls_version": "TLSv1.3", "alpn": "h2", "rtt_ms": 24.1, "detail": ""},
+            ],
+        }), "err": ""}
+    if cmd_args[:2] == ["ratholenode", "xray"]:
+        sub = cmd_args[2] if len(cmd_args) > 2 else "status"
+        if sub == "status":
+            return {"rc": 0, "out": json.dumps({
+                "configured": True, "active": True, "mode": "reality",
+                "listen": "127.0.0.1", "port": 8443,
+                "dest": "www.microsoft.com:443", "sni": "www.microsoft.com",
+                "public_key": "mOCKPubKey1234567890abcdef1234567890abcdefA",
+                "short_id": "a1b2c3d4e5f60718", "path": "/xhttp", "xhttp_mode": "auto",
+                "tls": False, "proxy_protocol": False,
+            }), "err": ""}
+        if sub == "uri":
+            ip = server.get("host") or "198.51.100.5"
+            return {"rc": 0, "out": f"vless://11111111-2222-4333-8444-555555555555@{ip}:443?type=tcp&security=reality&encryption=none&flow=xtls-rprx-vision&sni=www.microsoft.com&fp=chrome&pbk=mOCKPubKey&sid=a1b2c3d4#rathole-reality", "err": ""}
+        return {"rc": 0, "out": f"[mock] ratholenode xray {sub} ok", "err": ""}
     if j.startswith("ratholenode set SERVER "):
         return {"rc": 0, "out": "tanzim shod: SERVER = %s\n[mock] tunnel-e asli be-ruz shod." % cmd_args[-1], "err": ""}
     return {"rc": 0, "out": "[mock] %s → %s" % (role, j), "err": ""}
@@ -1273,6 +1325,38 @@ def parse_gre_status(text):
     if m: name = m.group(0)
     return {"enabled": enabled, "name": name}
 
+def parse_paqet_status(text):
+    text = text or ""
+    low = text.lower()
+    enabled = ("roshan" in text) or bool(re.search(r"\bactive\b", low) and "inactive" not in low)
+    m_mode = re.search(r"mode[=:]\s*(normal|fast[23]?)\b", text)
+    m_blk = re.search(r"block[=:]\s*([A-Za-z0-9-]+)\b", text)
+    m_rem = re.search(r"(?:→|->)\s*(\S+:\d+)", text)
+    m_port = re.search(r"listen=?:?(\d+)", text)
+    return {
+        "enabled": enabled,
+        "mode": m_mode.group(1) if m_mode else "fast",
+        "block": m_blk.group(1) if m_blk else "aes-128-gcm",
+        "remote": m_rem.group(1) if m_rem else "",
+        "port": m_port.group(1) if m_port else "",
+    }
+
+def parse_paqet_connect(text):
+    text = text or ""
+    m = re.search(
+        r"ratholectl\s+paqet\s+on\s+(\S+:\d+)\s+([A-Za-z0-9._=+/-]{8,255})"
+        r"(?:\s+(normal|fast[23]?))?(?:\s+--block\s+([A-Za-z0-9-]+))?",
+        text,
+    )
+    if not m:
+        return None
+    return {
+        "remote": m.group(1),
+        "key": m.group(2),
+        "mode": m.group(3) or "fast",
+        "block": m.group(4) or "aes-128-gcm",
+    }
+
 def parse_doctor(text):
     # alave bar shomaresh OK/FAIL, vaziat har node ra ham darmiavarad
     # (khatt-haye "OK node X rooye port P amade ast" / "WARN node X ... gvsh nmidhd")
@@ -1428,6 +1512,7 @@ def collect_server_overview(s):
             f_bh = feats.get("backhaul") or {}
             f_frp = feats.get("frp") or {}
             f_gre = feats.get("gre") or {}
+            f_pq = feats.get("paqet") or {}
             nz_nodes = [x["name"] for x in norm_nodes if x.get("transport") == "noise"]
             ov["plain"] = {"enabled": bool(f_pl.get("configured")), "port": f_pl.get("port")}
             ov["direct"] = {"enabled": bool(f_dr.get("configured")), "port": f_dr.get("port"), "header": st.get("direct_header") or ""}
@@ -1435,13 +1520,14 @@ def collect_server_overview(s):
             ov["backhaul"] = {"enabled": bool(f_bh.get("configured")), "active": bool(f_bh.get("active")), "port": f_bh.get("port"), "mode": f_bh.get("mode"), "transport": f_bh.get("transport")}
             ov["frp"] = {"enabled": bool(f_frp.get("configured")), "active": bool(f_frp.get("active")), "port": f_frp.get("port"), "transport": f_frp.get("transport")}
             ov["gre"] = {"enabled": bool(f_gre.get("configured")), "active": bool(f_gre.get("active")), "name": f_gre.get("name"), "remote_ip": f_gre.get("remote_ip"), "tunnel_ip": f_gre.get("tunnel_ip")}
+            ov["paqet"] = {"enabled": bool(f_pq.get("configured")), "active": bool(f_pq.get("active")), "remote": f_pq.get("remote") or "", "mode": f_pq.get("mode") or "fast", "block": f_pq.get("block") or "aes-128-gcm", "nodes": list(f_pq.get("nodes") or [])}
             svcs = st.get("services") or {}
             h_ok, h_fail = 0, 0
             for k in ("rathole_server", "nginx", "nginx_config_ok"):
                 if k in svcs:
                     if svcs[k] == "yes": h_ok += 1
                     else: h_fail += 1
-            for k in ("noise", "backhaul", "frp"):
+            for k in ("noise", "backhaul", "frp", "paqet"):
                 if svcs.get(k) in ("yes", "no"):
                     if svcs[k] == "yes": h_ok += 1
                     else: h_fail += 1
@@ -1457,6 +1543,7 @@ def collect_server_overview(s):
                 f_bh = pool.submit(R, ["ratholectl", "backhaul", "status"])
                 f_frp = pool.submit(R, ["ratholectl", "frp", "status"])
                 f_gre = pool.submit(R, ["ratholectl", "gre", "status"])
+                f_pq = pool.submit(R, ["ratholectl", "paqet", "status"])
                 r_ls = f_ls.result()
                 if r_ls.get("rc") not in (0, None):
                     ov["reachable"] = False; ov["error"] = r_ls.get("err", "") or ("rc=%s" % r_ls.get("rc")); return ov
@@ -1468,6 +1555,7 @@ def collect_server_overview(s):
                 ov["backhaul"] = parse_backhaul_status(f_bh.result().get("out", ""))
                 ov["frp"] = parse_frp_status(f_frp.result().get("out", ""))
                 ov["gre"] = parse_gre_status(f_gre.result().get("out", ""))
+                ov["paqet"] = parse_paqet_status(f_pq.result().get("out", ""))
                 ov["health"] = {"ok": 0, "fail": 0, "nodes": {}}
     else:
         r = R(["ratholenode", "ls"])
@@ -1483,6 +1571,8 @@ def collect_server_overview(s):
             f_bh  = pool.submit(R, ["ratholenode", "backhaul", "status"])
             f_frp = pool.submit(R, ["ratholenode", "frp", "status"])
             f_gre = pool.submit(R, ["ratholenode", "gre", "status"])
+            f_pq  = pool.submit(R, ["ratholenode", "paqet", "status"])
+            f_xr  = pool.submit(R, ["ratholenode", "xray", "status", "--json"])
             f_ups = pool.submit(R, ["ratholenode", "upstream", "ls"])
             f_ver = pool.submit(R, ["ratholenode", "version"])
             bls = parse_node_ls(f_bls.result().get("out", ""))
@@ -1500,6 +1590,13 @@ def collect_server_overview(s):
             ov["backhaul"] = parse_backhaul_status(f_bh.result().get("out", ""))
             ov["frp"] = parse_frp_status(f_frp.result().get("out", ""))
             ov["gre"] = parse_gre_status(f_gre.result().get("out", ""))
+            ov["paqet"] = parse_paqet_status(f_pq.result().get("out", ""))
+            try:
+                xraw = f_xr.result().get("out", "") or "{}"
+                xdata = json.loads(xraw)
+                ov["xray"] = xdata if isinstance(xdata, dict) else {}
+            except Exception:
+                ov["xray"] = {}
             ups = parse_upstream_ls(f_ups.result().get("out", ""))
             ov["upstreams"] = ups["upstreams"]
             ov["version"] = parse_version(f_ver.result().get("out", ""))
@@ -1689,6 +1786,7 @@ class Handler(BaseHTTPRequestHandler):
             (r"^/api/servers/([A-Za-z0-9_-]+)/kcpconnect$", self._kcpconnect),
             (r"^/api/servers/([A-Za-z0-9_-]+)/noiseconnect$", self._noiseconnect),
             (r"^/api/servers/([A-Za-z0-9_-]+)/backhaulconnect$", self._backhaulconnect),
+            (r"^/api/servers/([A-Za-z0-9_-]+)/paqetconnect$", self._paqetconnect),
             (r"^/api/servers/([A-Za-z0-9_-]+)/mainconnect$", self._mainconnect),
         ):
             m = re.match(pat, p)
@@ -2404,6 +2502,31 @@ class Handler(BaseHTTPRequestHandler):
                 body += ("\n[stderr] " + r["err"].rstrip())
             parts.append("===== %s =====\n%s" % (label, body or "(khali)"))
         return self._send(200, {"server": name, "text": "\n\n".join(parts)})
+
+    def _paqetconnect(self, name):
+        s = self._find(name)
+        if not s:
+            return self._send(404, {"error": "server not found"})
+        if s.get("role") != "node":
+            return self._send(400, {"error": "paqetconnect fght baraye node kharej ast"})
+        show = run_on_server(s, ["ratholenode", "paqet", "show"])
+        info = parse_paqet_connect(show.get("out", ""))
+        if show.get("rc") != 0 or not info or not info.get("key"):
+            return self._send(200, {"ok": False, "error": "paqet roshan nist ya key peida nashod",
+                                    "raw": show.get("out", "") + show.get("err", "")})
+        host_part, _, port_part = info["remote"].rpartition(":")
+        inv_host = str(s.get("host") or "").strip()
+        if (not host_part or host_part in ("127.0.0.1", "0.0.0.0")) and inv_host:
+            host_part = inv_host
+        if not RE_HOST.fullmatch(host_part) or not RE_PORT.fullmatch(port_part):
+            return self._send(200, {"ok": False, "error": "paqet host/port peida nashod"})
+        return self._send(200, {
+            "ok": True,
+            "remote": "%s:%s" % (host_part, port_part),
+            "key": info["key"],
+            "mode": info.get("mode", "fast"),
+            "block": info.get("block", "aes-128-gcm"),
+        })
 
     def _frpconnect(self, name):
         s = self._find(name)

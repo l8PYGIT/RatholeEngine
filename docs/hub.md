@@ -225,8 +225,16 @@ Authorization: Bearer <token>
 | GET | `/api/servers/<name>/kcpconnect` | داده‌ی autofill اتصال KCP |
 | GET | `/api/servers/<name>/noiseconnect` | داده‌ی autofill اتصال Noise |
 | GET | `/api/servers/<name>/backhaulconnect` | داده‌ی autofill اتصال Backhaul |
+| GET | `/api/servers/<name>/paqetconnect` | آدرس/کلید/مد سرور Paqet روی نود |
 | GET | `/api/servers/<name>/mainconnect` | داده‌ی autofill تونل اصلی (`server`، `domain`، `tls_hostname`، `control_path`، `dial_ip`) |
 | GET | `/api/servers/<iran>/nodeconnect/<node>` | token/inbound/remote_port واقعی نود ایران |
+| GET | `/api/fleet/drift` | بررسی انحراف نسخه/تنظیمات ناوگان (فقط‌خواندنی) |
+| GET | `/api/audit/verify` | بررسی سلامت زنجیره هش SHA-256 لاگ ممیزی |
+| GET | `/metrics` | متریک‌های Prometheus (دسترسی `read`) |
+| GET/POST | `/api/tokens` | مدیریت توکن‌های باسطح دسترسی (`read`/`operate`/`admin`) |
+| POST | `/api/2fa/setup` \| `enable` \| `disable` | راه‌اندازی احراز هویت دو مرحله‌ای TOTP 2FA |
+| GET/POST | `/api/monitor/config` \| `test` \| `diagnose` | پیکربندی سرویس مانیتور مستقل و ربات تلگرام |
+| GET | `/api/releases/asset` | رله دریافت بسته‌های ریلیز و امضای Ed25519 از درون تونل |
 | POST | `/api/servers/<name>/action` | `{"action":"...","args":{...}}` → اجرای یک action مجاز |
 | GET | `/api/config` | پیکربندی redact‌شده (توکن فقط hint) |
 | POST | `/api/config` | چرخش توکن / تغییر رمز مدیر / پروکسی / `ssh_key_path` |

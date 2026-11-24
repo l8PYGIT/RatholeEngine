@@ -521,8 +521,8 @@ ratholectl set hub-path <seg>   # تغییر مسیر پنل (پیش‌فرض: h
 
 - هر سرور `transport: ssh|api` دارد و با نشان **⚡ REST API** یا **🔑 SSH** مشخص می‌شود (بخش «آژنت REST» پایین‌تر).
 - دکمهٔ **«آپدیت همه»** سرورها را یکی‌یکی و ترتیبی آپدیت می‌کند؛ نسخهٔ هر سرور به‌صورت badge سبز (به‌روز) یا قرمز (`vX → vY`، قدیمی) روی کارت/صفحه‌اش دیده می‌شود.
-- صفحهٔ ایران: نودها/سرویس‌ها، سرویس‌های game/SNI، حامل‌ها (backhaul/kcp/plain/noise/frp/gre)، ingress (direct-IP، fakeweb)، دامنه‌ها/TLS، باکس هاب، ابزارهای دیاگ و upstream.
-- صفحهٔ نود: انتخاب حامل، ری‌استارت، watchdog، adaptive، جدول یکپارچهٔ سرویس‌ها (لِین rathole + لِین Backhaul با برچسب lane)، upstreamها (هرکدام حامل خودش) و دیاگ.
+- صفحهٔ ایران: نودها/سرویس‌ها، سرویس‌های game/SNI، حامل‌ها (backhaul/kcp/plain/noise/frp/gre/paqet)، ingress (direct-IP، fakeweb)، دامنه‌ها/TLS، اسکنر کاور REALITY (`xray scan`)، باکس هاب، ابزارهای دیاگ و upstream.
+- صفحهٔ نود: انتخاب حامل، ری‌استارت، watchdog، adaptive chain، Endpointهای پشتیبان (`endpoints`)، مدیریت Paqet و **Managed Xray** (`REALITY`/`XHTTP` + اسکنر و لینک VLESS)، جدول یکپارچهٔ سرویس‌ها، upstreamها و دیاگ.
 
 ## آژنت REST (مدیریت سرور بدون SSH)
 

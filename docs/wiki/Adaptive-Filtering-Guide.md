@@ -105,7 +105,7 @@ sudo ratholenode kcp on <ip:port> <key> [profile]
 sudo ratholenode adaptive on
 ```
 
-پروفایل KCP دو طرف باید یکی باشد (`balanced` / `lossy` / `aggressive`) و پورت UDP در فایروال هر دو سمت باز باشد.
+پروفایل KCP دو طرف باید یکی باشد (`balanced` / `lossy` / `aggressive`) و پورت UDP در فایروال هر دو سمت باز باشد. از نسخه‌ی **v2.2.0**، امکان تعریف زنجیره‌ی جایگزینی چندحامله (`--chain ws,kcp,frp,noise` با `--probe-candidates`) و مدیریت آدرس‌های پشتیبان با امتیاز سلامت EWMA (`ratholenode endpoints add|ls|test|switch`) نیز اضافه شده است.
 
 ---
 

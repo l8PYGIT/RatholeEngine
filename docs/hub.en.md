@@ -228,8 +228,16 @@ All routes require `Authorization: Bearer <API_TOKEN>` (or the session cookie fr
 | GET | `/api/servers/<name>/kcpconnect` | KCP connection autofill data |
 | GET | `/api/servers/<name>/noiseconnect` | Noise connection autofill data |
 | GET | `/api/servers/<name>/backhaulconnect` | Backhaul connection autofill data |
+| GET | `/api/servers/<name>/paqetconnect` | Foreign node Paqet server autofill data (`remote`, `key`, `mode`, `block`) |
 | GET | `/api/servers/<name>/mainconnect` | Main-tunnel autofill data (`server`, `domain`, `tls_hostname`, `control_path`, `dial_ip`) |
 | GET | `/api/servers/<iran>/nodeconnect/<node>` | Real token/inbound/remote_port of an Iran node |
+| GET | `/api/fleet/drift` | Read-only fleet version/config drift check |
+| GET | `/api/audit/verify` | Verify SHA-256 hash chain integrity of `audit.log` |
+| GET | `/metrics` | Prometheus metrics exposition (requires `read` scope) |
+| GET/POST | `/api/tokens` | Manage scoped API tokens (`read`/`operate`/`admin`) |
+| POST | `/api/2fa/setup` \| `enable` \| `disable` | Configure opt-in TOTP 2FA and recovery codes |
+| GET/POST | `/api/monitor/config` \| `test` \| `diagnose` | Manage standalone monitor & Telegram relay bot |
+| GET | `/api/releases/asset` | Tunnel-relayed GitHub Release artifact & Ed25519 signature fetcher |
 | POST | `/api/servers/<name>/action` | `{"action":"...","args":{...}}` → run one allowed action |
 | GET | `/api/config` | Redacted configuration (token shown as a hint only) |
 | POST | `/api/config` | Rotate token / change admin password / proxy / `ssh_key_path` |

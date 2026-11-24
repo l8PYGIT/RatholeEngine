@@ -198,8 +198,15 @@ GET    /api/servers/<name>/frpconnect          اطلاعات اتصال FRP ن�
 GET    /api/servers/<name>/kcpconnect          کلید/مشخصات KCP
 GET    /api/servers/<name>/noiseconnect        pubkey/آدرس Noise
 GET    /api/servers/<name>/backhaulconnect     توکن/transport/profile بک‌هال
+GET    /api/servers/<name>/paqetconnect        آدرس/کلید/مد سرور Paqet روی نود
 GET    /api/servers/<name>/mainconnect         SERVER/TLS/control-path تانل اصلی
 GET    /api/servers/<iran>/nodeconnect/<node>  token/inbound واقعی نود (برای wire-to-node)
+GET    /api/fleet/drift                        بررسی انحراف تنظیمات ناوگان
+GET    /api/audit/verify                       تایید زنجیره هش SHA-256 لاگ ممیزی
+GET    /metrics                                متریک‌های Prometheus (دسترسی read)
+GET    /api/tokens | POST /api/2fa/*           توکن‌های باسطح دسترسی و TOTP 2FA
+GET    /api/monitor/config | POST              پیکربندی مانیتور و ربات تلگرام
+GET    /api/releases/asset                     رله دریافت فایل ریلیز و امضای Ed25519
 POST   /api/ip-tls/prepare                     آماده‌سازی گواهی IP برای direct-IP/backhaul direct_ip
 ```
 

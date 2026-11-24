@@ -172,6 +172,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /etc/rathole-manager
           echo /etc/rathole
           echo /etc/frp
+          echo /etc/paqet
           echo /etc/rathole-agent
           echo /opt/rathole-manager/ratholeagent.py
           # file-e nginx az state (agar jq bashad) + config-haye sabet
@@ -181,7 +182,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /etc/nginx/conf.d/rathole.conf
           echo /etc/nginx/conf.d/rathole-upgrade-map.conf
           echo /etc/nginx/stream.d/rathole-stream.conf
-          _units_glob 'rathole-server.service' 'rathole-noise.service' 'rathole-backhaul-server.service' 'rathole-kcp-server.service' 'rathole-panel-fakeweb.service' 'rathole-agent.service' 'rathole-frps.service' 'frps.service'
+          _units_glob 'rathole-server.service' 'rathole-noise.service' 'rathole-backhaul-server.service' 'rathole-kcp-server.service' 'rathole-panel-fakeweb.service' 'rathole-agent.service' 'rathole-frps.service' 'frps.service' 'rathole-paqet-client.service'
           ;;
         node)
           echo /usr/local/bin/ratholenode
@@ -191,9 +192,11 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /usr/local/share/rathole/install-agent.sh
           echo /etc/rathole
           echo /etc/frp
+          echo /etc/paqet
+          echo /etc/xray
           echo /etc/rathole-agent
           echo /opt/rathole-manager/ratholeagent.py
-          _units_glob 'rathole-client.service' 'rathole-client@*.service' 'rathole-backhaul-client.service' 'rathole-kcp-client.service' 'rathole-kcp-up-*.service' 'rathole-agent.service' 'rathole-frpc.service' 'frpc.service' 'rathole-watchdog.*' 'rathole-adaptive.*'
+          _units_glob 'rathole-client.service' 'rathole-client@*.service' 'rathole-backhaul-client.service' 'rathole-kcp-client.service' 'rathole-kcp-up-*.service' 'rathole-agent.service' 'rathole-frpc.service' 'frpc.service' 'rathole-paqet-server.service' 'rathole-xray.service' 'rathole-watchdog.*' 'rathole-adaptive.*'
           ;;
         hub)
           echo /opt/ratholehub

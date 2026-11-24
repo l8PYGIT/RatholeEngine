@@ -38,6 +38,9 @@ BH_UNIT="/etc/systemd/system/${BH_SVC}.service"
 FRP_TOML="/etc/frp/frps.toml"
 FRP_SVC="frps"
 FRP_UNIT="/etc/systemd/system/${FRP_SVC}.service"
+PAQET_TOML="/etc/paqet/client.yaml"
+PAQET_SVC="rathole-paqet-client"
+PAQET_UNIT="/etc/systemd/system/${PAQET_SVC}.service"
 
 # TAVAJOH: c_g/c_r/c_y/log/warn/err/die/need_root/kcp_profile inja DOBARE tarif NEMISHAVAND —
 # tanha manba-eshan common.sh ast (bala source shod). ghablan har se file copy-e yeksan dashtand
@@ -504,12 +507,12 @@ gen_server_toml(){
     # rathole v0.5.0 field-e 'services' ra ALZAMI midanad; agar hich node/service nabashad,
     # bayad yek table-e khali [server.services] bedahim vagarna: "missing field services".
     local svc_count
-    svc_count="$(jq '[.nodes[] | select((.transport // "ws") as $t | ["noise", "backhaul", "frp", "gre", "frp_gre"] | index($t) | not)] | length' "$STATE" 2>/dev/null)"
+    svc_count="$(jq '[.nodes[] | select((.transport // "ws") as $t | ["noise", "backhaul", "frp", "gre", "frp_gre", "paqet"] | index($t) | not)] | length' "$STATE" 2>/dev/null)"
     if [ "${svc_count:-0}" -eq 0 ]; then
       echo "[server.services]"
       echo
     fi
-    jq -r '.nodes[] | select((.transport // "ws") as $t | ["noise", "backhaul", "frp", "gre", "frp_gre"] | index($t) | not) |
+    jq -r '.nodes[] | select((.transport // "ws") as $t | ["noise", "backhaul", "frp", "gre", "frp_gre", "paqet"] | index($t) | not) |
       [.name, (.port|tostring), .token, ((.api_local_port // "")|tostring), ((.api_token // "")|tostring)] | @tsv' "$STATE" 2>/dev/null |
     while IFS=$'\t' read -r name port token aport atoken; do
       name="${name%$'\r'}"; port="${port%$'\r'}"; token="${token%$'\r'}"
@@ -1265,6 +1268,15 @@ regenerate(){
         err "ntvanstm $BH_SVC ra restart knm."
     fi
   fi
+  # instans-e paqet client (agar roshan bashad): client.yaml ra besaz va restart kon.
+  local pqr; pqr="$(jq -r '.paqet.remote // empty' "$STATE" 2>/dev/null)"
+  if [ -n "$pqr" ] && [ "$pqr" != null ]; then
+    gen_paqet_client_unit || return 1
+    gen_paqet_client_yaml || return 1
+    systemctl enable "$PAQET_SVC" >/dev/null 2>&1 || true
+    systemctl restart "$PAQET_SVC" 2>/dev/null && log "$PAQET_SVC restart shod." || \
+      err "ntvanstm $PAQET_SVC ra restart knm."
+  fi
   local -a _rp=()
   mapfile -t _rp < <(collect_reserved_ports 2>/dev/null || true)
   if [ "${#_rp[@]}" -gt 0 ]; then
@@ -1895,14 +1907,19 @@ cmd_status(){
 
   local ip; ip="$(detect_ip)"
 
-  # ---- FRP & GRE status ----
+  # ---- FRP & GRE & paqet status ----
   local frp_port frp_transport gre_name gre_remote gre_tunnel svc_frp="off" gre_active="no"
+  local pq_rem pq_mode pq_block svc_paqet="off"
   frp_port="$(jq -r '.frp_port // empty' "$STATE" 2>/dev/null)"
   frp_transport="$(jq -r '.frp_transport // "tcp"' "$STATE" 2>/dev/null)"
+  pq_rem="$(jq -r '.paqet.remote // empty' "$STATE" 2>/dev/null)"
+  pq_mode="$(jq -r '.paqet.mode // "fast"' "$STATE" 2>/dev/null)"
+  pq_block="$(jq -r '.paqet.block // "aes-128-gcm"' "$STATE" 2>/dev/null)"
   gre_name="$(jq -r '.gre.name // empty' "$STATE" 2>/dev/null)"
   gre_remote="$(jq -r '.gre.remote_ip // empty' "$STATE" 2>/dev/null)"
   gre_tunnel="$(jq -r '.gre.tunnel_ip // empty' "$STATE" 2>/dev/null)"
   [ -f "/etc/systemd/system/${FRP_SVC}.service" ] && svc_frp="$(_svc_active "$FRP_SVC")" || svc_frp="off"
+  [ -f "$PAQET_UNIT" ] && svc_paqet="$(_svc_active "$PAQET_SVC")" || svc_paqet="off"
   if [ -n "$gre_name" ]; then
     ip link show "$gre_name" 2>/dev/null | grep -q "UP" && gre_active="yes"
   fi
@@ -1916,13 +1933,14 @@ cmd_status(){
       --arg plain "${plain_port:-}" --arg direct "${direct_port:-}" --arg dhdr "$direct_header" \
       --arg hub "${hub_port:-}" --arg noise "${noise_port:-}" --arg backhaul "${bh_port:-}" \
       --arg frp "${frp_port:-}" --arg frp_tr "$frp_transport" \
+      --arg pq_rem "${pq_rem:-}" --arg pq_mode "$pq_mode" --arg pq_block "$pq_block" \
       --arg gre_name "${gre_name:-}" --arg gre_rem "${gre_remote:-}" --arg gre_tip "${gre_tunnel:-}" \
       --arg sub_path "$(sub_path_seg)" --arg hub_path "$(hub_path_seg)" \
       --arg cert_fc "$cert_fc" --arg cert_key "$cert_key" --arg cert_ok "$cert_ok" \
       --arg cert_exp "$cert_exp" --arg cert_ss "$cert_selfsigned" \
       --arg ip_tls_ip "$ip_tls_ip" --arg ip_tls_fc "$ip_tls_fc" \
       --arg svc_server "$svc_server" --arg svc_nginx "$svc_nginx" --arg svc_noise "$svc_noise" \
-      --arg svc_bh "$svc_bh" --arg svc_frp "$svc_frp" --arg gre_active "$gre_active" \
+      --arg svc_bh "$svc_bh" --arg svc_frp "$svc_frp" --arg svc_paqet "$svc_paqet" --arg gre_active "$gre_active" \
       --arg svc_fakeweb "$svc_fakeweb" --arg nginx_ok "$nginx_ok" \
       --arg bh_mode "$(jq -r '.backhaul_exposure // "nginx_tls"' "$STATE" 2>/dev/null)" \
       --arg bh_transport "$(jq -r '.backhaul_transport // "wsmux"' "$STATE" 2>/dev/null)" \
@@ -1940,7 +1958,7 @@ cmd_status(){
         direct_header:$dhdr,
         cert:{fullchain:$cert_fc, key:$cert_key, exists:$cert_ok, expiry:$cert_exp, self_signed:$cert_ss},
         ip_tls:{configured:($ip_tls_ip!=""),ip:(if $ip_tls_ip=="" then null else $ip_tls_ip end),fullchain:(if $ip_tls_fc=="" then null else $ip_tls_fc end),self_signed:($ip_tls_ip!="")},
-        services:{rathole_server:$svc_server, nginx:$svc_nginx, nginx_config_ok:$nginx_ok, noise:$svc_noise, backhaul:$svc_bh, frp:$svc_frp, fakeweb:$svc_fakeweb},
+        services:{rathole_server:$svc_server, nginx:$svc_nginx, nginx_config_ok:$nginx_ok, noise:$svc_noise, backhaul:$svc_bh, frp:$svc_frp, paqet:$svc_paqet, fakeweb:$svc_fakeweb},
         features:{plain:{configured:($plain!=""),active:($plain!="" and $svc_nginx=="yes"),port:(if $plain=="" then null else ($plain|tonumber) end)},
                   direct:{configured:($direct!=""),active:($direct!="" and $svc_nginx=="yes"),port:(if $direct=="" then null else ($direct|tonumber) end)},
                   noise:{configured:($noise!=""),active:($svc_noise=="yes"),port:(if $noise=="" then null else ($noise|tonumber) end),encrypted:true},
@@ -1950,6 +1968,7 @@ cmd_status(){
                             encrypted:($bh_mode=="nginx_tls" or ($bh_transport|test("^wss"))),
                             verified:($bh_mode=="nginx_tls")},
                   frp:{configured:($frp!=""),active:($svc_frp=="yes"),port:(if $frp=="" then null else ($frp|tonumber) end),transport:$frp_tr},
+                  paqet:{configured:($pq_rem!=""),active:($svc_paqet=="yes"),remote:$pq_rem,mode:$pq_mode,block:$pq_block,nodes:[$nodes[]|select(.transport=="paqet")|.name]},
                   gre:{configured:($gre_name!=""),active:($gre_active=="yes"),name:(if $gre_name=="" then null else $gre_name end),remote_ip:$gre_rem,tunnel_ip:$gre_tip}},
         sni_count:$sni_count, node_count:$node_count, nodes:$nodes}'
     return
@@ -1971,6 +1990,7 @@ cmd_status(){
   [ "$svc_noise" != off ] && printf '  %s rathole-noise\n' "$(_yn "$svc_noise")"
   [ "$svc_bh" != off ] && printf '  %s %s (core-e SMUX)\n' "$(_yn "$svc_bh")" "$BH_SVC"
   [ "$svc_frp" != off ] && printf '  %s %s (FRP %s)\n' "$(_yn "$svc_frp")" "$FRP_SVC" "$frp_transport"
+  [ "$svc_paqet" != off ] && printf '  %s %s (paqet %s)\n' "$(_yn "$svc_paqet")" "$PAQET_SVC" "$pq_mode"
   [ -n "$gre_name" ] && printf '  %s GRE (%s -> %s)\n' "$(_yn "$gre_active")" "$gre_name" "${gre_remote:--}"
   echo
   echo "$(c_y '──── port-ha ────')"
@@ -3416,6 +3436,205 @@ print_frp_connect(){
   echo "$(c_y '───────────────────────────────────────────────')"
 }
 
+# ---------- paqet (Direct PCK): raw TCP/KCP client rooye Iran (forwarder -> node paqet-server) ----------
+gen_paqet_client_yaml(){
+  local remote key mode block conn iface lip mac tmp
+  remote="$(jq -r '.paqet.remote // empty' "$STATE" 2>/dev/null)"
+  [ -n "$remote" ] && [ "$remote" != null ] || return 0
+  key="$(jq -r '.paqet.key // empty' "$STATE" 2>/dev/null)"
+  mode="$(jq -r '.paqet.mode // "fast"' "$STATE" 2>/dev/null)"
+  block="$(jq -r '.paqet.block // "aes-128-gcm"' "$STATE" 2>/dev/null)"
+  conn="$(jq -r '.paqet.conn // 1' "$STATE" 2>/dev/null)"
+  iface="$(jq -r '.paqet.iface // empty' "$STATE" 2>/dev/null)"
+  lip="$(jq -r '.paqet.local_ip // empty' "$STATE" 2>/dev/null)"
+  mac="$(jq -r '.paqet.router_mac // empty' "$STATE" 2>/dev/null)"
+  mkdir -p "$(dirname "$PAQET_TOML")"
+  tmp="$(rth_mktemp)"
+  {
+    echo "# tvlid khodkar tvst ratholectl — paqet client (Direct PCK)"
+    echo 'role: "client"'
+    echo
+    echo "log:"
+    echo '  level: "info"'
+    echo
+    local pq_cnt
+    pq_cnt="$(jq '[.nodes[] | select((.transport // "") == "paqet")] | length' "$STATE" 2>/dev/null)"
+    if [ "${pq_cnt:-0}" -eq 0 ]; then
+      echo "forward: []"
+    else
+      echo "forward:"
+      jq -r '.nodes[] | select((.transport // "") == "paqet") | [(.port|tostring), (.inbound_port|tostring)] | @tsv' "$STATE" 2>/dev/null |
+      while IFS=$'\t' read -r dport inb; do
+        dport="${dport%$'\r'}"; inb="${inb%$'\r'}"
+        [ -n "$dport" ] && [ -n "$inb" ] || continue
+        echo "  - listen: \"127.0.0.1:${dport}\""
+        echo "    target: \"127.0.0.1:${inb}\""
+        echo "    protocol: \"tcp\""
+      done
+    fi
+    echo
+    echo "network:"
+    echo "  interface: \"${iface}\""
+    echo "  ipv4:"
+    echo "    addr: \"${lip}:0\""
+    echo "    router_mac: \"${mac}\""
+    echo
+    echo "server:"
+    echo "  addr: \"${remote}\""
+    echo
+    echo "transport:"
+    echo '  protocol: "kcp"'
+    echo "  conn: ${conn:-1}"
+    echo "  kcp:"
+    echo "    mode: \"${mode}\""
+    echo "    block: \"${block}\""
+    echo "    key: \"${key}\""
+  } > "$tmp"
+  rth_commit_config "$tmp" "$PAQET_TOML"
+  chmod 600 "$PAQET_TOML" 2>/dev/null || true
+}
+
+gen_paqet_client_unit(){
+  local bin="${RATHOLE_BIN_DIR:-/usr/local/bin}/paqet"
+  cat > "$PAQET_UNIT" <<UNIT
+[Unit]
+Description=rathole paqet client (Direct PCK forwarder)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${bin} run -c ${PAQET_TOML}
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload 2>/dev/null || true
+}
+
+cmd_paqet(){
+  need_root; need_bin jq; ensure_state
+  local sub="${1:-status}"; shift || true
+  case "$sub" in
+    on)
+      local remote="" key="" mode="fast" block="aes-128-gcm" conn="1" iface="" lip="" mac="" skip_ipt=0
+      local -a pos=()
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --mode) [ $# -ge 2 ] || die "--mode meghdar mikhahad."; mode="$2"; shift 2 ;;
+          --mode=*) mode="${1#*=}"; shift ;;
+          --block) [ $# -ge 2 ] || die "--block meghdar mikhahad."; block="$2"; shift 2 ;;
+          --block=*) block="${1#*=}"; shift ;;
+          --conn) [ $# -ge 2 ] || die "--conn adad mikhahad."; conn="$2"; shift 2 ;;
+          --conn=*) conn="${1#*=}"; shift ;;
+          --iface) [ $# -ge 2 ] || die "--iface nam-e interface mikhahad."; iface="$2"; shift 2 ;;
+          --iface=*) iface="${1#*=}"; shift ;;
+          --local-ip) [ $# -ge 2 ] || die "--local-ip IPv4 mikhahad."; lip="$2"; shift 2 ;;
+          --local-ip=*) lip="${1#*=}"; shift ;;
+          --router-mac) [ $# -ge 2 ] || die "--router-mac MAC mikhahad."; mac="$2"; shift 2 ;;
+          --router-mac=*) mac="${1#*=}"; shift ;;
+          --skip-iptables) skip_ipt=1; shift ;;
+          *) pos+=("$1"); shift ;;
+        esac
+      done
+      remote="${pos[0]:-}"; key="${pos[1]:-}"; [ -n "${pos[2]:-}" ] && mode="${pos[2]}"
+      [ -n "$remote" ] && [ -n "$key" ] || die "estefade: ratholectl paqet on <node_ip:port> <key> [mode] [--block cipher] [--conn N] [--iface dev] [--local-ip ip] [--router-mac mac]"
+      rth_valid_hostport "$remote" || die "adres paqet namotabar ast (IP:PORT)."
+      rth_valid_kcp_key "$key" || die "key paqet namotabar ast."
+      rth_valid_paqet_mode "$mode" || die "mode namotabar (normal|fast|fast2|fast3)."
+      rth_valid_paqet_block "$block" || die "cipher block namotabar (aes|aes-128|aes-128-gcm|salsa20|xor|sm4|none)."
+      [[ "$conn" =~ ^[0-9]{1,3}$ ]] && (( 10#$conn >= 1 && 10#$conn <= 256 )) || die "conn bayad 1..256 bashad."
+      if [ -z "$iface" ] || [ -z "$lip" ] || [ -z "$mac" ]; then
+        local d_if d_ip d_mac
+        IFS='|' read -r d_if d_ip d_mac <<<"$(paqet_detect_net || true)"
+        [ -n "$iface" ] || iface="$d_if"
+        [ -n "$lip" ] || lip="$d_ip"
+        [ -n "$mac" ] || mac="$d_mac"
+      fi
+      [[ "$iface" =~ ^[A-Za-z0-9._:-]{1,32}$ ]] || die "interface shabake peyda nashod (--iface bede)."
+      rth_is_ipv4 "$lip" || die "IPv4 mahalli namotabar ast (--local-ip bede)."
+      rth_valid_mac "$mac" || die "router_mac namotabar ast (--router-mac aa:bb:cc:dd:ee:ff bede)."
+
+      install_paqet || return 1
+      local rport="${remote##*:}"
+      state_jq --arg r "$remote" --arg k "$key" --arg m "$mode" --arg b "$block" --argjson c "$conn" \
+        --arg iface "$iface" --arg lip "$lip" --arg mac "$mac" --argjson rp "$rport" \
+        '.paqet = {remote:$r, port:$rp, key:$k, mode:$m, block:$b, conn:$c, iface:$iface, local_ip:$lip, router_mac:$mac}'
+      gen_paqet_client_unit || return 1
+      gen_paqet_client_yaml || return 1
+      [ "$skip_ipt" -eq 1 ] || paqet_iptables_apply "$rport" client
+      systemctl enable "$PAQET_SVC" >/dev/null 2>&1 || true
+      systemctl restart "$PAQET_SVC" 2>/dev/null && log "$PAQET_SVC start shod (→ ${remote}, mode=${mode}, block=${block})." || \
+        err "start-e $PAQET_SVC nashod."
+      regenerate || return 1
+      ;;
+    off)
+      local rport; rport="$(jq -r '.paqet.port // empty' "$STATE" 2>/dev/null)"
+      state_jq '(.nodes[] | select(.transport == "paqet")) |= del(.transport) | del(.paqet)'
+      systemctl disable --now "$PAQET_SVC" 2>/dev/null || true
+      rm -f "$PAQET_TOML" "$PAQET_UNIT"; systemctl daemon-reload 2>/dev/null || true
+      [ -n "$rport" ] && paqet_iptables_remove "$rport" client
+      log "paqet client khamoosh va pak shod."
+      regenerate || return 1
+      ;;
+    node)
+      local name="${1:-}" act="${2:-}"
+      echo "$name" | grep -qE '^[A-Za-z0-9_-]{1,40}$' || die "name-e node namotabar ast."
+      jq -e --arg n "$name" '.nodes[] | select(.name==$n)' "$STATE" >/dev/null 2>&1 || die "node '$name' peyda nashod."
+      case "$act" in
+        on)
+          local pqr; pqr="$(jq -r '.paqet.remote // empty' "$STATE" 2>/dev/null)"
+          [ -n "$pqr" ] && [ "$pqr" != null ] || die "paqet client roshan nist؛ aval: ratholectl paqet on <node_ip:port> <key>"
+          state_jq --arg n "$name" '(.nodes[] | select(.name==$n) | .transport) |= "paqet"'
+          log "node '$name' be transport-e paqet switch shod."
+          regenerate || return 1
+          ;;
+        off)
+          state_jq --arg n "$name" '(.nodes[] | select(.name==$n and .transport=="paqet")) |= del(.transport)'
+          log "node '$name' be transport-e pishfarz (ws az nginx/443) bargasht."
+          regenerate || return 1
+          ;;
+        *) die "estefade: ratholectl paqet node <name> <on|off>" ;;
+      esac
+      ;;
+    status)
+      local pqr pqm pqb cnt
+      pqr="$(jq -r '.paqet.remote // empty' "$STATE" 2>/dev/null)"
+      if [ -n "$pqr" ] && [ "$pqr" != null ]; then
+        pqm="$(jq -r '.paqet.mode // "fast"' "$STATE" 2>/dev/null)"
+        pqb="$(jq -r '.paqet.block // "aes-128-gcm"' "$STATE" 2>/dev/null)"
+        cnt="$(jq '[.nodes[] | select(.transport=="paqet")] | length' "$STATE" 2>/dev/null)"
+        echo "paqet (Direct PCK client): $(c_g 'roshan')  → $pqr (mode=$pqm, block=$pqb, nodes=${cnt:-0})"
+        command -v systemctl >/dev/null 2>&1 && { systemctl is-active --quiet "$PAQET_SVC" && echo "  $PAQET_SVC: $(c_g 'active')" || echo "  $PAQET_SVC: $(c_r 'inactive')"; }
+      else
+        echo "paqet (Direct PCK client): $(c_y 'khamoosh')"
+      fi
+      ;;
+    show)
+      local pqr pqm pqb
+      pqr="$(jq -r '.paqet.remote // empty' "$STATE" 2>/dev/null)"
+      [ -n "$pqr" ] && [ "$pqr" != null ] || { warn "paqet khamoosh ast."; return; }
+      pqm="$(jq -r '.paqet.mode // "fast"' "$STATE" 2>/dev/null)"
+      pqb="$(jq -r '.paqet.block // "aes-128-gcm"' "$STATE" 2>/dev/null)"
+      echo "paqet remote=${pqr} mode=${pqm} block=${pqb}"
+      ;;
+    logs) journalctl -u "$PAQET_SVC" -n "${1:-40}" --no-pager 2>/dev/null || true ;;
+    *) die "estefade: ratholectl paqet <on <node_ip:port> <key> [mode]|off|node <name> on|off|status|show|logs>" ;;
+  esac
+}
+
+cmd_xray(){
+  local sub="${1:-}"; shift || true
+  case "$sub" in
+    scan) rth_xray_scan_cover "$@" ;;
+    *) die "estefade: ratholectl xray scan [--domains d1,d2,...] [--port 443] [--timeout 4] [--top 5] [--json]" ;;
+  esac
+}
+
 # ---------- GRE: tunnel-e shabake-ye L3 Linux (ip link/tunnel: gre / ip6gre) ----------
 cmd_gre(){
   need_root; need_bin jq; ensure_state
@@ -3943,6 +4162,8 @@ dstvrha:
   backhaul <on [port] [transport] [profile] [mode]|off|node <name> on|off|status|show>   core-e backhaul (SMUX). profile: balanced/lossy/aggressive (bayad DO taraf yeksan bashad)
                                mode=nginx_tls (pishfarz): posht-e nginx/443، tak-port hefz — transport-e server ws|wsmux (bedoon TLS، client khodkar wss/wssmux migirad)
                                mode=direct_ip: bedoon-e nginx roo-ye 0.0.0.0:<port> — ws|wsmux (bedoon ramz) ya wss|wssmux (TLS-e self-signed، aval: ratholectl ip-cert <IPv4>)
+  paqet <on <remote_ip:port> <key> [flags]|off|node <name> on|off|status|show>   tunnel-e raw TCP+KCP (bedoon handshake-e TLS, ghayre-ghabel tashkhis baraye DPI). --mode/--block/--conn/--iface/--local-ip/--router-mac
+  xray scan [--domains d1,d2,...] [--top N] [--timeout S] [--json]   scan-e SNI/cover-haye monaseb baraye REALITY (TLS 1.3 + h2/http1.1 + RTT)
   proxy <add <name> <http(s)://host:port>|rm <name>|ls>   reverse-proxy-e gheyre-tunnel: /<name>/ rooye haman 443 be yek upstream-e delkhah (baraye tunnel/service-haye kastom)
   game add <name> <inbound> <sni>   service game (SNI rooye 443, TLS rooye node)
 
@@ -4088,6 +4309,8 @@ main(){
     backhaul) cmd_backhaul "$@" ;;
     proxy)  cmd_proxy "$@" ;;
     frp)    cmd_frp "$@" ;;
+    paqet)  cmd_paqet "$@" ;;
+    xray)   cmd_xray "$@" ;;
     gre)    cmd_gre "$@" ;;
 
     control-path) cmd_control_path "$@" ;;

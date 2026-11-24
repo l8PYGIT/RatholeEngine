@@ -9,6 +9,24 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-24
+
+### Added
+- **حامل جدید `paqet` (Direct PCK خام بدون هندشیک TLS):** اجرای دوطرفه `ratholectl paqet` (کلاینت ایران با فوروارد خودکار پورت‌های دیتا) و `ratholenode paqet` (سرور نود با تنظیم خودکار `iptables RAW NOTRACK`، تشخیص کارت‌شبکه/gateway MAC و فایل YAML مجزا) به‌همراه API (`/api/servers/<node>/paqetconnect`) و کارت کنترل در RatholeHub.
+- **Xray مدیریت‌شده (`VLESS+REALITY+Vision` / `VLESS+XHTTP`) و اسکنر سایت کاور:** دستورات `ratholenode xray setup|status|uri|off` با تولید بومی کلید X25519 (پشتیبانی از `xray x25519` و fallback استاندارد OpenSSL)، پشتیبانی اختیاری از PROXY protocol (`acceptProxyProtocol`) و عدم افشای `privateKey`؛ به‌همراه `ratholectl|ratholenode xray scan` (اسکن هم‌زمان پایتون stdlib برای TLS 1.3 + ALPN `h2` + RTT) و کنترل‌های کامل در هاب.
+- **سرویس مانیتور مستقل و ربات تلگرام (`ratholemonitor.service`):** پایش مستقل ناوگان با هیسترزیس، دستورات ربات (`/status`, `/test`, `/restart`) و رله چندمسیره تلگرام (`direct`, `proxy`, و `node_tunnel` از طریق نود خارج) با مدیریت کامل در تب تنظیمات هاب.
+- **امنیت سطح بالا و مشاهده‌پذیری هاب:** کلیدهای API با سطح دسترسی (`read`/`operate`/`admin`)، احراز هویت دو مرحله‌ای **TOTP 2FA** با کدهای بازیابی، محافظ **CSRF Origin/SameSite**، لاگ ممیزی زنجیره‌ای **SHA-256** (`audit/verify`)، تاریخچه و بازگشت نسخه‌های `state.json` (`history`/`undo`) و خروجی استاندارد **Prometheus `/metrics`**.
+- **آپدیت از درون تونل و امضای Ed25519 Releases:** پشتیبانی `ratholectl|ratholenode update --proxy` و دریافت فایل‌های آپدیت از طریق رله هاب (`/api/releases/asset`) همراه با تأیید اجباری امضای Ed25519 (`SHA256SUMS.sig`، سیاست fail-closed).
+- **تست دوطرفه لینک، کشف انحراف ناوگان، Adaptive Chain و Backup Endpoints:** عیب‌یابی دوطرفه `test --json` (RTT/jitter/loss + GRE)، بررسی ناهماهنگی تنظیمات (`/api/fleet/drift`)، زنجیره جایگزین چندحامله در `adaptive` و امتیازدهی سلامت EWMA برای آدرس‌های پشتیبان (`ratholenode endpoints`).
+- **تنظیمات کرنل، قفل پورت و هوک بکاپ خارج از سرور:** سخت‌گیری GRE با `--key` و `--mtu`، `proxy-protocol` اختیاری برای Game/FRP، تست بدون اعمال در `restore --test`، اسکریپت بومی پایتون `fakeweb.py`، رزرو پورت‌های هسته و `rth_redact` پیشرفته.
+
+### Changed
+- **به‌روزرسانی هسته و پنل به نسخه `2.2.0` (`MANAGER_VERSION`):** یکپارچه‌سازی وضعیت و اسرار جدید (`paqet_key`، `privateKey`، `XRAY_UUID`، `vless://`) در `rth_redact`، اسنپ‌شات `update.sh` و ممیزی هاب.
+- **حذف انتقال ناامن رمز/توکن در CLIها و بهینه‌سازی اسکریپت‌های سرویس:** استفاده از `curl --config -` و فایل‌های موقت `0600` برای همه فراخوانی‌های از راه دور.
+
+### Fixed
+- **رفع آسیب‌پذیری MITM در حالت `backhaul direct_ip` با TLS:** افزودن پچ `0002-tls-verify-ca-pinning.patch` به `core-backhaul` و پشتیبانی `--ca`/`--sni`/`--verify` در `ratholenode` و آماده‌سازی خودکار CA از هاب (`/api/ip-tls/prepare`).
+
 ## [2.1.1] - 2026-11-21
 
 ### Added

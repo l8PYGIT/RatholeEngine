@@ -966,6 +966,7 @@
   .b-frp { border-color: color-mix(in srgb, var(--orange) 36%, transparent); background: var(--orange-soft); color: var(--orange); }
   .b-gre { border-color: color-mix(in srgb, var(--success) 36%, transparent); background: var(--success-soft); color: var(--success); }
   .b-frp_gre { border-color: color-mix(in srgb, var(--primary) 42%, transparent); background: linear-gradient(135deg, var(--orange-soft), var(--success-soft)); color: var(--teal); }
+  .b-paqet { border-color: color-mix(in srgb, var(--pink) 38%, transparent); background: color-mix(in srgb, var(--purple-soft) 70%, var(--pink-soft)); color: var(--pink); }
   .b-game { border-color: color-mix(in srgb, var(--pink) 30%, transparent); background: var(--pink-soft); color: var(--pink); }
   .b-role { border-color: color-mix(in srgb, var(--warning) 30%, transparent); background: var(--warning-soft); color: var(--warning); }
 

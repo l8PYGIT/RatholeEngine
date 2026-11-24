@@ -6,12 +6,12 @@
 
 | گروه | ratholectl | ratholenode |
 |------|-----------|-------------|
-| وضعیت | `status` · `ls` · `show` · `info` · `certs` · `paths` · `doctor` · `logs` · `version` | `status` · `show` · `ls` · `logs` · `check` · `doctor` · `version` |
-| مدیریت | `add` · `rm` · `edit` · `rename` · `rotate` | `add-svc` · `rm-svc` · `set` · `set-main` · `apply` |
-| پیکربندی | `set` · `init` · `regen` · `paths` · `info` | `backup` · `restore` · `migrate` |
-| بک‌آپ | `backup` · `restore` · `recover` | `backup` · `restore` |
-| حامل تونل | `kcp` · `plain` · `noise` · `backhaul` · `frp` · `gre` | `kcp` · `plain` · `noise` · `backhaul` · `frp` · `gre` |
-| ورودی کاربر | `direct` · `proxy` · `game` | — |
+| وضعیت | `status` · `ls` · `show` · `info` · `certs` · `paths` · `doctor` · `test` · `logs` · `version` | `status` · `show` · `ls` · `logs` · `check` · `doctor` · `test` · `version` |
+| مدیریت | `add` · `rm` · `edit` · `rename` · `rotate` | `add-svc` · `rm-svc` · `set` · `set-main` · `apply` · `xray` |
+| پیکربندی | `set` · `init` · `regen` · `paths` · `info` | `backup` · `restore` · `migrate` · `endpoints` |
+| بک‌آپ | `backup` · `restore` · `recover` · `history` · `undo` | `backup` · `restore` |
+| حامل تونل | `kcp` · `plain` · `noise` · `backhaul` · `frp` · `gre` · `paqet` | `kcp` · `plain` · `noise` · `backhaul` · `frp` · `gre` · `paqet` |
+| ورودی کاربر | `direct` · `proxy` · `game` · `xray scan` | `xray setup|uri|scan|status|off` |
 | multi-Iran | — | `upstream` · `watchdog` · `adaptive` |
 | دامنه/گواهی | `domain` · `cert` · `ip-cert` · `ip-cert-show` · `ip-cert-off` | — |
 | مسیر کنترلی | `control-path` | `control-path` · `upstream control-path` |
@@ -335,10 +335,17 @@ ratholenode frp off              # بازگشت به websocket/443
 ratholenode frp status
 
 # GRE — رابط نقطه به نقطه لایه ۳ کرنل لینوکس (ip tunnel)
-ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]   # پیش‌فرض tunnel_ip: 10.10.10.2/30, gre1
+ratholenode gre on <iran_ip> [tunnel_ip] [gre_name] [--key N] [--mtu N]   # پیش‌فرض tunnel_ip: 10.10.10.2/30, gre1
 ratholenode gre off [gre_name]
 ratholenode gre status
 ratholenode gre probe <peer_ip> [gre_name]            # ping از داخل اینترفیس GRE (پروتکل 47/فایروال)
+
+# Paqet (Direct PCK) + Managed Xray + Cover Scanner (v2.2.0+)
+ratholenode paqet on [port] [key] [mode] [--block cipher] [--conn N]
+ratholenode paqet off | status | show
+ratholenode xray setup <reality|xhttp> [--port N] [--dest host:port] [--sni host] [--path /xhttp] [--proxy-protocol]
+ratholenode xray status [--json] | uri [host] [port] | off
+ratholenode xray scan [--domains d1,d2,...] [--top N] [--json]
 ```
 
 ### Adaptive Failover (سوئیچ خودکار)

@@ -3,7 +3,7 @@
 
 # noskhe-ye rathole-manager (panel/node/hub). moqe-e release in adad ba tag hamahang mishavad.
 # package.sh/CI mitavanad in ra be tag-e vaghei stamp konad; agar dast taghir dadi، bedoon 'v' bezar.
-MANAGER_VERSION="2.1.1"
+MANAGER_VERSION="2.2.0"
 
 c_g(){ printf '\033[1;32m%s\033[0m' "$*"; }
 c_r(){ printf '\033[1;31m%s\033[0m' "$*"; }
@@ -488,6 +488,18 @@ rth_valid_gre_key(){
 rth_valid_mtu(){
   [[ "${1:-}" =~ ^[0-9]{3,4}$ ]] && (( 10#$1 >= 576 && 10#$1 <= 1500 ))
 }
+rth_valid_mac(){
+  [[ "${1:-}" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]
+}
+rth_valid_paqet_mode(){
+  case "${1:-}" in normal|fast|fast2|fast3) return 0 ;; *) return 1 ;; esac
+}
+rth_valid_paqet_block(){
+  case "${1:-}" in aes|aes-128|aes-128-gcm|salsa20|xor|sm4|none) return 0 ;; *) return 1 ;; esac
+}
+rth_valid_uuid(){
+  [[ "${1:-}" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]
+}
 
 # service systemd fakeweb (server-e Nginx-namayesh-e deterministic ba python3 stdlib)
 fakeweb_service(){
@@ -538,9 +550,11 @@ UNIT
 # darvaze-ye khorooj ast — har file-e jadidi ke ezafe mikoni HATMAN az an rad kon.
 rth_redact(){
   sed -E \
-    -e 's/("(token|api_token|bh_token|backhaul_token|frp_token|admin_password_sha256|password|secret|key|private_key|local_private_key|remote_public_key|noise_private_key|noise_privkey)"[[:space:]]*:[[:space:]]*")[^"]*"/\1***REDACTED***"/g' \
+    -e 's/("(token|api_token|bh_token|backhaul_token|frp_token|paqet_key|admin_password_sha256|password|secret|key|private_key|local_private_key|remote_public_key|noise_private_key|noise_privkey|privateKey)"[[:space:]]*:[[:space:]]*")[^"]*"/\1***REDACTED***"/g' \
     -e 's/^([[:space:]]*(auth\.token|token|default_token|password|secret|private_key|local_private_key|remote_public_key)[[:space:]]*=[[:space:]]*")[^"]*"/\1***REDACTED***"/' \
-    -e 's/^([[:space:]]*(TOKEN|BH_TOKEN|FRP_TOKEN|NOISE_KEY|PASSWORD|API_TOKEN)=).*/\1***REDACTED***/' \
+    -e 's/^([[:space:]]*key:[[:space:]]*").*"/\1***REDACTED***"/' \
+    -e 's/^([[:space:]]*(TOKEN|BH_TOKEN|FRP_TOKEN|PAQET_KEY|paqet_key|NOISE_KEY|PASSWORD|API_TOKEN|XRAY_PRIVATE_KEY|XRAY_UUID)=).*/\1***REDACTED***/' \
+    -e 's#(vless://)[0-9A-Fa-f-]{8,64}@#\1***REDACTED***@#g' \
     -e 's/(-key[[:space:]]+)[^[:space:]]+/\1***REDACTED***/g' \
     -e 's/^([^|[:space:]]+\|)[^|]*/\1***REDACTED***/' \
     -e 's#(/_rh/)[A-Fa-f0-9]{8,}#\1***REDACTED***#g' \
@@ -1307,5 +1321,302 @@ def main():
 
 if __name__ == "__main__":
     main()
+PY
+}
+
+# ---------------------------------------------------------------------------
+# paqet (Direct PCK: raw TCP/KCP carrier — hanselime/paqet)
+# ---------------------------------------------------------------------------
+install_paqet(){
+  local bin="${RATHOLE_BIN_DIR:-/usr/local/bin}/paqet" ver="${PAQET_VER:-v1.0.0-alpha.14}" arch tmp ok=0 m
+  [ -x "$bin" ] && return 0
+  case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) die "memari poshtibani nemishavad baraye paqet." ;; esac
+  command -v curl >/dev/null 2>&1 || die "curl lazem ast."
+  local ver_no_v="${ver#v}"
+  local url="https://github.com/hanselime/paqet/releases/download/${ver}/paqet-linux-${arch}-${ver_no_v}.tar.gz"
+  log "download paqet ${ver}..."
+  tmp="$(mktemp -d)"
+  if [ -n "${RATHOLE_UPDATE_PROXY:-}" ] && rth_valid_proxy_url "${RATHOLE_UPDATE_PROXY}"; then
+    printf 'proxy = "%s"\n' "${RATHOLE_UPDATE_PROXY}" | \
+      curl --config - -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 25 --retry 1 "$url" -o "$tmp/paqet.tgz" 2>/dev/null && ok=1
+  else
+    for m in "${RTH_MIRRORS[@]}"; do
+      if curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 25 --retry 1 "${m}${url}" -o "$tmp/paqet.tgz" 2>/dev/null; then
+        ok=1; break
+      fi
+      warn "in mnba javab nadad, mnba-ye badi..."
+    done
+  fi
+  [ "$ok" -eq 1 ] || { rm -rf "$tmp"; die "download paqet az hame-ye mnaba shekast khord."; }
+  tar -xzf "$tmp/paqet.tgz" -C "$tmp" || { rm -rf "$tmp"; die "baz kardan arshiv paqet shekast khord."; }
+  local src
+  src="$(find "$tmp" -maxdepth 3 -type f -name 'paqet*' ! -name '*.tar.gz' ! -name '*.yaml' | head -n1)"
+  [ -n "$src" ] || { rm -rf "$tmp"; die "binary-e paqet dar arshiv peyda nashod."; }
+  mkdir -p "$(dirname "$bin")"
+  install -m755 "$src" "$bin" || { rm -rf "$tmp"; die "nasb binary paqet shekast khord."; }
+  rm -rf "$tmp"
+  log "paqet nasb shod: $bin"
+}
+
+paqet_detect_net(){
+  command -v ip >/dev/null 2>&1 || { printf '||\n'; return 1; }
+  local def iface gw lip mac
+  def="$(ip -4 route show default 2>/dev/null | head -n1)"
+  iface="$(printf '%s\n' "$def" | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')"
+  gw="$(printf '%s\n' "$def" | awk '{for(i=1;i<=NF;i++) if($i=="via"){print $(i+1); exit}}')"
+  lip="$(printf '%s\n' "$def" | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
+  if [ -z "$lip" ] && [ -n "$iface" ]; then
+    lip="$(ip -4 -o addr show dev "$iface" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
+  fi
+  if [ -n "$iface" ] && [ -n "$gw" ]; then
+    mac="$(ip -4 neigh show "$gw" dev "$iface" 2>/dev/null | grep -oE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' | head -n1 || true)"
+    if [ -z "$mac" ]; then
+      ping -c1 -W1 "$gw" >/dev/null 2>&1 || true
+      mac="$(ip -4 neigh show "$gw" dev "$iface" 2>/dev/null | grep -oE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' | head -n1 || true)"
+    fi
+  fi
+  printf '%s|%s|%s\n' "${iface:-}" "${lip:-}" "${mac:-}"
+}
+
+paqet_iptables_remove(){ # $1=port $2=role(server|client)
+  local port="$1" role="${2:-server}" tag
+  tag="rathole-paqet-${role}-${port}"
+  command -v iptables >/dev/null 2>&1 || return 0
+  _rth_sweep_ipt_comment iptables raw PREROUTING "$tag"
+  _rth_sweep_ipt_comment iptables raw OUTPUT "$tag"
+  _rth_sweep_ipt_comment iptables mangle OUTPUT "$tag"
+  _rth_sweep_ipt_comment iptables filter INPUT "$tag"
+}
+
+paqet_iptables_apply(){ # $1=port $2=role(server|client)
+  local port="$1" role="${2:-server}" tag
+  rth_valid_port "$port" || die "port paqet namotabar ast."
+  tag="rathole-paqet-${role}-${port}"
+  if ! command -v iptables >/dev/null 2>&1; then
+    warn "iptables nasb nist; rule-haye raw/RST eemal nashodand."
+    return 0
+  fi
+  paqet_iptables_remove "$port" "$role"
+  if [ "$role" = "server" ]; then
+    iptables -t raw -A PREROUTING -p tcp --dport "$port" -m comment --comment "$tag" -j CT --notrack 2>/dev/null || true
+    iptables -t raw -A OUTPUT -p tcp --sport "$port" -m comment --comment "$tag" -j CT --notrack 2>/dev/null || true
+    iptables -t mangle -A OUTPUT -p tcp --sport "$port" --tcp-flags RST RST -m comment --comment "$tag" -j DROP 2>/dev/null || true
+    iptables -t filter -I INPUT -p tcp --dport "$port" -m comment --comment "$tag" -j ACCEPT 2>/dev/null || true
+  else
+    iptables -t raw -A PREROUTING -p tcp --sport "$port" -m comment --comment "$tag" -j CT --notrack 2>/dev/null || true
+    iptables -t raw -A OUTPUT -p tcp --dport "$port" -m comment --comment "$tag" -j CT --notrack 2>/dev/null || true
+    iptables -t mangle -A OUTPUT -p tcp --dport "$port" --tcp-flags RST RST -m comment --comment "$tag" -j DROP 2>/dev/null || true
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Managed Xray (VLESS+REALITY+Vision / VLESS+XHTTP + TLS Cover Site Scanner)
+# ---------------------------------------------------------------------------
+install_xray(){
+  local bin="${RATHOLE_BIN_DIR:-/usr/local/bin}/xray" ver="${XRAY_VER:-24.12.31}" xarch tmp ok=0 m
+  [ -x "$bin" ] && return 0
+  case "$(uname -m)" in x86_64) xarch=64 ;; aarch64) xarch=arm64-v8a ;; *) die "memari poshtibani nemishavad baraye Xray." ;; esac
+  command -v curl >/dev/null 2>&1 || die "curl lazem ast."
+  command -v unzip >/dev/null 2>&1 || die "unzip lazem ast."
+  local url="https://github.com/XTLS/Xray-core/releases/download/v${ver#v}/Xray-linux-${xarch}.zip"
+  log "download Xray-core v${ver#v}..."
+  tmp="$(mktemp -d)"
+  if [ -n "${RATHOLE_UPDATE_PROXY:-}" ] && rth_valid_proxy_url "${RATHOLE_UPDATE_PROXY}"; then
+    printf 'proxy = "%s"\n' "${RATHOLE_UPDATE_PROXY}" | \
+      curl --config - -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 25 --retry 1 "$url" -o "$tmp/xray.zip" 2>/dev/null && ok=1
+  else
+    for m in "${RTH_MIRRORS[@]}"; do
+      if curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 25 --retry 1 "${m}${url}" -o "$tmp/xray.zip" 2>/dev/null; then
+        ok=1; break
+      fi
+      warn "in mnba javab nadad, mnba-ye badi..."
+    done
+  fi
+  [ "$ok" -eq 1 ] || { rm -rf "$tmp"; die "download Xray az hame-ye mnaba shekast khord."; }
+  unzip -qo "$tmp/xray.zip" -d "$tmp" || { rm -rf "$tmp"; die "baz kardan zip Xray shekast khord."; }
+  [ -f "$tmp/xray" ] || { rm -rf "$tmp"; die "binary-e xray dar zip peyda nashod."; }
+  mkdir -p "$(dirname "$bin")"
+  install -m755 "$tmp/xray" "$bin" || { rm -rf "$tmp"; die "nasb binary xray shekast khord."; }
+  local gf
+  for gf in geoip.dat geosite.dat; do
+    [ -f "$tmp/$gf" ] && install -m644 "$tmp/$gf" "$(dirname "$bin")/$gf" 2>/dev/null || true
+  done
+  rm -rf "$tmp"
+  log "Xray-core nasb shod: $bin"
+}
+
+rth_xray_gen_x25519(){
+  local xbin="${RATHOLE_BIN_DIR:-/usr/local/bin}/xray" priv="" pub="" out=""
+  if [ -x "$xbin" ]; then
+    out="$("$xbin" x25519 2>/dev/null || true)"
+    priv="$(printf '%s\n' "$out" | sed -nE 's/^[Pp]rivate[[:space:]]*[Kk]ey:[[:space:]]*([A-Za-z0-9_-]{40,50}).*/\1/p' | head -n1)"
+    pub="$(printf '%s\n' "$out" | sed -nE 's/^([Pp]ublic[[:space:]]*[Kk]ey|[Pp]assword):[[:space:]]*([A-Za-z0-9_-]{40,50}).*/\2/p' | head -n1)"
+    if [ -n "$priv" ] && [ -n "$pub" ]; then
+      printf '%s|%s\n' "$priv" "$pub"
+      return 0
+    fi
+  fi
+  command -v openssl >/dev/null 2>&1 || die "openssl ya xray baraye tolid-e kelid X25519 lazem ast."
+  command -v python3 >/dev/null 2>&1 || die "python3 baraye tolid-e kelid X25519 lazem ast."
+  local kd; kd="$(umask 077 && mktemp -d)"
+  openssl genpkey -algorithm X25519 -out "$kd/priv.pem" 2>/dev/null || { rm -rf "$kd"; die "tolid X25519 shekast khord."; }
+  openssl pkey -in "$kd/priv.pem" -outform DER -out "$kd/priv.der" 2>/dev/null || { rm -rf "$kd"; die "DER X25519 priv shekast."; }
+  openssl pkey -in "$kd/priv.pem" -pubout -outform DER -out "$kd/pub.der" 2>/dev/null || { rm -rf "$kd"; die "DER X25519 pub shekast."; }
+  local pair
+  pair="$(python3 - "$kd/priv.der" "$kd/pub.der" <<'PY'
+import base64, sys
+priv_raw = open(sys.argv[1], "rb").read()
+pub_raw = open(sys.argv[2], "rb").read()
+if len(priv_raw) < 32 or len(pub_raw) < 32:
+    sys.exit(1)
+priv_b64 = base64.urlsafe_b64encode(priv_raw[-32:]).decode("ascii").rstrip("=")
+pub_b64 = base64.urlsafe_b64encode(pub_raw[-32:]).decode("ascii").rstrip("=")
+print(f"{priv_b64}|{pub_b64}")
+PY
+)" || { rm -rf "$kd"; die "ramzgodari kelid X25519 shekast khord."; }
+  rm -rf "$kd"
+  printf '%s\n' "$pair"
+}
+
+rth_xray_scan_cover(){
+  command -v python3 >/dev/null 2>&1 || die "python3 baraye scanner-e cover lazem ast."
+  local domains="www.microsoft.com,www.apple.com,www.cloudflare.com,www.nvidia.com,www.intel.com,www.amd.com,www.oracle.com,www.cisco.com"
+  local port=443 timeout_s=4 top_n=5 as_json=0 target_host="${RATHOLE_SCAN_TARGET_HOST:-}"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --domains) [ $# -ge 2 ] || die "--domains list mikhahad."; domains="$2"; shift 2 ;;
+      --domains=*) domains="${1#*=}"; shift ;;
+      --port) [ $# -ge 2 ] || die "--port adad mikhahad."; port="$2"; shift 2 ;;
+      --port=*) port="${1#*=}"; shift ;;
+      --timeout) [ $# -ge 2 ] || die "--timeout adad mikhahad."; timeout_s="$2"; shift 2 ;;
+      --timeout=*) timeout_s="${1#*=}"; shift ;;
+      --top) [ $# -ge 2 ] || die "--top adad mikhahad."; top_n="$2"; shift 2 ;;
+      --top=*) top_n="${1#*=}"; shift ;;
+      --target-host) [ $# -ge 2 ] || die "--target-host IP/host mikhahad."; target_host="$2"; shift 2 ;;
+      --target-host=*) target_host="${1#*=}"; shift ;;
+      --json) as_json=1; shift ;;
+      *) die "estefade: xray scan [--domains d1,d2,...] [--port 443] [--timeout 4] [--top 5] [--json]" ;;
+    esac
+  done
+  rth_valid_port "$port" || die "port namotabar ast."
+  echo "$timeout_s" | grep -qE '^[1-9][0-9]?$' || die "timeout namotabar ast."
+  echo "$top_n" | grep -qE '^[1-9][0-9]?$' || die "top namotabar ast."
+  local cafile="${RATHOLE_SCAN_CAFILE:-}"
+  python3 - "$domains" "$port" "$timeout_s" "$top_n" "$as_json" "$target_host" "$cafile" <<'PY'
+import concurrent.futures
+import json
+import re
+import socket
+import ssl
+import sys
+import time
+
+raw_domains, port_s, to_s, top_s, json_s, target_host, cafile = sys.argv[1:8]
+port = int(port_s)
+timeout_s = float(to_s)
+top_n = int(top_s)
+as_json = (json_s == "1")
+re_dom = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{1,253}$")
+
+domains = []
+seen = set()
+for item in raw_domains.split(","):
+    d = item.strip().lower()
+    if not d:
+        continue
+    if not re_dom.match(d) or ".." in d:
+        if as_json:
+            print(json.dumps({"ok": False, "error": f"invalid domain: {d}"}))
+        else:
+            sys.stderr.write(f"[!] domain namotabar: {d}\n")
+        sys.exit(1)
+    if d not in seen:
+        seen.add(d)
+        domains.append(d)
+    if len(domains) >= 20:
+        break
+
+if not domains:
+    sys.stderr.write("[!] hich domain-i baraye scan nist.\n")
+    sys.exit(1)
+
+ctx = ssl.create_default_context(cafile=cafile) if cafile else ssl.create_default_context()
+try:
+    ctx.set_alpn_protocols(["h2", "http/1.1"])
+except Exception:
+    pass
+
+
+def probe_one(dom):
+    dial_host = target_host or dom
+    t0 = time.monotonic()
+    sock = None
+    try:
+        sock = socket.create_connection((dial_host, port), timeout=timeout_s)
+        sock.settimeout(timeout_s)
+        with ctx.wrap_socket(sock, server_hostname=dom) as ss:
+            sock = None
+            rtt = round((time.monotonic() - t0) * 1000.0, 1)
+            ver = ss.version() or ""
+            alpn = ss.selected_alpn_protocol() or ""
+        ok = (ver == "TLSv1.3")
+        return {
+            "domain": dom,
+            "ok": ok,
+            "verdict": "GOOD" if ok else "SKIP",
+            "tls_version": ver,
+            "alpn": alpn,
+            "rtt_ms": rtt,
+            "detail": "" if ok else f"requires TLSv1.3 (got {ver or 'none'})",
+        }
+    except Exception as exc:
+        rtt = round((time.monotonic() - t0) * 1000.0, 1)
+        return {
+            "domain": dom,
+            "ok": False,
+            "verdict": "FAIL",
+            "tls_version": "",
+            "alpn": "",
+            "rtt_ms": rtt,
+            "detail": str(exc)[:100],
+        }
+    finally:
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(domains))) as pool:
+    results = list(pool.map(probe_one, domains))
+
+
+def sort_key(r):
+    alpn_rank = 0 if r["alpn"] == "h2" else (1 if r["alpn"] else 2)
+    return (0 if r["ok"] else 1, alpn_rank, r["rtt_ms"])
+
+
+results.sort(key=sort_key)
+good = [r for r in results if r["ok"]]
+out_list = results[:top_n] if not as_json else results
+rec = good[0]["domain"] if good else ""
+
+if as_json:
+    print(json.dumps({
+        "ok": bool(good),
+        "port": port,
+        "recommended": rec,
+        "results": results[:top_n] if top_n else results,
+    }, separators=(",", ":")))
+else:
+    print(f"{'STATUS':<8} {'DOMAIN':<28} {'TLS':<8} {'ALPN':<9} {'RTT(ms)':<9} {'DETAIL'}")
+    print("-" * 74)
+    for r in out_list:
+        print(f"{r['verdict']:<8} {r['domain']:<28} {r['tls_version'] or '-':<8} {r['alpn'] or '-':<9} {str(r['rtt_ms']):<9} {r['detail']}")
+    if rec:
+        print(f"\n[+] pishnahad-e cover (REALITY dest/sni): {rec}:{port}")
+    else:
+        print("\n[!] hich cover site ba TLSv1.3 + cert motabar peyda nashod.")
 PY
 }

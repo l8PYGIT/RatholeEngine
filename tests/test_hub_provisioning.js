@@ -1049,3 +1049,72 @@ test('Backhaul direct_ip wssmux calls ip-tls/prepare and pins tls_ca + saveUpdat
   update_require_sig: true,
  });
 });
+
+test('M7 paqet, Managed Xray & cover scanner UI helpers work cleanly', async () => {
+ const c = context();
+ c.OVS.rp01 = { nodes: [{ name: 'pq1', port: 1006, inbound_port: 8445, transport: 'paqet' }], features: {}, paqet: { enabled: true, mode: 'fast2' } };
+ c.OVS.trk01 = { services: [{ name: 'pq1', inbound: 8445 }], paqet: { enabled: true, mode: 'fast', port: 9999 }, xray: { configured: true, active: true, mode: 'reality', port: 8443 } };
+ const elements = {
+  f_remote: { value: '' },
+  f_key: { value: '' },
+  f_mode: { value: 'fast' },
+  f_block: { value: 'aes-128-gcm' },
+  f_node_src: { value: 'trk01', onchange: null },
+ };
+ let modalTitle = '', modalSubmit = null, shownOut = '';
+ c.$ = id => elements[id] || null;
+ c.t = k => k;
+ c.SERVERS = [{ name: 'rp01', role: 'iran', host: '5.202.4.40' }, { name: 'trk01', role: 'node', host: '198.51.100.5' }];
+ c.formModal = (title, _fields, onSubmit) => { modalTitle = title; modalSubmit = onSubmit; };
+ c.closeModal = () => {};
+ c.outModal = (_t, txt) => { shownOut = txt; };
+ c.run = (srv, action, args) => { c.calls.push({ url: 'api/servers/' + srv + '/action', srv, action, args }); };
+ c.api = async (m, url, body) => {
+  c.calls.push({ m, url, ...(body || {}) });
+  if (url === 'api/servers/trk01/paqetconnect') {
+   return { status: 200, j: { ok: true, remote: '198.51.100.5:9999', key: '0'.repeat(32), mode: 'fast3', block: 'salsa20' } };
+  }
+  if (body && body.action === 'xray_scan') {
+   return { status: 200, j: { rc: 0, out: JSON.stringify({ ok: true, recommended: 'www.microsoft.com', results: [{ domain: 'www.microsoft.com', ok: true, tls_version: 'TLSv1.3', alpn: 'h2', rtt_ms: 15.2 }] }) } };
+  }
+  return { status: 200, j: { rc: 0, out: 'vless://ok' } };
+ };
+ vm.runInContext(
+  definition('carrierLabel') + '\n' +
+  definition('paqetAutofill') + '\n' +
+  definition('paqetOnIran') + '\n' +
+  definition('paqetNode') + '\n' +
+  definition('paqetOnNode') + '\n' +
+  definition('setupXrayNode') + '\n' +
+  definition('scanXrayCover') + '\n' +
+  definition('showXrayUri'),
+  c
+ );
+ assert.equal(c.carrierLabel('paqet', c.OVS.rp01), 'Paqet / PCK · fast2');
+
+ c.paqetOnIran('rp01');
+ assert.ok(modalTitle);
+ await new Promise(r => setTimeout(r, 10));
+ assert.equal(elements.f_remote.value, '198.51.100.5:9999');
+ assert.equal(elements.f_mode.value, 'fast3');
+ modalSubmit({ remote: elements.f_remote.value, key: elements.f_key.value, mode: 'fast3', block: 'salsa20', conn: '2' });
+ assert.equal(action(c, 'paqet_on').args.remote, '198.51.100.5:9999');
+
+ c.paqetNode('rp01', 'pq1');
+ modalSubmit({ name: 'pq1', act: 'on' });
+ assert.equal(action(c, 'paqet_node_on').args.name, 'pq1');
+
+ c.paqetOnNode('trk01');
+ modalSubmit({ port: '9999', key: '', mode: 'fast', block: 'aes-128-gcm', conn: '1' });
+
+ c.setupXrayNode('trk01');
+ modalSubmit({ mode: 'reality', port: '8443', dest: 'www.microsoft.com:443', sni: 'www.microsoft.com', proxy_protocol: '1' });
+ assert.equal(action(c, 'xray_setup').args.proxy_protocol, true);
+
+ await c.scanXrayCover('rp01');
+ await modalSubmit({ domains: 'www.microsoft.com', top: '3' });
+ assert.ok(shownOut.includes('recommended: www.microsoft.com'));
+
+ c.showXrayUri('trk01');
+ assert.ok(c.calls.some(x => x.action === 'xray_uri'));
+});

@@ -20,6 +20,7 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 | **frp** | `ratholectl frp on <port> [token] [tcp\|kcp\|quic\|websocket]` | `ratholenode frp on <iran_ip:port> <token> [transport] [remote_port]` | هسته‌ی `fatedier/frp`؛ پیش‌فرض ۷۰۰۰ |
 | **gre** | `ratholectl gre on <remote_ip> [tunnel_ip] [gre_name]` | `ratholenode gre on <iran_ip> [tunnel_ip] [gre_name]` | `ip tunnel` لایه ۳؛ پیش‌فرض `gre1` و /30 |
 | **frp_gre** | از سرویس‌کنترل‌های هاب (یا `gre on` + `frp on` روی IP مجازی) | همان دو مرحله در سمت نود | FRP مالتی‌پلکس‌شده داخل GRE |
+| **paqet** | `ratholectl paqet on <node_ip:port> <key> [mode]` + `paqet node <name> on` | `ratholenode paqet on [port] [key] [mode]` | Direct PCK خام روی TCP+KCP بدون TLS/DPI |
 
 ## گزارش پروتکل حامل و جابه‌جایی از سرویس‌کنترل‌ها
 
@@ -193,6 +194,23 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 ---
 
 **نکته‌ی کلیدی:** در تمامی حالت‌های تونلی، سرویس‌ها/توکن‌ها/مسیر کاربران دست‌نخورده می‌مانند؛ فقط حاملِ تونل عوض می‌شود. برای جزئیات مسیر بسته لایه‌به‌لایه: [`traffic-flow.md`](traffic-flow.md).
+
+---
+
+## ۱۵) paqet (Direct PCK خام روی TCP+KCP بدون TLS)
+
+> ارسال بسته‌های خام TCP/KCP بدون هندشیک TLS/SSL برای عبور از فایروال‌های DPI سخت‌گیر (اجرا با دسترسی `CAP_NET_RAW`/`CAP_NET_ADMIN` و قوانین `iptables RAW NOTRACK`).
+
+- **معماری معکوس از دید paqet:** سرور نود خارج به‌عنوان `paqet server` روی پورت گوش‌دهنده (پیش‌فرض ۹۹۹۹) بالا می‌آید (`ratholenode paqet on`) و سرور ایران به‌عنوان `paqet client` پورت دیتای هر سرویس را به `127.0.0.1:<inbound_port>` روی نود فوروارد می‌کند (`ratholectl paqet on <node_ip:port> <key>` و `ratholectl paqet node <name> on`).
+- سرویس‌های متصل به `paqet` از `server.toml` حذف می‌شوند و در `/etc/paqet/client.yaml` نگاشت می‌گیرند.
+
+## ۱۶) Managed Xray (`REALITY+Vision` / `XHTTP`) و اسکنر سایت کاور
+
+- راه‌اندازی سریع هسته Xray روی نود بدون تنظیم دستی JSON:
+  - `ratholenode xray setup reality --port 8443 --dest www.microsoft.com:443 --sni www.microsoft.com [--proxy-protocol]`
+  - `ratholenode xray setup xhttp --port 2087 --path /xhttp --mode auto [--proxy-protocol]`
+- دریافت لینک آماده VLESS با `ratholenode xray uri [host] [port]` و وضعیت ایمن (بدون افشای `privateKey`) با `ratholenode xray status --json`.
+- **اسکنر سایت کاور (`xray scan`):** با اجرای `ratholectl xray scan` (یا `ratholenode xray scan`) دامنه‌های کاندید هم‌زمان از نظر TLS 1.3، ALPN `h2` و RTT ارزیابی می‌شوند تا بهترین SNI برای REALITY انتخاب شود.
 
 ---
 

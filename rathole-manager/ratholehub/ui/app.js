@@ -190,19 +190,22 @@ let ROUTE={page:'dashboard',param:null};
 let _navAnimate=false, _tabAnimate=false;
 function parseHash(){const hh=location.hash||'#/dashboard';
  let m=hh.match(/^#\/server\/([A-Za-z0-9_-]+)$/); if(m)return{page:'server',param:m[1]};
- m=hh.match(/^#\/(dashboard|routing|audit|settings)$/); return m?{page:m[1],param:null}:{page:'dashboard',param:null};}
+ m=hh.match(/^#\/(dashboard|routing|tuner|audit|settings)$/); return m?{page:m[1],param:null}:{page:'dashboard',param:null};
+}
 function nav(hh){if(location.hash===hh){router();}else{location.hash=hh;}}
 window.addEventListener('hashchange',()=>{if(TOKEN)router();});
 function markNav(){document.querySelectorAll('.sitem').forEach(e=>{
  const active=e.dataset.pg===ROUTE.page;e.classList.toggle('active',active);e.setAttribute('aria-current',active?'page':'false');});}
 async function router(){
  if(!TOKEN)return; if(typeof closeAllMoreMenus==='function')closeAllMoreMenus(null,true); ROUTE=parseHash(); markNav();
+ if(ROUTE.page!=='tuner'&&typeof clearTunerPoll==='function')clearTunerPoll();
  await ensureServers();
  _navAnimate=true;
  try{
   const pg=$('page');
   if(ROUTE.page==='server')renderServerPage(ROUTE.param);
   else if(ROUTE.page==='routing')renderRouting();
+  else if(ROUTE.page==='tuner')renderTunerPage();
   else if(ROUTE.page==='audit')renderAuditPage();
   else if(ROUTE.page==='settings')renderSettingsPage();
   else renderDashboard();
@@ -249,6 +252,7 @@ function cmdkEntries(query){
  [
   {id:'dashboard',icon:'dashboard',label:t('nav_dash'),meta:'#/dashboard',run:()=>nav('#/dashboard')},
   {id:'routing',icon:'route',label:t('nav_routing'),meta:'#/routing',run:()=>nav('#/routing')},
+  {id:'tuner',icon:'gauge',label:t('nav_tuner'),meta:'#/tuner',run:()=>nav('#/tuner')},
   {id:'audit',icon:'history',label:t('audit'),meta:'#/audit',run:()=>nav('#/audit')},
   {id:'settings',icon:'settings',label:t('settings'),meta:'#/settings',run:()=>nav('#/settings')}
  ].forEach(pg=>{
@@ -357,6 +361,7 @@ function shell(){
    <nav class="nav-list" aria-label="${h(t('nav_label'))}">
     <button class="sitem" type="button" data-pg="dashboard" onclick="nav('#/dashboard')" title="${h(t('nav_dash'))}">${icon('dashboard')}<span>${t('nav_dash')}</span></button>
     <button class="sitem" type="button" data-pg="routing" onclick="nav('#/routing')" title="${h(t('nav_routing'))}">${icon('route')}<span>${t('nav_routing')}</span></button>
+    <button class="sitem" type="button" data-pg="tuner" onclick="nav('#/tuner')" title="${h(t('nav_tuner'))}">${icon('gauge')}<span>${t('nav_tuner')}</span></button>
     <button class="sitem" type="button" data-pg="audit" onclick="nav('#/audit')" title="${h(t('audit'))}">${icon('history')}<span>${t('audit')}</span></button>
     <button class="sitem" type="button" data-pg="settings" onclick="nav('#/settings')" title="${h(t('settings'))}">${icon('settings')}<span>${t('settings')}</span></button>
    </nav>
@@ -3345,6 +3350,265 @@ function editServer(n){const s=fnd(n);
 
 async function savePw(){const cur=$('cpw').value,nw=$('npw').value;if(!nw){toast(t('need_newpw'));return;}const {status,j}=await api('POST','api/config',{current_password:cur,new_password:nw});if(status!==200){toast('error: '+(j.error||status));return;}toast(t('pw_changed'));$('cpw').value='';$('npw').value='';}
 async function rotTok(){if(!confirm(t('cf_rottok')))return;const {status,j}=await api('POST','api/config',{rotate_token:true});if(status!==200){toast('error: '+(j.error||status));return;}TOKEN=j.api_token;localStorage.setItem('rh_token',TOKEN);toast(t('tok_applied'));renderSettingsPage();}
+let TUNER_STATE={activeJobId:null,job:null,lastReport:null,profiles:null,pollTimer:null,iran:'',node:'',mode:'brutal',goal:'balanced',deep:false,iran_dc:'',node_dc:''};
+function clearTunerPoll(){if(TUNER_STATE.pollTimer){clearTimeout(TUNER_STATE.pollTimer);TUNER_STATE.pollTimer=null;}}
+async function loadTunerProfiles(){
+ const {status,j}=await api('GET','api/tuner/profiles');
+ if(status===200){TUNER_STATE.profiles=j.profiles||[];}
+ else if(!TUNER_STATE.profiles){TUNER_STATE.profiles=[];}
+ if(ROUTE.page==='tuner'){const box=$('tn_lib_box');if(box)box.innerHTML=_renderTunerLibraryRows();}
+}
+async function startTunerJob(profileB64Override=''){
+ const ir=($('tn_iran')&&$('tn_iran').value)||TUNER_STATE.iran||'';
+ const nd=($('tn_node')&&$('tn_node').value)||TUNER_STATE.node||'';
+ if(!ir||!nd){toast(t('tuner_need_pair'));return;}
+ const mode=($('tn_mode')&&$('tn_mode').value)||TUNER_STATE.mode||'brutal';
+ const goal=($('tn_goal')&&$('tn_goal').value)||TUNER_STATE.goal||'balanced';
+ const deep=!!(($('tn_deep')&&$('tn_deep').checked)||false);
+ const iran_dc=(($('tn_iran_dc')&&$('tn_iran_dc').value)||'').trim();
+ const node_dc=(($('tn_node_dc')&&$('tn_node_dc').value)||'').trim();
+ Object.assign(TUNER_STATE,{iran:ir,node:nd,mode,goal,deep,iran_dc,node_dc});
+ const body={iran:ir,node:nd,mode,goal,deep,tags:{iran_dc,node_dc}};
+ if(profileB64Override){body.profile=profileB64Override;}
+ const {status,j}=await api('POST','api/tuner/start',body);
+ if(status>=400||!j||!j.ok){toast('error: '+((j&&j.error)||status));return;}
+ TUNER_STATE.activeJobId=j.job_id;
+ TUNER_STATE.job=j.job||{job_id:j.job_id,status:'running',stage_index:0,stage_total:6};
+ renderTunerPage();
+ pollTunerJob(j.job_id);
+}
+function pollTunerJob(jobId){
+ clearTunerPoll();
+ if(!jobId||ROUTE.page!=='tuner')return;
+ TUNER_STATE.pollTimer=setTimeout(async()=>{
+  if(ROUTE.page!=='tuner'||TUNER_STATE.activeJobId!==jobId)return;
+  const {status,j}=await api('GET','api/tuner/jobs/'+encodeURIComponent(jobId));
+  if(status===200&&j){
+   TUNER_STATE.job=j;
+   if(j.status==='done'&&j.result){
+    TUNER_STATE.lastReport=j.result;
+    TUNER_STATE.activeJobId=null;
+    renderTunerPage();
+    toast('✓ '+(j.result.benchmarks&&j.result.benchmarks.winner?j.result.benchmarks.winner.throughput_mbps+' Mbps':'done'));
+    return;
+   }
+   if(j.status==='error'||j.status==='cancelled'){
+    TUNER_STATE.activeJobId=null;
+    renderTunerPage();
+    if(j.error)toast('error: '+j.error);
+    return;
+   }
+   const pb=$('tn_prog_box');
+   if(pb)pb.innerHTML=_renderTunerProgressBody();
+   else renderTunerPage();
+  }
+  pollTunerJob(jobId);
+ },1200);
+}
+async function cancelTunerJob(){
+ const jid=TUNER_STATE.activeJobId;
+ if(!jid)return;
+ clearTunerPoll();
+ await api('POST','api/tuner/jobs/'+encodeURIComponent(jid)+'/cancel',{});
+ TUNER_STATE.activeJobId=null;
+ if(TUNER_STATE.job)TUNER_STATE.job.status='cancelled';
+ renderTunerPage();
+}
+function _copyTunerText(txt){
+ if(!txt)return;
+ if(navigator&&navigator.clipboard&&navigator.clipboard.writeText){
+  navigator.clipboard.writeText(txt).then(()=>toast('✓ '+t('rc_copied'))).catch(()=>toast(t('rc_copied')));
+ }else{
+  toast('✓ '+t('rc_copied'));
+ }
+}
+function copyTunerJson(){
+ const p=TUNER_STATE.lastReport&&TUNER_STATE.lastReport.profile;
+ if(p)_copyTunerText(JSON.stringify(p,null,2));
+}
+function copyTunerBase64(){
+ const b=TUNER_STATE.lastReport&&TUNER_STATE.lastReport.profile_b64;
+ if(b)_copyTunerText(b);
+}
+async function saveTunerProfileToLib(){
+ const b=TUNER_STATE.lastReport&&TUNER_STATE.lastReport.profile_b64;
+ if(!b)return;
+ const p=TUNER_STATE.lastReport.profile||{};
+ const nm=(p.meta&&p.meta.name)||'optimal-profile';
+ await importTunerProfile(nm,b);
+}
+async function importTunerProfile(name,rawSpec){
+ const txt=String(rawSpec||'').trim();
+ if(!txt){toast(t('fill'));return false;}
+ let payload=txt;
+ if(txt.startsWith('{')){
+  try{payload=JSON.parse(txt);}catch(e){toast('error: invalid JSON');return false;}
+ }
+ const {status,j}=await api('POST','api/tuner/profiles',{name:(name||'').trim(),profile:payload});
+ if(status!==200||!j||!j.ok){toast('error: '+((j&&j.error)||status));return false;}
+ closeModal();
+ toast('✓ '+t('saved'));
+ await loadTunerProfiles();
+ return true;
+}
+function openImportTunerModal(){
+ modal(`<h3>${h(t('tuner_import_title'))}</h3>
+  <div class="row"><label for="tn_imp_nm">${h(t('f_name'))}</label><input id="tn_imp_nm" type="text" placeholder="arvan-hetzner-fast"></div>
+  <div style="margin-top:8px"><textarea id="tn_imp_txt" class="tuner-code" placeholder="${h(t('tuner_import_ph'))}"></textarea></div>
+  <div class="modal-actions"><button class="gh" type="button" onclick="closeModal()">${h(t('cancel'))}</button>
+  <button class="g" type="button" onclick="importTunerProfile($('tn_imp_nm').value,$('tn_imp_txt').value)">${h(t('save'))}</button></div>`);
+}
+async function deleteTunerProfile(pid){
+ const {status,j}=await api('DELETE','api/tuner/profiles/'+encodeURIComponent(pid));
+ if(status!==200){toast('error: '+((j&&j.error)||status));return;}
+ toast('✓ '+t('done'));
+ await loadTunerProfiles();
+}
+function copyTunerLibItem(idx,fmt){
+ const p=(TUNER_STATE.profiles||[])[idx];
+ if(!p)return;
+ _copyTunerText(fmt==='json'?JSON.stringify(p.profile||{},null,2):(p.profile_b64||''));
+}
+function testTunerLibItem(idx){
+ const p=(TUNER_STATE.profiles||[])[idx];
+ if(p&&p.profile_b64)startTunerJob(p.profile_b64);
+}
+function applyTunerLibItem(idx){
+ const p=(TUNER_STATE.profiles||[])[idx];
+ if(p)applyTunerProfileBoth(p.profile_b64||'',p.id||'');
+}
+function deleteTunerLibItem(idx){
+ const p=(TUNER_STATE.profiles||[])[idx];
+ if(p&&p.id)deleteTunerProfile(p.id);
+}
+async function applyTunerProfileBoth(profileB64,profileId){
+ const ir=($('tn_iran')&&$('tn_iran').value)||TUNER_STATE.iran||'';
+ const nd=($('tn_node')&&$('tn_node').value)||TUNER_STATE.node||'';
+ if(!ir||!nd){toast(t('tuner_need_pair'));return;}
+ if(!confirm(t('tuner_cf_apply')))return;
+ const body={iran:ir,node:nd};
+ if(profileId)body.profile_id=profileId;
+ else body.profile=profileB64||(TUNER_STATE.lastReport&&TUNER_STATE.lastReport.profile_b64)||'';
+ const {status,j}=await api('POST','api/tuner/apply',body);
+ if(status!==200||!j||!j.ok){toast('error: '+((j&&j.error)||status));return;}
+ toast('✓ '+t('done'));
+}
+async function rollbackTunerBoth(){
+ const ir=($('tn_iran')&&$('tn_iran').value)||TUNER_STATE.iran||'';
+ const nd=($('tn_node')&&$('tn_node').value)||TUNER_STATE.node||'';
+ if(!ir||!nd){toast(t('tuner_need_pair'));return;}
+ if(!confirm(t('tuner_cf_rollback')))return;
+ const {status,j}=await api('POST','api/tuner/rollback',{iran:ir,node:nd});
+ if(status!==200||!j||!j.ok){toast('error: '+((j&&j.error)||status));return;}
+ toast('✓ '+t('done'));
+}
+function _renderTunerProgressBody(){
+ const job=TUNER_STATE.job;
+ if(!job)return '';
+ const pct=Math.min(100,Math.max(5,Math.round(((job.stage_index||0)/Math.max(1,job.stage_total||6))*100)));
+ return `<div class="sec-head-row"><strong>${h(t('tuner_progress'))}: ${h(job.phase||job.status)}</strong><span class="tag">${h(job.stage_index||0)}/${h(job.stage_total||6)} · ${h(job.elapsed_s||0)}s · best=${h(job.best_so_far||0)}</span></div>
+  <div class="tuner-bar"><div class="tuner-bar-fill" style="width:${pct}%"></div></div>`;
+}
+function _renderTunerResultsCard(){
+ const rep=TUNER_STATE.lastReport;
+ if(!rep)return '';
+ const bm=rep.benchmarks||{};
+ const b=bm.baseline||{}; const w=bm.winner||{};
+ const ws=(w.scores||{});
+ const bs=(b.scores||{});
+ const rows=[
+  ['Throughput (Mbps)',b.throughput_mbps,w.throughput_mbps],
+  ['Loaded RTT p95 (ms)',b.loaded_rtt_p95_ms,w.loaded_rtt_p95_ms],
+  ['Jitter (ms)',b.jitter_ms,w.jitter_ms],
+  ['Retrans (%)',b.retrans_pct,w.retrans_pct],
+  ['Stability CoV',b.stability_cov,w.stability_cov],
+  ['Score ('+(TUNER_STATE.goal||'balanced')+')',bs[TUNER_STATE.goal||'balanced'],ws[TUNER_STATE.goal||'balanced']]
+ ].map(r=>`<tr><td>${h(r[0])}</td><td>${h(r[1]??'-')}</td><td><strong>${h(r[2]??'-')}</strong></td></tr>`).join('');
+ const cars=Object.entries(bm.carriers||{}).map(([k,v])=>`<span class="tag">${h(k)}: ${h(v.status)}${v.throughput_mbps!=null?' · '+h(v.throughput_mbps)+' Mbps':''}</span>`).join(' ');
+ const diags=(rep.diagnostics||[]).map(d=>`<div class="alert-row">${h(d.code)}: ${h(d.detail)}</div>`).join('');
+ return `<section class="card sec">
+  <div class="sec-head-row"><h4>${h(t('tuner_results'))}</h4>
+   <div class="btns">
+    <button class="gh" type="button" onclick="copyTunerJson()">${h(t('tuner_copy_json'))}</button>
+    <button class="gh" type="button" onclick="copyTunerBase64()">${h(t('tuner_copy_b64'))}</button>
+    <button class="s" type="button" onclick="saveTunerProfileToLib()">${h(t('tuner_save_lib'))}</button>
+    <button class="g" type="button" onclick="applyTunerProfileBoth('','')">${h(t('tuner_apply_both'))}</button>
+    <button class="r" type="button" onclick="rollbackTunerBoth()">${h(t('tuner_rollback_both'))}</button>
+   </div></div>
+  <div class="tuner-metrics">
+   <div class="tuner-score"><div class="k">Balanced</div><div class="v">${h(ws.balanced??'-')}</div></div>
+   <div class="tuner-score"><div class="k">Low Latency</div><div class="v">${h(ws['low-latency']??'-')}</div></div>
+   <div class="tuner-score"><div class="k">Max Throughput</div><div class="v">${h(ws['max-throughput']??'-')}</div></div>
+   <div class="tuner-score"><div class="k">Anti-Loss</div><div class="v">${h(ws['anti-loss']??'-')}</div></div>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>Metric</th><th>${h(t('tuner_baseline'))}</th><th>${h(t('tuner_winner'))}</th></tr></thead><tbody>${rows}</tbody></table></div>
+  ${cars?`<div style="margin-top:10px"><div style="margin-bottom:4px;font-weight:600">${h(t('tuner_carriers'))}</div><div class="bstrip">${cars}</div></div>`:''}
+  ${diags?`<div style="margin-top:10px"><div style="margin-bottom:4px;font-weight:600">${h(t('tuner_diagnostics'))}</div>${diags}</div>`:''}
+  <div style="margin-top:10px"><textarea class="tuner-code" readonly>${h(rep.profile_b64||'')}</textarea></div>
+ </section>`;
+}
+function _renderTunerLibraryRows(){
+ const list=TUNER_STATE.profiles||[];
+ if(!list.length)return `<div class="empty">${h(t('tuner_empty_lib'))}</div>`;
+ return list.map((p,idx)=>{
+  const tags=Object.entries(p.tags||{}).filter(([,v])=>v).map(([k,v])=>`${k}:${v}`).join(' · ');
+  const tp=p.summary&&p.summary.throughput_mbps!=null?`${p.summary.throughput_mbps} Mbps`:'';
+  return `<div class="tuner-prof-row">
+   <div><strong>${h(p.name||p.id)}</strong> ${tags?`<span class="tag">${h(tags)}</span>`:''} ${tp?`<span class="tag">${h(tp)}</span>`:''}</div>
+   <div class="btns">
+    <button class="gh" type="button" onclick="copyTunerLibItem(${idx},'json')">JSON</button>
+    <button class="gh" type="button" onclick="copyTunerLibItem(${idx},'b64')">Base64</button>
+    <button class="s" type="button" onclick="testTunerLibItem(${idx})">${h(t('tuner_test_ab'))}</button>
+    <button class="g" type="button" onclick="applyTunerLibItem(${idx})">${h(t('tuner_apply_both'))}</button>
+    <button class="r" type="button" onclick="deleteTunerLibItem(${idx})">×</button>
+   </div></div>`;
+ }).join('');
+}
+function renderTunerPage(){
+ const irs=iranServers(), nds=SERVERS.filter(s=>s.role==='node');
+ if(!TUNER_STATE.iran&&irs.length)TUNER_STATE.iran=irs[0].name;
+ if(!TUNER_STATE.node&&nds.length)TUNER_STATE.node=nds[0].name;
+ const pg=$('page'); if(!pg)return;
+ const running=!!TUNER_STATE.activeJobId;
+ const irOpts=irs.map(s=>`<option value="${h(s.name)}"${s.name===TUNER_STATE.iran?' selected':''}>${h(s.name)}</option>`).join('');
+ const ndOpts=nds.map(s=>`<option value="${h(s.name)}"${s.name===TUNER_STATE.node?' selected':''}>${h(s.name)}</option>`).join('');
+ pg.innerHTML=`<div class="ptitle"><h2>${h(t('tuner_title'))}</h2></div>
+  <div class="tuner-grid">
+   <section class="card sec">
+    <div style="color:var(--text-muted);margin-bottom:10px">${h(t('tuner_sub'))}</div>
+    <div class="tuner-form">
+     <div class="field"><label for="tn_iran">${h(t('tuner_iran'))}</label><select id="tn_iran">${irOpts}</select></div>
+     <div class="field"><label for="tn_node">${h(t('tuner_node'))}</label><select id="tn_node">${ndOpts}</select></div>
+     <div class="field"><label for="tn_mode">${h(t('tuner_mode'))}</label><select id="tn_mode">
+      <option value="brutal"${TUNER_STATE.mode==='brutal'?' selected':''}>${h(t('tuner_mode_brutal'))}</option>
+      <option value="safe"${TUNER_STATE.mode==='safe'?' selected':''}>${h(t('tuner_mode_safe'))}</option>
+     </select></div>
+     <div class="field"><label for="tn_goal">${h(t('tuner_goal'))}</label><select id="tn_goal">
+      <option value="balanced"${TUNER_STATE.goal==='balanced'?' selected':''}>${h(t('tuner_goal_balanced'))}</option>
+      <option value="low-latency"${TUNER_STATE.goal==='low-latency'?' selected':''}>${h(t('tuner_goal_low_latency'))}</option>
+      <option value="max-throughput"${TUNER_STATE.goal==='max-throughput'?' selected':''}>${h(t('tuner_goal_max_throughput'))}</option>
+      <option value="anti-loss"${TUNER_STATE.goal==='anti-loss'?' selected':''}>${h(t('tuner_goal_anti_loss'))}</option>
+     </select></div>
+     <div class="field"><label for="tn_iran_dc">${h(t('tuner_iran_dc'))}</label><input id="tn_iran_dc" type="text" value="${h(TUNER_STATE.iran_dc)}"></div>
+     <div class="field"><label for="tn_node_dc">${h(t('tuner_node_dc'))}</label><input id="tn_node_dc" type="text" value="${h(TUNER_STATE.node_dc)}"></div>
+     <label class="sw" style="padding-bottom:6px"><input type="checkbox" id="tn_deep"${TUNER_STATE.deep?' checked':''}><span>${h(t('tuner_deep'))}</span></label>
+     <div class="btns">
+      <button class="g" type="button" onclick="startTunerJob()"${running?' disabled':''}>${h(t('tuner_start'))}</button>
+      ${running?`<button class="r" type="button" onclick="cancelTunerJob()">${h(t('tuner_stop'))}</button>`:''}
+     </div>
+    </div>
+   </section>
+   ${TUNER_STATE.job?`<section class="card sec" id="tn_prog_box">${_renderTunerProgressBody()}</section>`:''}
+   ${_renderTunerResultsCard()}
+   <section class="card sec">
+    <div class="sec-head-row"><h4>${h(t('tuner_library'))}</h4>
+     <button class="s" type="button" onclick="openImportTunerModal()">${h(t('tuner_import_btn'))}</button></div>
+    <div id="tn_lib_box">${_renderTunerLibraryRows()}</div>
+   </section>
+  </div>`;
+ if(TUNER_STATE.profiles===null)loadTunerProfiles();
+}
+
 function prefersReducedMotion(){
  return typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
 }

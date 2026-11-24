@@ -1876,6 +1876,8 @@
       z-index: 60;
       display: grid;
       grid-template-columns: repeat(4, 1fr);
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
       gap: 0;
       height: 66px;
       padding: 5px max(6px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
@@ -1968,4 +1970,17 @@
     .flow { animation: none !important; }
     #app, #sb, .scard, button, .sitem, .tab-btn, .seg-btn { transition-duration: 80ms !important; }
   }
+
+  /* #/tuner Network & Kernel Auto-Tuner */
+  .tuner-grid { display: grid; gap: 14px; }
+  .tuner-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 12px; align-items: end; }
+  .tuner-form .field { display: flex; flex-direction: column; gap: 5px; }
+  .tuner-bar { width: 100%; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 10px 0 6px; border: 1px solid var(--border); }
+  .tuner-bar-fill { height: 100%; background: var(--primary); transition: width 220ms var(--ease-out); }
+  .tuner-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; margin: 10px 0; }
+  .tuner-score { padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); }
+  .tuner-score .k { font-size: 11.5px; color: var(--text-muted); }
+  .tuner-score .v { font-size: 18px; font-weight: 700; margin-top: 2px; }
+  .tuner-code { width: 100%; min-height: 92px; padding: 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-family: ui-monospace, monospace; font-size: 12px; resize: vertical; }
+  .tuner-prof-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); margin-top: 8px; }
 }

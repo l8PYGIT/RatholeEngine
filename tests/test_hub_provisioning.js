@@ -1118,3 +1118,72 @@ test('M7 paqet, Managed Xray & cover scanner UI helpers work cleanly', async () 
  c.showXrayUri('trk01');
  assert.ok(c.calls.some(x => x.action === 'xray_uri'));
 });
+
+test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', async () => {
+ const i18nSrc = fs.readFileSync(path.join(__dirname, '../rathole-manager/ratholehub/ui/i18n.js'), 'utf8');
+ const i18nCtx = {};
+ vm.createContext(i18nCtx);
+ vm.runInContext(i18nSrc + '\nthis.DICT = DICT;', i18nCtx);
+ assert.ok(i18nCtx.DICT && i18nCtx.DICT.fa && i18nCtx.DICT.en);
+ for (const k of [
+  'nav_tuner', 'tuner_title', 'tuner_start', 'tuner_stop', 'tuner_copy_json',
+  'tuner_copy_b64', 'tuner_apply_both', 'tuner_rollback_both', 'tuner_import_btn',
+ ]) {
+  assert.ok(i18nCtx.DICT.fa[k], 'missing fa.' + k);
+  assert.ok(i18nCtx.DICT.en[k], 'missing en.' + k);
+ }
+
+ assert.ok(source.includes('data-pg="tuner"'), 'sidebar missing tuner button');
+ assert.ok(source.includes("ROUTE.page==='tuner'"), 'router missing tuner branch');
+
+ const c = context();
+ const els = {
+  tn_iran: { value: 'iran' },
+  tn_node: { value: 'node' },
+  tn_mode: { value: 'brutal' },
+  tn_goal: { value: 'low-latency' },
+  tn_deep: { checked: true },
+  tn_iran_dc: { value: 'arvan-thr' },
+  tn_node_dc: { value: 'hetzner-fsn1' },
+ };
+ let curHash = '#/tuner';
+ c.location = { get hash() { return curHash; }, set hash(v) { curHash = v; } };
+ c.$ = id => els[id] || null;
+ c.t = k => k;
+ c.confirm = () => true;
+ c.closeModal = () => {};
+ c.pollTunerJob = () => {};
+ c.loadTunerProfiles = async () => {};
+ c.renderTunerPage = () => {};
+ c.TUNER_STATE = { lastReport: { profile_b64: 'rthprof1:abcdefghijklmnop' }, activeJobId: null };
+ c.api = async (method, url, body) => {
+  c.calls.push({ method, url, body });
+  if (url === 'api/tuner/start') return { status: 202, j: { ok: true, job_id: 'job_mock_1', job: { job_id: 'job_mock_1', status: 'running' } } };
+  return { status: 200, j: { ok: true, profile: { id: 'prof_1' } } };
+ };
+ vm.runInContext(
+  definition('parseHash') + '\n' +
+  definition('startTunerJob') + '\n' +
+  definition('importTunerProfile') + '\n' +
+  definition('applyTunerProfileBoth') + '\n' +
+  definition('rollbackTunerBoth'),
+  c
+ );
+
+ assert.deepEqual(JSON.parse(JSON.stringify(c.parseHash())), { page: 'tuner', param: null });
+ await c.startTunerJob();
+ const stCall = c.calls.find(x => x.url === 'api/tuner/start');
+ assert.ok(stCall);
+ assert.equal(stCall.body.goal, 'low-latency');
+ assert.equal(stCall.body.deep, true);
+ assert.equal(stCall.body.tags.iran_dc, 'arvan-thr');
+
+ await c.importTunerProfile('custom-dc', 'rthprof1:abcdefghijklmnop');
+ assert.ok(c.calls.some(x => x.url === 'api/tuner/profiles' && x.body.profile === 'rthprof1:abcdefghijklmnop'));
+
+ await c.applyTunerProfileBoth('rthprof1:abcdefghijklmnop', '');
+ assert.ok(c.calls.some(x => x.url === 'api/tuner/apply' && x.body.iran === 'iran' && x.body.node === 'node'));
+
+ await c.rollbackTunerBoth();
+ assert.ok(c.calls.some(x => x.url === 'api/tuner/rollback' && x.body.iran === 'iran' && x.body.node === 'node'));
+});

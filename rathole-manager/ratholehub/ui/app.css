@@ -2002,7 +2002,16 @@
   .tuner-err { margin-top: 12px; padding: 12px 14px; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--border)); background: var(--danger-soft); color: var(--text); }
   .tuner-err strong { color: var(--danger); }
   .tuner-err-detail { margin: 8px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto; direction: ltr; text-align: left; }
-  .tuner-live-tbl { max-height: 290px; overflow: auto; }
+  .tuner-live-tbl { max-height: 320px; overflow: auto; overscroll-behavior: contain; }
+  .tuner-live-tbl table { min-width: 680px; }
+  .tuner-tbl th.num, .tuner-tbl td.num { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tuner-tbl th.col-start, .tuner-tbl td.col-start { text-align: start; }
+  .tuner-tbl td.col-cand { font-family: var(--mono); white-space: nowrap; }
+  .tuner-tbl th.col-idx, .tuner-tbl td.col-idx { width: 44px; }
+  .tuner-res-tbl { table-layout: fixed; }
+  .tuner-res-tbl th:first-child, .tuner-res-tbl td:first-child { width: 44%; text-align: start; }
+  .tuner-res-tbl th.num, .tuner-res-tbl td.num { width: 28%; text-align: center; font-variant-numeric: tabular-nums; }
+  .tuner-num { display: inline-block; direction: ltr; unicode-bidi: isolate; }
   .tuner-row-best { background: color-mix(in srgb, var(--success) 10%, transparent); }
   .tuner-row-disq { opacity: 0.68; }
   .tuner-jobs-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }

@@ -1148,7 +1148,7 @@ def mock_run(server, cmd_args):
         # nemune-ye kutah: sakhtar-e vaghei + neshan dadan-e inke token-ha REDACT shode-and.
         return {"rc": 0, "out":
                 "\n===== kolli =====\n"
-                "naghsh      : %s\nratholectl  : manager_version=2.3.2\n"
+                "naghsh      : %s\nratholectl  : manager_version=2.3.3\n"
                 "\n===== unit: rathole-server  (halat: active/enabled) =====\n"
                 "Jul 31 12:00:01 rp01 rathole[811]: control channel established\n"
                 "\n===== state.json (/etc/rathole-manager/state.json) =====\n"

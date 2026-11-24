@@ -1186,7 +1186,10 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
   definition('importTunerProfile') + '\n' +
   definition('applyTunerProfileBoth') + '\n' +
   definition('rollbackTunerBoth') + '\n' +
+  definition('_renderTunerProgressTop') + '\n' +
+  definition('_renderTunerLiveRows') + '\n' +
   definition('_renderTunerProgressBody') + '\n' +
+  definition('_patchTunerProgressBox') + '\n' +
   definition('_renderTunerResultsCard') + '\n' +
   definition('_renderTunerLibraryRows') + '\n' +
   definition('renderTunerPage'),
@@ -1249,4 +1252,55 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
  };
  const abHtml = c._renderTunerResultsCard();
  assert.ok(abHtml.includes('arvan-ab') && abHtml.includes('tuner_ab_delta'));
+
+ // Table alignment & incremental scroll-safe patching regression checks
+ const cssSrc = fs.readFileSync(path.join(__dirname, '../rathole-manager/ratholehub/ui/app.css'), 'utf8');
+ assert.ok(cssSrc.includes('.tuner-tbl th.num, .tuner-tbl td.num'), 'app.css missing .tuner-tbl numeric center alignment');
+ assert.ok(cssSrc.includes('.tuner-res-tbl'), 'app.css missing .tuner-res-tbl');
+
+ c.TUNER_STATE.job = {
+  job_id: 'job_scroll_1', iran: 'iran', node: 'node', mode: 'brutal', goal: 'balanced',
+  status: 'running', phase: 'cc_qdisc_pacing', stage_index: 2, stage_total: 6,
+  completed_trials: 1, estimated_trials: 12, best_so_far: 85.0, elapsed_s: 5.0,
+  live_trials: [{ id: 't1', name: 'mtu_1460', stage: 1, throughput_mbps: 310.5, loaded_rtt_p95_ms: 48.0, jitter_ms: 3.1, retrans_pct: 0.2, score: 85.0, disqualified: false }],
+ };
+ const liveBodyHtml = c._renderTunerProgressBody();
+ assert.equal(/<td[^>]*\bdir="ltr"/.test(liveBodyHtml), false, 'live table <td> must not override dir="ltr"');
+ assert.equal(/<td[^>]*\bdir="ltr"/.test(abHtml), false, 'results table <td> must not override dir="ltr"');
+ assert.ok(liveBodyHtml.includes('class="tuner-tbl"') && liveBodyHtml.includes('<th class="num">Mbps</th>') && liveBodyHtml.includes('<td class="num mono"><bdi dir="ltr">310.5</bdi></td>'));
+ assert.ok(abHtml.includes('class="tuner-tbl tuner-res-tbl"') && abHtml.includes('<th class="num">tuner_baseline</th>'));
+
+ let pbWiped = 0;
+ const topNode = { innerHTML: '', dataset: {} };
+ const secNode = { hidden: false };
+ const cntNode = { textContent: '1' };
+ const wrapNode = { scrollTop: 180, scrollLeft: 24 };
+ const tbodyNode = { innerHTML: '', dataset: {} };
+ const pbNodes = {
+  '#tn_prog_top': topNode,
+  '#tn_live_sec': secNode,
+  '#tn_live_cnt': cntNode,
+  '#tn_live_wrap': wrapNode,
+  '#tn_live_tbody': tbodyNode,
+ };
+ const pbMock = {
+  set innerHTML(_v) { pbWiped += 1; },
+  querySelector(sel) { return pbNodes[sel] || null; },
+ };
+ c._patchTunerProgressBox(pbMock);
+ assert.equal(pbWiped, 0, '_patchTunerProgressBox must update children without wiping pb.innerHTML');
+ assert.equal(wrapNode.scrollTop, 180);
+ assert.equal(wrapNode.scrollLeft, 24);
+ // Unchanged trials -> skips tbody rewrite; new trial -> updates tbody and preserves scroll
+ const prevTbody = tbodyNode.innerHTML;
+ c.TUNER_STATE.job.elapsed_s = 6.2;
+ c._patchTunerProgressBox(pbMock);
+ assert.equal(tbodyNode.innerHTML, prevTbody);
+ c.TUNER_STATE.job.live_trials.push({ id: 't2', name: 'bbr_fq_lw32768', stage: 2, throughput_mbps: 420.0, loaded_rtt_p95_ms: 42.0, jitter_ms: 2.0, retrans_pct: 0.1, score: 92.4, disqualified: false });
+ c._patchTunerProgressBox(pbMock);
+ assert.equal(pbWiped, 0);
+ assert.equal(cntNode.textContent, '2');
+ assert.ok(tbodyNode.innerHTML.includes('bbr_fq_lw32768'));
+ assert.equal(wrapNode.scrollTop, 180);
+ assert.equal(wrapNode.scrollLeft, 24);
 });

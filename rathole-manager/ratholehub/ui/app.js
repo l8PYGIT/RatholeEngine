@@ -3469,7 +3469,7 @@ function pollTunerJob(jobId){
     return;
    }
    const pb=$('tn_prog_box');
-   if(pb)pb.innerHTML=_renderTunerProgressBody();
+   if(pb)_patchTunerProgressBox(pb);
    else renderTunerPage();
   }
   pollTunerJob(jobId);
@@ -3572,8 +3572,7 @@ async function rollbackTunerBoth(){
  if(status!==200||!j||!j.ok){toast('error: '+((j&&j.error)||status));return;}
  toast('✓ '+t('done'));
 }
-function _renderTunerProgressBody(){
- const job=TUNER_STATE.job;
+function _renderTunerProgressTop(job){
  if(!job)return '';
  const isErr=job.status==='error'||!!job.error;
  const isDone=job.status==='done';
@@ -3632,28 +3631,77 @@ function _renderTunerProgressBody(){
   <pre class="tuner-err-detail" dir="ltr">${h(job.error||job.phase||'unknown error')}</pre>
  </div>`:'';
 
- let liveTblHtml='';
- const trials=Array.isArray(job.live_trials)?job.live_trials:[];
- if(trials.length){
-  let topScore=-1;
-  trials.forEach(tr=>{if(!tr.disqualified&&Number(tr.score||0)>topScore)topScore=Number(tr.score||0);});
-  const trRows=trials.map((tr,i)=>{
-   const isBest=!tr.disqualified&&topScore>=0&&Number(tr.score||0)===topScore;
-   const rCls=tr.disqualified?' class="tuner-row-disq"':(isBest?' class="tuner-row-best"':'');
-   const stBadge=t('tuner_st_'+Math.min(5,Math.max(0,Number(tr.stage||0))));
-   const scCell=tr.disqualified
-    ?`<span class="badge b-bad mono" dir="ltr">FAIL${tr.disqualify_reason?': '+h(tr.disqualify_reason):''}</span>`
-    :`<strong class="mono" dir="ltr">${isBest?'★ ':''}${h(tr.score??'-')}</strong>`;
-   return `<tr${rCls}><td class="mono" dir="ltr">${i+1}</td><td>${h(stBadge)}</td><td class="mono" dir="ltr">${h(tr.name||tr.id)}</td><td class="mono" dir="ltr">${h(tr.throughput_mbps??'-')}</td><td class="mono" dir="ltr">${h(tr.loaded_rtt_p95_ms??'-')}</td><td class="mono" dir="ltr">${h(tr.jitter_ms??'-')}</td><td class="mono" dir="ltr">${h(tr.retrans_pct??'-')}</td><td>${scCell}</td></tr>`;
-  }).join('');
-  liveTblHtml=`<div class="tuner-sec-lbl">${h(t('tuner_live_trials'))} (${trials.length})</div>
-   <div class="table-wrap tuner-live-tbl"><table><thead><tr><th>#</th><th>${h(t('tuner_col_stage'))}</th><th>${h(t('tuner_col_cand'))}</th><th>Mbps</th><th>p95 ms</th><th>Jitter</th><th>Retrans %</th><th>${h(t('tuner_col_score'))}</th></tr></thead><tbody>${trRows}</tbody></table></div>`;
- }
-
  return `<div class="sec-head-row"><strong>${h(t('tuner_progress'))}: ${h(phaseTxt)} ${pairTag}</strong>
   <span class="badge ${isErr?'b-bad':(isDone?'b-ok':'b-info')} mono" dir="ltr">${h(stIdx)}/${h(stTotal)}${h(trInfo)} · ${h(job.elapsed_s??0)}s · best=${h(job.best_so_far??0)}</span></div>
   <div class="tuner-bar"><div class="tuner-bar-fill${barCls}" style="width:${pct}%"></div></div>
-  ${stagesHtml}${stripHtml}${errHtml}${warnsHtml}${liveTblHtml}`;
+  ${stagesHtml}${stripHtml}${errHtml}${warnsHtml}`;
+}
+function _renderTunerLiveRows(trials){
+ if(!Array.isArray(trials)||!trials.length)return '';
+ let topScore=-1;
+ trials.forEach(tr=>{if(!tr.disqualified&&Number(tr.score||0)>topScore)topScore=Number(tr.score||0);});
+ return trials.map((tr,i)=>{
+  const isBest=!tr.disqualified&&topScore>=0&&Number(tr.score||0)===topScore;
+  const rCls=tr.disqualified?' class="tuner-row-disq"':(isBest?' class="tuner-row-best"':'');
+  const stBadge=t('tuner_st_'+Math.min(5,Math.max(0,Number(tr.stage||0))));
+  const scCell=tr.disqualified
+   ?`<span class="badge b-bad mono"><bdi dir="ltr">FAIL${tr.disqualify_reason?': '+h(tr.disqualify_reason):''}</bdi></span>`
+   :`<strong class="mono"><bdi dir="ltr">${isBest?'★ ':''}${h(tr.score??'-')}</bdi></strong>`;
+  return `<tr${rCls}><td class="num col-idx mono"><bdi dir="ltr">${i+1}</bdi></td><td class="col-start">${h(stBadge)}</td><td class="col-start col-cand"><bdi dir="ltr">${h(tr.name||tr.id)}</bdi></td><td class="num mono"><bdi dir="ltr">${h(tr.throughput_mbps??'-')}</bdi></td><td class="num mono"><bdi dir="ltr">${h(tr.loaded_rtt_p95_ms??'-')}</bdi></td><td class="num mono"><bdi dir="ltr">${h(tr.jitter_ms??'-')}</bdi></td><td class="num mono"><bdi dir="ltr">${h(tr.retrans_pct??'-')}</bdi></td><td class="num">${scCell}</td></tr>`;
+ }).join('');
+}
+function _renderTunerProgressBody(){
+ const job=TUNER_STATE.job;
+ if(!job)return '';
+ const trials=Array.isArray(job.live_trials)?job.live_trials:[];
+ return `<div id="tn_prog_top">${_renderTunerProgressTop(job)}</div>
+  <div id="tn_live_sec"${trials.length?'':' hidden'}>
+   <div class="tuner-sec-lbl">${h(t('tuner_live_trials'))} (<span id="tn_live_cnt">${trials.length}</span>)</div>
+   <div class="table-wrap tuner-live-tbl" id="tn_live_wrap">
+    <table class="tuner-tbl"><thead><tr>
+     <th class="num col-idx">#</th>
+     <th class="col-start">${h(t('tuner_col_stage'))}</th>
+     <th class="col-start">${h(t('tuner_col_cand'))}</th>
+     <th class="num">Mbps</th>
+     <th class="num">p95 ms</th>
+     <th class="num">Jitter</th>
+     <th class="num">Retrans %</th>
+     <th class="num">${h(t('tuner_col_score'))}</th>
+    </tr></thead><tbody id="tn_live_tbody">${_renderTunerLiveRows(trials)}</tbody></table>
+   </div>
+  </div>`;
+}
+function _patchTunerProgressBox(pb){
+ if(!pb)return;
+ const job=TUNER_STATE.job;
+ if(!job){pb.innerHTML='';return;}
+ const q=id=>(pb.querySelector?pb.querySelector('#'+id):null)||$(id);
+ const topEl=q('tn_prog_top'), secEl=q('tn_live_sec'), cntEl=q('tn_live_cnt'), wrapEl=q('tn_live_wrap'), tbodyEl=q('tn_live_tbody');
+ if(!topEl||!secEl||!cntEl||!wrapEl||!tbodyEl){
+  pb.innerHTML=_renderTunerProgressBody();
+  const topInit=q('tn_prog_top'), tbodyInit=q('tn_live_tbody');
+  if(topInit){topInit.dataset=topInit.dataset||{};topInit.dataset.prevHtml=topInit.innerHTML;}
+  if(tbodyInit){tbodyInit.dataset=tbodyInit.dataset||{};tbodyInit.dataset.prevHtml=tbodyInit.innerHTML;}
+  return;
+ }
+ const topHtml=_renderTunerProgressTop(job);
+ topEl.dataset=topEl.dataset||{};
+ if(topEl.dataset.prevHtml!==topHtml){
+  topEl.innerHTML=topHtml;
+  topEl.dataset.prevHtml=topHtml;
+ }
+ const trials=Array.isArray(job.live_trials)?job.live_trials:[];
+ secEl.hidden=!trials.length;
+ if(String(cntEl.textContent)!==String(trials.length))cntEl.textContent=String(trials.length);
+ const rowsHtml=_renderTunerLiveRows(trials);
+ tbodyEl.dataset=tbodyEl.dataset||{};
+ if(tbodyEl.dataset.prevHtml!==rowsHtml){
+  const prevTop=wrapEl.scrollTop||0, prevLeft=wrapEl.scrollLeft||0;
+  tbodyEl.innerHTML=rowsHtml;
+  tbodyEl.dataset.prevHtml=rowsHtml;
+  wrapEl.scrollTop=prevTop;
+  wrapEl.scrollLeft=prevLeft;
+ }
 }
 function _renderTunerResultsCard(){
  const rep=TUNER_STATE.lastReport;
@@ -3672,7 +3720,7 @@ function _renderTunerResultsCard(){
   ['Retrans (%)',b.retrans_pct,w.retrans_pct],
   ['Stability CoV',b.stability_cov,w.stability_cov],
   ['Score ('+goalKey+')',bs[goalKey],ws[goalKey]]
- ].map(r=>`<tr><td>${h(r[0])}</td><td class="mono" dir="ltr">${h(r[1]??'-')}</td><td class="mono" dir="ltr"><strong>${h(r[2]??'-')}</strong></td></tr>`).join('');
+ ].map(r=>`<tr><td class="col-start"><bdi dir="ltr">${h(r[0])}</bdi></td><td class="num mono"><bdi dir="ltr">${h(r[1]??'-')}</bdi></td><td class="num mono"><strong><bdi dir="ltr">${h(r[2]??'-')}</bdi></strong></td></tr>`).join('');
  const cars=Object.entries(bm.carriers||{}).map(([k,v])=>`<span class="badge ${v.status==='tested'?'b-ok':'b-info'} mono" dir="ltr">${h(k)}: ${h(v.status)}${v.throughput_mbps!=null?' · '+h(v.throughput_mbps)+' Mbps':''}</span>`).join(' ');
  const diags=(rep.diagnostics||[]).map(d=>`<div class="tuner-alert"><strong class="mono">${h(d.code)}</strong> — ${h(d.detail)}</div>`).join('');
  const abDelta=isAb&&rep.delta?`<div class="tuner-live-strip" style="margin-bottom:10px"><span class="badge ${rep.delta.goal_score_diff>=0?'b-ok':'b-warn'} mono" dir="ltr">${h(t('tuner_ab_delta'))}: TP ${rep.delta.throughput_pct>=0?'+':''}${h(rep.delta.throughput_pct)}% · RTT ${rep.delta.loaded_rtt_p95_diff_ms>=0?'+':''}${h(rep.delta.loaded_rtt_p95_diff_ms)}ms · Score ${rep.delta.goal_score_diff>=0?'+':''}${h(rep.delta.goal_score_diff)}</span></div>`:'';
@@ -3692,7 +3740,7 @@ function _renderTunerResultsCard(){
    <div class="tuner-score"><div class="k">Max Throughput</div><div class="v">${h(ws['max-throughput']??'-')}</div></div>
    <div class="tuner-score"><div class="k">Anti-Loss</div><div class="v">${h(ws['anti-loss']??'-')}</div></div>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>Metric</th><th>${h(t('tuner_baseline'))}</th><th>${h(t('tuner_winner'))}</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div class="table-wrap"><table class="tuner-tbl tuner-res-tbl"><thead><tr><th class="col-start">Metric</th><th class="num">${h(t('tuner_baseline'))}</th><th class="num">${h(t('tuner_winner'))}</th></tr></thead><tbody>${rows}</tbody></table></div>
   ${cars?`<div class="tuner-sec-lbl">${h(t('tuner_carriers'))}</div><div class="bstrip">${cars}</div>`:''}
   ${diags?`<div class="tuner-sec-lbl">${h(t('tuner_diagnostics'))}</div>${diags}`:''}
   ${rep.profile_b64?`<textarea class="tuner-code" readonly>${h(rep.profile_b64)}</textarea>`:''}

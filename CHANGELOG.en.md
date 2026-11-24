@@ -6,6 +6,11 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.3.3] - 2026-11-24
+
+### Fixed
+- **Aligned `#/tuner` result & live trial table columns and eliminated live-poll scroll jumps:** Removed `dir="ltr"` from `<td>` elements (using isolated `<bdi dir="ltr">` inside `.num` / `.col-start` cells matched with identical header alignment via `.tuner-tbl` / `.tuner-res-tbl` in `app.css`) so headers and values stay aligned in RTL and LTR; updated `pollTunerJob()` to patch only changed sections through `_patchTunerProgressBox()` while preserving `.tuner-live-tbl` scroll offsets instead of replacing `#tn_prog_box` HTML every tick.
+
 ## [2.3.2] - 2026-11-24
 
 ### Fixed

@@ -25,11 +25,38 @@ def _resolve_paths(overrides: dict | None) -> dict:
     return out
 
 
+def _parse_sysctl_conf(text: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("#", ";")) or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip()
+        v = " ".join(v.strip().split())
+        if k:
+            out[k] = v
+    return out
+
+
 def _render_sysctl_conf(sysctls: dict) -> str:
     lines = ["# Managed by rathole-tuner (do not hand-edit; use rollback to revert)"]
     for k in sorted(sysctls.keys()):
         lines.append(f"{k}={sysctls[k]}")
     return "\n".join(lines) + "\n"
+
+
+def _merge_sysctl_preserving_base(prev_text: str, new_sysctls: dict) -> dict:
+    """Merge non-conflicting base sysctls (e.g. fs.file-max, nf_conntrack_max) with new profile."""
+    merged = _parse_sysctl_conf(prev_text)
+    new_map = dict(new_sysctls or {})
+    # Never leave stale 25 MiB defaults if the profile sets smaller maxes or overrides maxes
+    if "net.core.rmem_max" in new_map and "net.core.rmem_default" not in new_map:
+        merged.pop("net.core.rmem_default", None)
+    if "net.core.wmem_max" in new_map and "net.core.wmem_default" not in new_map:
+        merged.pop("net.core.wmem_default", None)
+    merged.update(new_map)
+    return merged
 
 
 def _render_systemd_unit(tuner_bin: str = "/usr/local/bin/rathole-tuner") -> str:
@@ -64,7 +91,8 @@ def apply_persistent(driver: SysDriver, profile: dict, side: str = "iran", paths
     driver.write_text(snap_path, json.dumps(snap, indent=2) + "\n", mode=0o600)
 
     sysctls = side_cfg.get("sysctl") or {}
-    driver.write_text(p["sysctl_tune_file"], _render_sysctl_conf(sysctls), mode=0o644)
+    merged_sysctls = _merge_sysctl_preserving_base(snap["prev_sysctl_tune_content"], sysctls)
+    driver.write_text(p["sysctl_tune_file"], _render_sysctl_conf(merged_sysctls), mode=0o644)
     driver.run(["sysctl", "--system"])
 
     applied_meta = {
@@ -147,9 +175,10 @@ def rollback_persistent(driver: SysDriver, paths: dict | None = None) -> dict:
 
 
 def tuner_status(driver: SysDriver, paths: dict | None = None) -> dict:
-    """Return current host tuning capabilities and persistent apply status."""
+    """Return current host tuning capabilities, live kernel params, and persistent apply status."""
     p = _resolve_paths(paths)
     caps = discover_capabilities(driver)
+    snap = capture_snapshot(driver, iface=caps["iface"])
     raw = driver.read_text(p["applied_profile_file"])
     applied_doc = json.loads(raw) if raw else None
     return {
@@ -158,12 +187,20 @@ def tuner_status(driver: SysDriver, paths: dict | None = None) -> dict:
         "profile_name": (applied_doc or {}).get("profile_name"),
         "side": (applied_doc or {}).get("side"),
         "applied_at": (applied_doc or {}).get("applied_at"),
+        "iface": (applied_doc or {}).get("iface") or caps["iface"],
+        "applied_config": (applied_doc or {}).get("config"),
+        "current_mtu": snap.get("mtu"),
+        "current_txqueuelen": snap.get("txqueuelen"),
+        "current_qdisc_live": (snap.get("qdisc") or {}).get("kind"),
+        "current_route": snap.get("route") or {},
         "capabilities": caps,
         "current_sysctl": {
             "cc": driver.read_sysctl("net.ipv4.tcp_congestion_control"),
             "qdisc": driver.read_sysctl("net.core.default_qdisc"),
             "rmem_max": driver.read_sysctl("net.core.rmem_max"),
             "wmem_max": driver.read_sysctl("net.core.wmem_max"),
+            "tcp_rmem": driver.read_sysctl("net.ipv4.tcp_rmem"),
+            "tcp_wmem": driver.read_sysctl("net.ipv4.tcp_wmem"),
             "notsent_lowat": driver.read_sysctl("net.ipv4.tcp_notsent_lowat"),
         },
     }

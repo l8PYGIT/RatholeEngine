@@ -410,7 +410,14 @@ service_config:"حامل و پروتکل",service_health:"تست سلامت",ser
   tuner_ab_delta:'اختلاف A/B',
   tuner_col_cand:'تنظیم / کاندید',
   tuner_col_stage:'مرحله',
-  tuner_col_score:'امتیاز'
+  tuner_col_score:'امتیاز',
+  tuner_live_status:'وضعیت زنده کرنل روی سرورها (ایران و نود)',
+  tuner_st_applied:'پروفایل فعال',
+  tuner_st_default:'پیش‌فرض / بدون پروفایل',
+  tuner_st_checking:'در حال خواندن وضعیت کرنل…',
+  tuner_winner_cfg:'پارامترهای انتخاب‌شده برنده',
+  tuner_applied_msg:'پروفایل روی کرنل هر دو سرور اعمال شد',
+  tuner_reconnect_hint:'نکته: تنظیمات جدید TCP برای اتصالات جدید فوری است؛ برای تونل‌های باز فعلی یک بار سرویس تونل را ری‌استارت کنید.'
 
  },
  en:{
@@ -824,7 +831,14 @@ service_config:"Carrier and protocol",service_health:"Health test",service_copy:
   tuner_ab_delta:'A/B Delta',
   tuner_col_cand:'Candidate / Profile',
   tuner_col_stage:'Stage',
-  tuner_col_score:'Score'
+  tuner_col_score:'Score',
+  tuner_live_status:'Live Kernel State on Servers (Iran & Node)',
+  tuner_st_applied:'Active Profile',
+  tuner_st_default:'System Default (none)',
+  tuner_st_checking:'Reading kernel state…',
+  tuner_winner_cfg:'Winning Kernel Parameters',
+  tuner_applied_msg:'Profile applied to both kernels',
+  tuner_reconnect_hint:'Note: New TCP parameters take effect immediately for new connections; restart the tunnel service if active long-lived sockets need them right away.'
 
  }
 };

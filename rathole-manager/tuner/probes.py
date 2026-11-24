@@ -178,6 +178,7 @@ def probe_pmtu(
     min_mtu: int = 1200,
     max_mtu: int = 1500,
     fast_test: bool = False,
+    tcp_port: int = 0,
 ) -> dict:
     """Discover effective forward/reverse PMTU using UDP DF binary search + TCP_INFO check."""
     if host in ("127.0.0.1", "::1", "localhost") or fast_test:
@@ -196,6 +197,51 @@ def probe_pmtu(
             "forward_bytes": max_mtu if ok_echo else 1460,
             "reverse_bytes": max_mtu if ok_echo else 1460,
             "blackhole_detected": False,
+            "udp_blocked": not ok_echo,
+        }
+
+    # Verify small UDP packets pass before binary-searching DF frames so ISP UDP filtering
+    # is never misdiagnosed as a 1200-byte PMTU blackhole.
+    udp_reachable = False
+    chk_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    chk_sock.settimeout(0.35)
+    try:
+        small_pkt = b"PMTU" + (b"x" * 60)
+        for _ in range(3):
+            try:
+                chk_sock.sendto(small_pkt, (host, udp_port))
+                rep, _ = chk_sock.recvfrom(2048)
+                if len(rep) == len(small_pkt) and rep.startswith(b"PMTU"):
+                    udp_reachable = True
+                    break
+            except OSError:
+                pass
+    finally:
+        chk_sock.close()
+
+    if not udp_reachable:
+        inferred = max_mtu
+        if tcp_port and int(tcp_port) > 0:
+            tsock = None
+            try:
+                tsock = socket.create_connection((host, int(tcp_port)), timeout=1.5)
+                ti = read_tcp_info(tsock)
+                pmtu_val = int(ti.get("pmtu") or 0)
+                if 1280 <= pmtu_val <= max_mtu:
+                    inferred = pmtu_val
+            except OSError:
+                pass
+            finally:
+                if tsock is not None:
+                    try:
+                        tsock.close()
+                    except OSError:
+                        pass
+        return {
+            "forward_bytes": inferred,
+            "reverse_bytes": inferred,
+            "blackhole_detected": False,
+            "udp_blocked": True,
         }
 
     lo, hi = min_mtu, max_mtu
@@ -214,13 +260,15 @@ def probe_pmtu(
             payload_len = max(64, mid - 28)
             pkt = b"PMTU" + (b"x" * (payload_len - 4))
             ok = False
-            try:
-                sock.sendto(pkt, (host, udp_port))
-                data, _ = sock.recvfrom(2048)
-                if len(data) == payload_len:
-                    ok = True
-            except OSError:
-                ok = False
+            for _ in range(2):
+                try:
+                    sock.sendto(pkt, (host, udp_port))
+                    data, _ = sock.recvfrom(2048)
+                    if len(data) == payload_len:
+                        ok = True
+                        break
+                except OSError:
+                    pass
             if ok:
                 best = mid
                 lo = mid + 1
@@ -233,6 +281,7 @@ def probe_pmtu(
         "forward_bytes": best,
         "reverse_bytes": best,
         "blackhole_detected": best < 1380,
+        "udp_blocked": False,
     }
 
 
@@ -429,6 +478,7 @@ def probe_trial(
     include_burst: bool = True,
     probe_interval_s: float = 0.05,
     unloaded_p50_ms: float | None = None,
+    skip_udp: bool = False,
 ) -> dict:
     """Execute one full multi-phase probe trial (1-stream, N-stream + loaded RTT, bidir, UDP)."""
     dur_1 = max(0.08, duration_s * 0.45)
@@ -545,8 +595,12 @@ def probe_trial(
         if burst_times:
             burst_ms = round(statistics.mean(burst_times), 3)
 
-    # 5) Quick UDP loss check
-    udp_res = probe_unloaded_rtt(host, tcp_port, udp_port, samples=6, timeout=0.6)
+    # 5) Quick UDP loss check (skip on verified UDP-blocked paths to avoid wasted timeouts)
+    if skip_udp:
+        udp_loss_val = 100.0
+    else:
+        udp_res = probe_unloaded_rtt(host, tcp_port, udp_port, samples=6, timeout=0.6)
+        udp_loss_val = float(udp_res["udp_loss_pct"])
     rtt_s = _rtt_stats(loaded_rtts)
 
     total_retrans = max([int((x.get("tcp_info") or {}).get("total_retrans", 0)) for x in (r1 + rn)] or [0])
@@ -565,7 +619,7 @@ def probe_trial(
         "rtt_p99_ms": rtt_s["p99"] if loaded_rtts else round(unloaded_p50, 3),
         "jitter_ms": rtt_s["jitter_ms"],
         "retrans_pct": retrans_pct,
-        "udp_loss_pct": float(udp_res["udp_loss_pct"]),
+        "udp_loss_pct": udp_loss_val,
         "drop_delta": 0,
         "stability_cov": cov,
         "burst_connect_ms": burst_ms,

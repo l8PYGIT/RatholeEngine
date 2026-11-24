@@ -1125,76 +1125,87 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
  vm.createContext(i18nCtx);
  vm.runInContext(i18nSrc + '\nthis.DICT = DICT;', i18nCtx);
  assert.ok(i18nCtx.DICT && i18nCtx.DICT.fa && i18nCtx.DICT.en);
- for (const k of [
-  'nav_tuner', 'tuner_title', 'tuner_start', 'tuner_stop', 'tuner_copy_json',
-  'tuner_copy_b64', 'tuner_apply_both', 'tuner_rollback_both', 'tuner_import_btn',
-  'tuner_err_title', 'tuner_live_trials', 'tuner_ph_completed', 'tuner_ph_error',
-  'tuner_st_0', 'tuner_st_5',
- ]) {
-  assert.ok(i18nCtx.DICT.fa[k], 'missing fa.' + k);
-  assert.ok(i18nCtx.DICT.en[k], 'missing en.' + k);
- }
+  for (const k of [
+   'nav_tuner', 'tuner_title', 'tuner_start', 'tuner_stop', 'tuner_copy_json',
+   'tuner_copy_b64', 'tuner_apply_both', 'tuner_rollback_both', 'tuner_import_btn',
+   'tuner_err_title', 'tuner_live_trials', 'tuner_ph_completed', 'tuner_ph_error',
+   'tuner_st_0', 'tuner_st_5', 'tuner_live_status', 'tuner_st_applied',
+   'tuner_st_default', 'tuner_winner_cfg', 'tuner_applied_msg', 'tuner_reconnect_hint',
+  ]) {
+   assert.ok(i18nCtx.DICT.fa[k], 'missing fa.' + k);
+   assert.ok(i18nCtx.DICT.en[k], 'missing en.' + k);
+  }
 
- assert.ok(source.includes('data-pg="tuner"'), 'sidebar missing tuner button');
- assert.ok(source.includes("ROUTE.page==='tuner'"), 'router missing tuner branch');
+  assert.ok(source.includes('data-pg="tuner"'), 'sidebar missing tuner button');
+  assert.ok(source.includes("ROUTE.page==='tuner'"), 'router missing tuner branch');
 
- const c = context();
- const els = {
-  page: { innerHTML: '', classList: { remove() {}, add() {} }, offsetWidth: 1 },
-  tn_iran: { value: 'iran' },
-  tn_node: { value: 'node' },
-  tn_mode: { value: 'brutal' },
-  tn_goal: { value: 'low-latency' },
-  tn_deep: { checked: true },
-  tn_iran_dc: { value: 'arvan-thr' },
-  tn_node_dc: { value: 'hetzner-fsn1' },
- };
- let curHash = '#/tuner';
- c.location = { get hash() { return curHash; }, set hash(v) { curHash = v; } };
- c.$ = id => els[id] || null;
- c.t = k => k;
- c.h = x => ('' + (x == null ? '' : x)).replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
- c.SERVERS = [{ name: 'iran', role: 'iran', host: '5.202.4.40' }, { name: 'node', role: 'node', host: '198.51.100.5' }];
- c.ROUTE = { page: 'tuner', param: null };
- c.confirm = () => true;
- c.closeModal = () => {};
- let polledJobId = '';
- c.pollTunerJob = id => { polledJobId = id; };
- c.clearTunerPoll = () => { if (c.TUNER_STATE) c.TUNER_STATE.pollTimer = null; };
- c.loadTunerProfiles = async () => {};
- let jobsReply = [];
- c.TUNER_STATE = {
-  activeJobId: null, job: null, lastReport: { profile_b64: 'rthprof1:abcdefghijklmnop' },
-  profiles: [], jobs: [], jobsLoaded: false, pollTimer: null,
-  iran: '', node: '', mode: 'brutal', goal: 'balanced', deep: false, iran_dc: '', node_dc: '',
- };
- c.api = async (method, url, body) => {
-  c.calls.push({ method, url, body });
-  if (url === 'api/tuner/start') return { status: 202, j: { ok: true, job_id: 'job_mock_1', job: { job_id: 'job_mock_1', iran: 'iran', node: 'node', mode: 'brutal', goal: 'low-latency', status: 'running', phase: 'starting_responder', live_trials: [] } } };
-  if (url === 'api/tuner/jobs') return { status: 200, j: { jobs: jobsReply } };
-  return { status: 200, j: { ok: true, profile: { id: 'prof_1' } } };
- };
- vm.runInContext(
-  definition('parseHash') + '\n' +
-  definition('iranServers') + '\n' +
-  definition('_tunerPhaseLabel') + '\n' +
-  definition('_upsertTunerJob') + '\n' +
-  definition('loadTunerJobs') + '\n' +
-  definition('selectTunerJob') + '\n' +
-  definition('dismissTunerJob') + '\n' +
-  definition('startTunerJob') + '\n' +
-  definition('importTunerProfile') + '\n' +
-  definition('applyTunerProfileBoth') + '\n' +
-  definition('rollbackTunerBoth') + '\n' +
-  definition('_renderTunerProgressTop') + '\n' +
-  definition('_renderTunerLiveRows') + '\n' +
-  definition('_renderTunerProgressBody') + '\n' +
-  definition('_patchTunerProgressBox') + '\n' +
-  definition('_renderTunerResultsCard') + '\n' +
-  definition('_renderTunerLibraryRows') + '\n' +
-  definition('renderTunerPage'),
-  c
- );
+  const c = context();
+  const els = {
+   page: { innerHTML: '', classList: { remove() {}, add() {} }, offsetWidth: 1 },
+   tn_iran: { value: 'iran' },
+   tn_node: { value: 'node' },
+   tn_mode: { value: 'brutal' },
+   tn_goal: { value: 'low-latency' },
+   tn_deep: { checked: true },
+   tn_iran_dc: { value: 'arvan-thr' },
+   tn_node_dc: { value: 'hetzner-fsn1' },
+   tn_status_box: { innerHTML: '' },
+  };
+  let curHash = '#/tuner';
+  c.location = { get hash() { return curHash; }, set hash(v) { curHash = v; } };
+  c.$ = id => els[id] || null;
+  c.t = k => k;
+  c.h = x => ('' + (x == null ? '' : x)).replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  c.SERVERS = [{ name: 'iran', role: 'iran', host: '5.202.4.40' }, { name: 'node', role: 'node', host: '198.51.100.5' }];
+  c.ROUTE = { page: 'tuner', param: null };
+  c.confirm = () => true;
+  c.closeModal = () => {};
+  let polledJobId = '';
+  c.pollTunerJob = id => { polledJobId = id; };
+  c.clearTunerPoll = () => { if (c.TUNER_STATE) c.TUNER_STATE.pollTimer = null; };
+  c.loadTunerProfiles = async () => {};
+  let jobsReply = [];
+  c.TUNER_STATE = {
+   activeJobId: null, job: null, lastReport: { profile_b64: 'rthprof1:abcdefghijklmnop' },
+   profiles: [], jobs: [], jobsLoaded: false, liveStatus: null, liveStatusPair: '',
+   liveStatusLoading: false, lastApplyNotice: '', pollTimer: null,
+   iran: '', node: '', mode: 'brutal', goal: 'balanced', deep: false, iran_dc: '', node_dc: '',
+  };
+  c.api = async (method, url, body) => {
+   c.calls.push({ method, url, body });
+   if (url === 'api/tuner/start') return { status: 202, j: { ok: true, job_id: 'job_mock_1', job: { job_id: 'job_mock_1', iran: 'iran', node: 'node', mode: 'brutal', goal: 'low-latency', status: 'running', phase: 'starting_responder', live_trials: [] } } };
+   if (url === 'api/tuner/jobs') return { status: 200, j: { jobs: jobsReply } };
+   if (url.startsWith('api/tuner/status')) return { status: 200, j: { ok: true, iran: { ok: true, applied: true, profile_name: 'arvan-eu', current_mtu: 1460, current_qdisc_live: 'fq', current_route: { initcwnd: 20 }, current_sysctl: { cc: 'bbr', rmem_max: '16777216', notsent_lowat: '262144' }, applied_at: '2026-11-24T12:00:00Z' }, node: { ok: true, applied: false, current_mtu: 1500, current_qdisc_live: 'fq_codel', current_sysctl: { cc: 'cubic', rmem_max: '212992', notsent_lowat: '4294967295' } } } };
+   if (url === 'api/tuner/apply') return { status: 200, j: { ok: true, iran_result: { ok: true, applied: ['mtu=1460', 'cc=bbr'], unsupported: [] }, node_result: { ok: true, applied: ['cc=bbr'], unsupported: [] } } };
+   return { status: 200, j: { ok: true, profile: { id: 'prof_1' } } };
+  };
+  vm.runInContext(
+   definition('parseHash') + '\n' +
+   definition('iranServers') + '\n' +
+   definition('_tunerPhaseLabel') + '\n' +
+   definition('_fmtTunerBytes') + '\n' +
+   definition('_renderTunerLiveStatusSide') + '\n' +
+   definition('_renderTunerLiveStatusInner') + '\n' +
+   definition('loadTunerLiveStatus') + '\n' +
+   definition('onTunerPairChange') + '\n' +
+   definition('_upsertTunerJob') + '\n' +
+   definition('loadTunerJobs') + '\n' +
+   definition('selectTunerJob') + '\n' +
+   definition('dismissTunerJob') + '\n' +
+   definition('startTunerJob') + '\n' +
+   definition('importTunerProfile') + '\n' +
+   definition('applyTunerProfileBoth') + '\n' +
+   definition('rollbackTunerBoth') + '\n' +
+   definition('_renderTunerProgressTop') + '\n' +
+   definition('_renderTunerLiveRows') + '\n' +
+   definition('_renderTunerProgressBody') + '\n' +
+   definition('_patchTunerProgressBox') + '\n' +
+   definition('_renderTunerConfigSummary') + '\n' +
+   definition('_renderTunerResultsCard') + '\n' +
+   definition('_renderTunerLibraryRows') + '\n' +
+   definition('renderTunerPage'),
+   c
+  );
 
  assert.deepEqual(JSON.parse(JSON.stringify(c.parseHash())), { page: 'tuner', param: null });
  await c.startTunerJob();
@@ -1303,4 +1314,21 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
  assert.ok(tbodyNode.innerHTML.includes('bbr_fq_lw32768'));
  assert.equal(wrapNode.scrollTop, 180);
  assert.equal(wrapNode.scrollLeft, 24);
+
+ // Live applied kernel status card & apply/config preview checks
+ await c.loadTunerLiveStatus(true);
+ assert.ok(els.tn_status_box.innerHTML.includes('arvan-eu'));
+ assert.ok(els.tn_status_box.innerHTML.includes('CC=bbr'));
+ assert.ok(els.tn_status_box.innerHTML.includes('MTU=1460'));
+ assert.ok(els.tn_status_box.innerHTML.includes('rmem=16 MiB'));
+ c.TUNER_STATE.lastReport = {
+  ok: true, goal: 'balanced', profile_b64: 'rthprof1:abcdefghijklmnop',
+  profile: { meta: { goal: 'balanced' }, iran_config: { mtu: 1460, qdisc: { kind: 'fq' }, route: { initcwnd: 20 }, sysctl: { 'net.ipv4.tcp_congestion_control': 'bbr', 'net.core.rmem_max': 16777216, 'net.ipv4.tcp_notsent_lowat': 262144 } }, node_config: { recommended_carrier: { lane: 'backhaul' } } },
+  benchmarks: { baseline: { throughput_mbps: 100, scores: { balanced: 50 } }, winner: { throughput_mbps: 250, scores: { balanced: 90 } } },
+ };
+ const resWithCfg = c._renderTunerResultsCard();
+ assert.ok(resWithCfg.includes('tuner_winner_cfg') && resWithCfg.includes('CC=bbr') && resWithCfg.includes('carrier=backhaul'));
+ await c.applyTunerProfileBoth('rthprof1:abcdefghijklmnop', '');
+ assert.ok(c.TUNER_STATE.lastApplyNotice.includes('Iran:2, Node:1'));
+ assert.ok(c.TUNER_STATE.lastApplyNotice.includes('tuner_reconnect_hint'));
 });

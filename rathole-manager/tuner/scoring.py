@@ -26,8 +26,9 @@ def check_hard_fail(metrics: dict, baseline: dict | None = None) -> tuple[bool, 
     if metrics.get("aborted") or metrics.get("disconnected"):
         return True, "connection_aborted"
     udp_loss = float(metrics.get("udp_loss_pct", 0.0) or 0.0)
-    if udp_loss > 15.0:
-        return True, f"udp_loss_gt_15pct ({udp_loss:.1f}%)"
+    base_udp = float((baseline or {}).get("udp_loss_pct", 0.0) or 0.0)
+    if baseline is not None and udp_loss > 15.0 and udp_loss > base_udp + 10.0:
+        return True, f"udp_loss_regressed ({udp_loss:.1f}% vs {base_udp:.1f}%)"
     retrans = float(metrics.get("retrans_pct", 0.0) or 0.0)
     base_retrans = float((baseline or {}).get("retrans_pct", 0.0) or 0.0)
     if retrans > 10.0 and retrans > 2.0 * base_retrans:
@@ -37,7 +38,7 @@ def check_hard_fail(metrics: dict, baseline: dict | None = None) -> tuple[bool, 
     return False, None
 
 
-def _subscores(metrics: dict, max_raw_t: float) -> dict:
+def _subscores(metrics: dict, max_raw_t: float, ignore_udp_loss: bool = False) -> dict:
     raw_t = raw_throughput(metrics)
     t_score = max(0.0, min(100.0, (100.0 * raw_t / max_raw_t) if max_raw_t > 0.0 else 0.0))
 
@@ -54,7 +55,7 @@ def _subscores(metrics: dict, max_raw_t: float) -> dict:
     j_score = max(0.0, min(100.0, 100.0 * math.exp(-(jitter / 35.0 + tail / 120.0))))
 
     retrans = max(0.0, float(metrics.get("retrans_pct", 0.0) or 0.0))
-    udp_loss = max(0.0, float(metrics.get("udp_loss_pct", 0.0) or 0.0))
+    udp_loss = 0.0 if ignore_udp_loss else max(0.0, float(metrics.get("udp_loss_pct", 0.0) or 0.0))
     drops = max(0, int(metrics.get("drop_delta", 0) or 0))
     r_score = max(0.0, min(100.0, 100.0 - (retrans * 4.5 + udp_loss * 5.0 + min(25.0, drops * 2.0))))
 
@@ -76,6 +77,7 @@ def score_trials(trials: list[dict], baseline_id: str = "baseline") -> list[dict
         return []
     out = [copy.deepcopy(t) for t in trials]
     base = next((t for t in out if t.get("id") == baseline_id), out[0])
+    ignore_udp = float(base.get("udp_loss_pct", 0.0) or 0.0) >= 95.0
 
     alive_raw_t = []
     for t in out:
@@ -94,7 +96,7 @@ def score_trials(trials: list[dict], baseline_id: str = "baseline") -> list[dict
             t["subscores"] = {"T": 0.0, "L": 0.0, "J": 0.0, "R": 0.0, "S": 0.0}
             t["scores"] = {g: 0.0 for g in GOAL_WEIGHTS}
             continue
-        subs = _subscores(t, max_raw_t)
+        subs = _subscores(t, max_raw_t, ignore_udp_loss=ignore_udp)
         t["subscores"] = subs
         t["scores"] = {
             goal: round(sum(subs[dim] * w for dim, w in weights.items()), 2)
@@ -114,7 +116,13 @@ def diagnose_findings(
     findings = []
     fwd_mtu = int((pmtu_info or {}).get("forward_bytes", 1500) or 1500)
     rev_mtu = int((pmtu_info or {}).get("reverse_bytes", 1500) or 1500)
-    if (pmtu_info or {}).get("blackhole_detected"):
+    if (pmtu_info or {}).get("udp_blocked"):
+        findings.append({
+            "code": "udp_blocked",
+            "severity": "warning",
+            "detail": f"UDP probes are filtered/blocked on this path; PMTU defaulted safely to {min(fwd_mtu, rev_mtu)} bytes and TCP carriers (ws/backhaul/frp-tcp) are recommended.",
+        })
+    elif (pmtu_info or {}).get("blackhole_detected"):
         findings.append({
             "code": "pmtu_blackhole",
             "severity": "warning",
@@ -138,7 +146,7 @@ def diagnose_findings(
         })
 
     udp_loss = float((baseline or {}).get("udp_loss_pct", 0.0) or 0.0)
-    if udp_loss >= 3.0:
+    if udp_loss >= 3.0 and not (pmtu_info or {}).get("udp_blocked"):
         findings.append({
             "code": "udp_loss_elevated",
             "severity": "warning",
@@ -147,7 +155,13 @@ def diagnose_findings(
 
     base_t = raw_throughput(baseline or {})
     win_t = raw_throughput(winner or {})
-    if base_t > 0 and win_t > base_t * 1.15:
+    if (winner or {}).get("id") == "baseline":
+        findings.append({
+            "code": "baseline_already_optimal",
+            "severity": "info",
+            "detail": "Current baseline outperformed or matched all tested kernel profiles without throughput regression; no aggressive kernel change needed.",
+        })
+    elif base_t > 0 and win_t > base_t * 1.15:
         gain = ((win_t - base_t) / base_t) * 100.0
         findings.append({
             "code": "throughput_gain",

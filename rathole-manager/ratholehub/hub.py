@@ -404,7 +404,7 @@ _HUB_START = time.time()
 
 # noskhe-i ke hub «akharin» midanad: az MANAGER_VERSION-e common.sh (bundle ke deploy mishavad)
 # khande mishavad ta ba noskhe-ye nasb-shode rooye har server moghayese shavad. fallback: rشته-ye sabet.
-HUB_FALLBACK_VERSION = "2.3.1"
+HUB_FALLBACK_VERSION = "2.3.4"
 def hub_manager_version():
     cands = []
     try:
@@ -1063,9 +1063,9 @@ def mock_run(server, cmd_args):
             "  --server rp01.l1t.ir:443 --name %s --token a0370655deadbeefcafe1234 --inbound-port 8444\n"
             "────────────────────────────────────────" % nm, "err": ""}
     if j == "ratholectl version":
-        return {"rc": 0, "out": "manager_version=2.3.1\nrole=panel\nrathole_version=0.5.0", "err": ""}
+        return {"rc": 0, "out": "manager_version=2.3.4\nrole=panel\nrathole_version=0.5.0", "err": ""}
     if j == "ratholenode version":
-        return {"rc": 0, "out": "manager_version=2.3.1\nrole=node\nrathole_version=0.5.0", "err": ""}
+        return {"rc": 0, "out": "manager_version=2.3.4\nrole=node\nrathole_version=0.5.0", "err": ""}
     if cmd_args[:2] == ["ratholectl", "ip-cert"]:
         return {"rc": 0, "out": "WSS-e self-signed faal shod.", "err": ""}
     if cmd_args[:2] == ["ratholectl", "ip-cert-show"]:
@@ -1148,7 +1148,7 @@ def mock_run(server, cmd_args):
         # nemune-ye kutah: sakhtar-e vaghei + neshan dadan-e inke token-ha REDACT shode-and.
         return {"rc": 0, "out":
                 "\n===== kolli =====\n"
-                "naghsh      : %s\nratholectl  : manager_version=2.3.3\n"
+                "naghsh      : %s\nratholectl  : manager_version=2.3.4\n"
                 "\n===== unit: rathole-server  (halat: active/enabled) =====\n"
                 "Jul 31 12:00:01 rp01 rathole[811]: control channel established\n"
                 "\n===== state.json (/etc/rathole-manager/state.json) =====\n"
@@ -1307,17 +1307,24 @@ def mock_run(server, cmd_args):
             return {"rc": 0, "out": json.dumps({"ok": True, "stopped": True}), "err": ""}
         if sub == "status":
             return {"rc": 0, "out": json.dumps({
-                "applied": False, "profile_name": None,
+                "applied": False, "profile_name": None, "applied_at": None,
+                "iface": "eth0", "current_mtu": 1500, "current_txqueuelen": 1000,
+                "current_qdisc_live": "fq", "current_route": {},
                 "capabilities": {"kernel": "6.8.0", "cpus": 4, "ram_mb": 4096, "iface": "eth0", "available_cc": ["cubic", "bbr"]},
+                "current_sysctl": {
+                    "cc": "bbr", "qdisc": "fq", "rmem_max": "16777216", "wmem_max": "16777216",
+                    "tcp_rmem": "4096 262144 16777216", "tcp_wmem": "4096 131072 16777216",
+                    "notsent_lowat": "262144",
+                },
             }), "err": ""}
         if sub == "job":
             return {"rc": 0, "out": json.dumps({
                 "phase": "completed", "stage_index": 6, "stage_total": 6,
                 "completed_trials": 12, "estimated_trials": 12, "best_so_far": 91.8,
-                "pmtu": {"forward_bytes": 1460, "reverse_bytes": 1460, "blackhole_detected": False},
+                "pmtu": {"forward_bytes": 1460, "reverse_bytes": 1460, "blackhole_detected": False, "udp_blocked": False},
                 "live_trials": [
                     {"id": "baseline", "name": "baseline", "stage": 0, "throughput_mbps": 182.4, "loaded_rtt_p95_ms": 158.0, "jitter_ms": 14.5, "retrans_pct": 1.6, "score": 52.1, "disqualified": False},
-                    {"id": "s2_0_bbr_fq_lw32768", "name": "bbr_fq_lw32768", "stage": 2, "throughput_mbps": 418.7, "loaded_rtt_p95_ms": 46.2, "jitter_ms": 2.9, "retrans_pct": 0.15, "score": 91.8, "disqualified": False},
+                    {"id": "s2_0_bbr_fq_lw262144", "name": "bbr_fq_lw262144", "stage": 2, "throughput_mbps": 418.7, "loaded_rtt_p95_ms": 46.2, "jitter_ms": 2.9, "retrans_pct": 0.15, "score": 91.8, "disqualified": False},
                 ],
             }), "err": ""}
         if sub == "apply":
@@ -1345,15 +1352,15 @@ def mock_run(server, cmd_args):
                 }), "err": ""}
             ir_c = {
                 "mtu": 1460, "mss_clamp": 0, "qdisc": {"kind": "fq", "params": {}}, "txqueuelen": 2000,
-                "route": {"initcwnd": 32, "initrwnd": 32, "advmss": 1420},
+                "route": {"initcwnd": 20, "initrwnd": 20},
                 "offloads": {"tso": True, "gso": True, "gro": True},
-                "sysctl": {"net.core.default_qdisc": "fq", "net.ipv4.tcp_congestion_control": "bbr", "net.ipv4.tcp_notsent_lowat": 32768},
+                "sysctl": {"net.core.default_qdisc": "fq", "net.ipv4.tcp_congestion_control": "bbr", "net.ipv4.tcp_notsent_lowat": 262144},
             }
             prof = prof_mod.build_profile(
                 meta={"name": "mock-optimal", "mode": mode, "goal": goal, "tags": {"iran_dc": "mock-ir", "node_dc": "mock-eu"}},
                 environment={"iran": {"kernel": "6.8.0", "cpus": 4, "ram_mb": 4096}, "node": {"kernel": "6.8.0", "cpus": 2, "ram_mb": 2048},
-                             "pmtu": {"forward_bytes": 1460, "reverse_bytes": 1460, "blackhole_detected": False}},
-                diagnostics=[{"code": "bufferbloat_high", "severity": "warning", "detail": "Resolved +111ms bloat with fq + tcp_notsent_lowat=32768"}],
+                             "pmtu": {"forward_bytes": 1460, "reverse_bytes": 1460, "blackhole_detected": False, "udp_blocked": False}},
+                diagnostics=[{"code": "bufferbloat_high", "severity": "warning", "detail": "Resolved +111ms bloat with fq + tcp_notsent_lowat=262144"}],
                 benchmarks={"baseline": base_s, "winner": win_s, "top_candidates": [win_s, base_s],
                             "carriers": {"raw-tcp": {"installed": True, "status": "tested", "throughput_mbps": 418.7}, "kcp": {"installed": True, "status": "ready", "recommended_profile": "balanced", "recommended_mtu": 1380}}},
                 iran_config=ir_c,
@@ -2014,6 +2021,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._tuner_job_get(m_tj.group(1))
         if p == "/api/tuner/profiles":
             return self._tuner_profiles_list()
+        if p == "/api/tuner/status":
+            return self._tuner_status()
         m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/status$", p)
         if m:
             return self._status(m.group(1))
@@ -3382,6 +3391,43 @@ class Handler(BaseHTTPRequestHandler):
         audit_log(self._user(), "-", "tuner_profile_delete", pid, 0)
         return self._send(200, {"ok": True})
 
+    def _tuner_status(self):
+        q = parse_qs(urlparse(self.path).query)
+        iran_name = str((q.get("iran") or [""])[0] or "").strip()
+        node_name = str((q.get("node") or [""])[0] or "").strip()
+        if not iran_name and not node_name:
+            return self._send(400, {"error": "iran or node query parameter is required"})
+        targets = []
+        for role_k, sname, builder, expect_role in (
+            ("iran", iran_name, build_iran_cmd, "iran"),
+            ("node", node_name, build_node_cmd, "node"),
+        ):
+            if not sname:
+                continue
+            if not RE_NAME.match(sname):
+                return self._send(400, {"error": f"invalid {role_k} server name"})
+            srv = self._find(sname)
+            if not srv or srv.get("role") != expect_role:
+                return self._send(404, {"error": f"{role_k} server not found"})
+            cmd = builder("bench_status", {})
+            targets.append((role_k, sname, srv, cmd))
+
+        def _fetch_one(role_k, sname, srv, cmd):
+            res = run_on_server(srv, cmd, timeout=20)
+            if res.get("rc") != 0:
+                return role_k, {"ok": False, "server": sname, "error": _format_tuner_error(f"{role_k} status", res)}
+            try:
+                parsed = _extract_json_obj(res.get("out") or "")
+            except Exception as exc:
+                return role_k, {"ok": False, "server": sname, "error": str(exc)}
+            return role_k, {"ok": True, "server": sname, **parsed}
+
+        out = {"ok": True, "iran": None, "node": None}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            for rk, payload in pool.map(lambda args: _fetch_one(*args), targets):
+                out[rk] = payload
+        return self._send(200, out)
+
     def _tuner_apply(self, d):
         d = d if isinstance(d, dict) else {}
         iran_name = str(d.get("iran", "") or "")
@@ -3409,8 +3455,20 @@ class Handler(BaseHTTPRequestHandler):
             run_on_server(iran_srv, rb_cmd, timeout=30)
             audit_log(self._user(), node_name, "tuner_apply", "node failed; rolled back iran", r_nd.get("rc", 1))
             return self._send(200, {"ok": False, "iran": r_ir, "node": r_nd, "rolled_back_iran": True, "error": r_nd.get("err") or r_nd.get("out")})
+        ir_parsed = {}
+        nd_parsed = {}
+        try:
+            if r_ir.get("out"):
+                ir_parsed = _extract_json_obj(r_ir["out"])
+        except Exception:
+            pass
+        try:
+            if r_nd.get("out"):
+                nd_parsed = _extract_json_obj(r_nd["out"])
+        except Exception:
+            pass
         audit_log(self._user(), f"{iran_name}+{node_name}", "tuner_apply", (prof_obj.get("meta") or {}).get("name", "profile"), 0)
-        return self._send(200, {"ok": True, "iran": r_ir, "node": r_nd})
+        return self._send(200, {"ok": True, "iran": r_ir, "node": r_nd, "iran_result": ir_parsed, "node_result": nd_parsed})
 
     def _tuner_rollback(self, d):
         d = d if isinstance(d, dict) else {}

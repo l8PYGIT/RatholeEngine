@@ -6,6 +6,16 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.3.4] - 2026-11-24
+
+### Fixed
+- **Prevent real-world tunnel slowdowns after running and applying rathole-tuner:**
+  - Detect UDP-filtered paths first in `probe_pmtu()` using small 64-byte probes + `TCP_INFO` PMTU fallback so blocked UDP never misdiagnoses paths as a `1200`-byte PMTU blackhole or shrinks interface MTUs down to `1200`/`1280`.
+  - Evaluate `udp_loss > 15%` in `check_hard_fail()` relative to Baseline and ignore UDP penalty in `_subscores()` on UDP-blocked links instead of disqualifying all TCP candidates.
+  - Prevent `compute_bdp_buffers()` from shrinking `rmem_max`/`wmem_max`/`tcp_rmem`/`tcp_wmem` below generous 8/16/32 MiB floors (clamped cleanly to 10% RAM), replace `epoll`-starving `tcp_notsent_lowat` candidates (`16384`/`32768`) with `[4294967295, 262144, 131072]`, sweep `bbr`/`cubic`/`hybla` fairly within the 12-candidate budget, remove automatic `TSO`/`GSO` disablement (`offloads_tso_off`), restrict `initcwnd` to `[10, 20]`, and enforce a throughput non-regression guard (`_select_best_candidate`) so slower candidates can never beat Baseline.
+- **Preserve base system tuning and ensure clean route rollback:** Merge and keep non-overridden keys (`fs.file-max`, `nf_conntrack_max`, `ip_local_port_range`) in `/etc/sysctl.d/99-rathole-tune.conf`, resolve actual `default` route lines consistently across sweep and persistent apply, and strip temporary `initcwnd`/`initrwnd`/`advmss` attrs cleanly during `rollback_persistent()`.
+- **Live applied-kernel verification panel and apply clarity:** Added `GET /api/tuner/status` returning live `bench status` (`cc`, `qdisc`, `mtu`, `rmem_max`, `notsent_lowat`, `route`, active profile name & timestamp) for both Iran and Node, rendered a live kernel state card and winner config preview on `#/tuner`, surfaced per-side applied/unsupported counts after Apply, and added a reminder that already-open tunnel connections pick up new TCP sysctls upon reconnect.
+
 ## [2.3.3] - 2026-11-24
 
 ### Fixed

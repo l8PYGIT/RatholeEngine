@@ -321,11 +321,16 @@ class MockSysDriver(SysDriver):
             if self.ipv6_active and "-6" in args:
                 return 0, f"2: {self.iface} inet6 2001:db8::1/64 scope global", ""
             return 0, f"2: {self.iface} inet 192.0.2.10/24 scope global {self.iface}", ""
-        if args[:2] == ["route", "get"] or args[:3] == ["route", "show", "default"]:
+        if args[:2] == ["route", "get"]:
+            peer = args[2] if len(args) >= 3 else "198.51.100.1"
+            return 0, f"{peer} via 192.0.2.1 dev {self.iface} src 192.0.2.10 uid 0", ""
+        if args[:3] == ["route", "show", "default"]:
             return 0, self.route_line, ""
         if args[:2] == ["route", "change"]:
             if "route" in self.unsupported_ops:
                 return 2, "", "RTNETLINK answers: Operation not supported"
+            if len(args) < 3 or args[2] != "default":
+                return 2, "", "RTNETLINK answers: No such file or directory"
             parts = args[2:]
             base = re.sub(r"\s+(?:initcwnd|initrwnd|advmss)\s+\d+", "", self.route_line)
             extras = []
@@ -398,13 +403,29 @@ class MockSysDriver(SysDriver):
 
 
 def _detect_out_route(driver: SysDriver, peer_ip: str) -> tuple[str, str]:
-    rc, out, _ = driver.run(["ip", "route", "get", peer_ip] if peer_ip else ["ip", "route", "show", "default"])
-    if rc != 0 or not out.strip():
-        rc, out, _ = driver.run(["ip", "route", "show", "default"])
-    line = (out.splitlines()[0] if out else "").strip()
-    m = re.search(r"\bdev\s+(\S+)", line)
-    iface = m.group(1) if m else "eth0"
-    return iface, line
+    iface = ""
+    if peer_ip:
+        rc, out, _ = driver.run(["ip", "route", "get", peer_ip])
+        if rc == 0 and out.strip():
+            first = out.splitlines()[0].strip()
+            m_dev = re.search(r"\bdev\s+(\S+)", first)
+            if m_dev:
+                iface = m_dev.group(1)
+
+    rc_def, out_def, _ = driver.run(["ip", "route", "show", "default"])
+    lines = [ln.strip() for ln in (out_def or "").splitlines() if ln.strip()]
+    line = ""
+    if iface and lines:
+        pat = re.compile(rf"\bdev\s+{re.escape(iface)}\b")
+        line = next((ln for ln in lines if pat.search(ln)), lines[0])
+    elif lines:
+        line = lines[0]
+
+    if not iface and line:
+        m = re.search(r"\bdev\s+(\S+)", line)
+        if m:
+            iface = m.group(1)
+    return iface or "eth0", line
 
 
 def _check_ipv6_active(driver: SysDriver, iface: str) -> bool:
@@ -705,8 +726,7 @@ def restore_snapshot(driver: SysDriver, snapshot: dict, session_id: str = "tuner
         for rk in ("initcwnd", "initrwnd", "advmss"):
             if rk in rt:
                 cmd += [rk, str(int(rt[rk]))]
-        if len(cmd) > 3 + len(base_toks):
-            driver.run(cmd)
+        driver.run(cmd)
     return {"ok": True}
 
 

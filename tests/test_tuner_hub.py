@@ -371,6 +371,33 @@ class TestTunerHubHttpApi(unittest.TestCase):
             hub.run_on_server = orig_run
             hub.MOCK = True
 
+    def test_tuner_status_endpoint_and_structured_apply(self):
+        # Missing or invalid params return 400
+        st0, _ = self._req("GET", "/api/tuner/status", token=self.ro_token)
+        self.assertEqual(st0, 400)
+        st_bad, _ = self._req("GET", "/api/tuner/status?iran=bad;cmd", token=self.ro_token)
+        self.assertEqual(st_bad, 400)
+
+        # Valid pair works with read scope and returns live kernel details
+        st, res = self._req("GET", "/api/tuner/status?iran=rp01&node=trk01", token=self.ro_token)
+        self.assertEqual(st, 200, res)
+        self.assertTrue(res["ok"])
+        self.assertTrue(res["iran"]["ok"])
+        self.assertTrue(res["node"]["ok"])
+        self.assertEqual(res["iran"]["current_mtu"], 1500)
+        self.assertEqual(res["iran"]["current_sysctl"]["cc"], "bbr")
+        self.assertEqual(res["node"]["current_sysctl"]["notsent_lowat"], "262144")
+
+        # Apply returns parsed iran_result and node_result alongside raw command dicts
+        _, b64 = _sample_b64()
+        st_ap, ap_res = self._req("POST", "/api/tuner/apply", {
+            "iran": "rp01", "node": "trk01", "profile": b64,
+        })
+        self.assertEqual(st_ap, 200, ap_res)
+        self.assertTrue(ap_res["ok"])
+        self.assertGreaterEqual(len((ap_res.get("iran_result") or {}).get("applied") or []), 1)
+        self.assertGreaterEqual(len((ap_res.get("node_result") or {}).get("applied") or []), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

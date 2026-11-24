@@ -20,25 +20,31 @@ from .sysstate import apply_candidate, capture_snapshot, read_net_counters, rest
 
 
 def compute_bdp_buffers(bw_mbps: float, rtt_ms: float, ram_mb: int) -> list[dict]:
-    """Compute 1x, 2x, and 4x BDP buffer sysctl dicts clamped strictly to 10% RAM."""
+    """Compute generous tunnel buffer sysctl tiers strictly clamped to 10% host RAM."""
     bw = max(10.0, float(bw_mbps or 100.0))
     rtt = max(5.0, float(rtt_ms or 40.0))
     bdp = int((bw * 1_000_000.0 / 8.0) * (rtt / 1000.0))
     ram_cap = compute_ram_buffer_cap(ram_mb)
+    # Linux splits tcp_rmem max roughly 50/50 with skb overhead, and momentary
+    # baseline throughput must never shrink buffers below proven tunnel floors.
+    min_tiers = {1: 8 * 1024 * 1024, 2: 16 * 1024 * 1024, 4: 32 * 1024 * 1024}
     out = []
     for mult in (1, 2, 4):
-        target = min(ram_cap, max(262144, bdp * mult))
-        def_w = min(target, 131072)
+        floor_bytes = min(ram_cap, min_tiers[mult])
+        target = min(ram_cap, max(262144, floor_bytes, bdp * mult * 2))
+        r_mid = min(target, 262144)
+        w_mid = min(target, 131072)
+        def_buf = min(target, 1048576)
         out.append({
             "label": f"bdp_{mult}x",
             "net.core.rmem_max": target,
             "net.core.wmem_max": target,
-            "net.core.rmem_default": min(target, 2097152),
-            "net.core.wmem_default": min(target, 2097152),
-            "net.ipv4.tcp_rmem": f"4096 {def_w} {target}",
-            "net.ipv4.tcp_wmem": f"4096 {min(65536, def_w)} {target}",
-            "net.ipv4.udp_rmem_min": 8192 if mult >= 2 else 4096,
-            "net.ipv4.udp_wmem_min": 8192 if mult >= 2 else 4096,
+            "net.core.rmem_default": def_buf,
+            "net.core.wmem_default": def_buf,
+            "net.ipv4.tcp_rmem": f"4096 {r_mid} {target}",
+            "net.ipv4.tcp_wmem": f"4096 {w_mid} {target}",
+            "net.ipv4.udp_rmem_min": 16384 if mult >= 2 else 8192,
+            "net.ipv4.udp_wmem_min": 16384 if mult >= 2 else 8192,
         })
     return out
 
@@ -69,16 +75,18 @@ def build_stage_candidates(
         int((pmtu_info or {}).get("forward_bytes", 1500) or 1500),
         int((pmtu_info or {}).get("reverse_bytes", 1500) or 1500),
     )
+    udp_blocked = bool((pmtu_info or {}).get("udp_blocked"))
+    blackhole = bool((pmtu_info or {}).get("blackhole_detected"))
     v6_floor = 1280 if ((caps_local or {}).get("ipv6_active") or (caps_remote or {}).get("ipv6_active")) else 576
     base = copy.deepcopy(best_cfg or {"sysctl": {}, "route": {}, "qdisc": {}, "offloads": {}})
     cands: list[dict] = []
 
     if stage == 1:
-        mtus = _dedup_ints(
-            [pmtu, pmtu - 40, 1380, 1280] if fast_test else [pmtu, pmtu - 20, pmtu - 40, 1460, 1420, 1380, 1350, 1280],
-            v6_floor,
-            1500,
-        )
+        if udp_blocked or (not blackhole and pmtu >= 1460):
+            raw_mtus = [1500, 1460, 1420] if fast_test else [1500, 1460, 1420, 1380]
+        else:
+            raw_mtus = [pmtu, pmtu - 40, 1380, 1280] if fast_test else [pmtu, pmtu - 20, pmtu - 40, 1420, 1380, 1280]
+        mtus = _dedup_ints(raw_mtus, v6_floor, 1500)
         if mode == "safe":
             for m in mtus:
                 c = copy.deepcopy(base)
@@ -94,11 +102,6 @@ def build_stage_candidates(
                 c.setdefault("sysctl", {})["net.ipv4.tcp_mtu_probing"] = 1 if i == 0 else 2
                 c["sysctl"]["net.ipv4.tcp_base_mss"] = 1024 if m >= 1360 else 512
                 cands.append(c)
-            if not fast_test and caps_local.get("has_ethtool"):
-                c_off = copy.deepcopy(base)
-                c_off["name"] = "offloads_tso_off"
-                c_off["offloads"] = {"tso": False, "gso": False, "gro": True}
-                cands.append(c_off)
         return cands
 
     if stage == 2:
@@ -112,13 +115,16 @@ def build_stage_candidates(
 
         l_qd = set((caps_local or {}).get("available_qdisc") or ["fq_codel"])
         r_qd = set((caps_remote or {}).get("available_qdisc") or ["fq_codel"])
-        common_qd = [q for q in ("fq", "fq_codel", "cake") if q in (l_qd & r_qd)] or ["fq_codel"]
-        lowats = [32768] if fast_test else [16384, 32768, 65536, 131072, 4294967295]
+        primary_qd = [q for q in ("fq", "fq_codel") if q in (l_qd & r_qd)]
+        if not primary_qd:
+            primary_qd = [q for q in ("cake",) if q in (l_qd & r_qd)] or ["fq_codel"]
+        # Avoid tiny lowat (16k/32k) that chokes event-driven epoll proxies (nginx/rathole/xray).
+        lowats = [262144] if fast_test else [4294967295, 262144, 131072]
 
         combos = []
-        for cc in common_cc[: (2 if fast_test else 5)]:
-            for qd in common_qd[: (2 if fast_test else 3)]:
-                for lw in lowats:
+        for lw in lowats:
+            for cc in common_cc[: (2 if fast_test else 4)]:
+                for qd in primary_qd[:2]:
                     combos.append((cc, qd, lw))
         for cc, qd, lw in combos[: (3 if fast_test else 12)]:
             c = copy.deepcopy(base)
@@ -139,13 +145,17 @@ def build_stage_candidates(
         bw = raw_throughput(baseline_metrics or {"throughput_mbps": 150.0})
         rtt = float((baseline_metrics or {}).get("unloaded_rtt_p50_ms", 40.0) or 40.0)
         bdps = compute_bdp_buffers(bw, rtt, min_ram)
-        cwnds = [20] if fast_test else [10, 32, 64]
+        cwnds = [20] if fast_test else [10, 20]
         for b in bdps[: (2 if fast_test else 3)]:
             label = b.pop("label")
             for cw in cwnds[: (1 if fast_test else 2)]:
                 c = copy.deepcopy(base)
                 c["name"] = f"{label}_cwnd{cw}"
-                c["route"] = {"initcwnd": cw, "initrwnd": cw, "advmss": max(536, int(c.get("mtu", 1460)) - 40)}
+                eff_mtu = int(c.get("mtu", 1500) or 1500)
+                rt_cfg = {"initcwnd": cw, "initrwnd": cw}
+                if eff_mtu < 1460:
+                    rt_cfg["advmss"] = max(536, eff_mtu - 40)
+                c["route"] = rt_cfg
                 c.setdefault("sysctl", {}).update(b)
                 c["sysctl"].update({
                     "net.ipv4.tcp_slow_start_after_idle": 0,
@@ -287,6 +297,40 @@ def _config_from_snapshot(snap: dict) -> dict:
     return sanitize_snapshot_config(snap)
 
 
+_MIN_THROUGHPUT_RATIO = {
+    "max-throughput": 0.98,
+    "balanced": 0.92,
+    "anti-loss": 0.90,
+    "low-latency": 0.80,
+}
+
+
+def _select_best_candidate(
+    scored_trials: list[dict],
+    baseline: dict,
+    goal: str,
+    min_gain: float = 0.0,
+) -> dict:
+    """Return top candidate only if it beats baseline without throughput regression."""
+    base_tp = raw_throughput(baseline)
+    min_ratio = _MIN_THROUGHPUT_RATIO.get(goal, 0.92)
+    base_score = float((baseline.get("scores") or {}).get(goal, 0.0) or 0.0)
+    eligible = []
+    for item in scored_trials:
+        if item.get("disqualified") or item.get("id") == baseline.get("id"):
+            continue
+        if base_tp > 0.0 and raw_throughput(item) < base_tp * min_ratio:
+            continue
+        eligible.append(item)
+    if not eligible:
+        return baseline
+    top = max(eligible, key=lambda x: float((x.get("scores") or {}).get(goal, 0.0) or 0.0))
+    top_score = float((top.get("scores") or {}).get(goal, 0.0) or 0.0)
+    if top_score > base_score + min_gain:
+        return top
+    return baseline
+
+
 def _evaluate_candidate(
     cand_id: str,
     cfg: dict,
@@ -303,6 +347,7 @@ def _evaluate_candidate(
     duration_s: float,
     unloaded_p50: float,
     baseline_trial: dict | None,
+    skip_udp: bool = False,
 ) -> dict:
     local_iface = caps_local["iface"]
     remote_iface = caps_remote["iface"]
@@ -333,6 +378,7 @@ def _evaluate_candidate(
             include_bidir=True,
             include_burst=True,
             unloaded_p50_ms=unloaded_p50,
+            skip_udp=skip_udp,
         )
     finally:
         if mode == "brutal":
@@ -430,11 +476,9 @@ def run_staged_sweep(
         base_item = next((x for x in live_trials_cache if x["id"] == "baseline"), None)
         if base_item:
             baseline_live = base_item
-        alive = [x for x in live_trials_cache if not x["disqualified"]]
-        if alive:
-            best_trial_live = max(alive, key=lambda x: x["score"])
-        elif live_trials_cache:
-            best_trial_live = live_trials_cache[0]
+        base_raw = next((x for x in scored if x.get("id") == "baseline"), scored[0])
+        best_raw = _select_best_candidate(scored, base_raw, goal, min_gain=0.0)
+        best_trial_live = _live_trial_row(best_raw, goal)
         return scored
 
     sweep_dur = 0.12 if fast_test else (8.0 if deep else 3.2)
@@ -442,10 +486,13 @@ def run_staged_sweep(
     carrier_dur = 0.12 if fast_test else 2.5
 
     _emit(0, "baseline_and_pmtu", 0, 12, current_candidate="PMTU + Unloaded RTT")
-    pmtu_info = probe_pmtu(host, data_udp_port, fast_test=fast_test)
+    pmtu_info = probe_pmtu(host, data_udp_port, fast_test=fast_test, tcp_port=data_tcp_port)
     pmtu_live = dict(pmtu_info)
     unloaded = probe_unloaded_rtt(host, data_tcp_port, data_udp_port, samples=4 if fast_test else 20)
     unloaded_p50 = float(unloaded["tcp_rtt"]["p50"] or 1.0)
+    skip_udp = bool(pmtu_info.get("udp_blocked") and unloaded.get("udp_samples_ok", 0) == 0)
+    if skip_udp:
+        warnings_live.append("UDP blocked/filtered on path: PMTU inferred via TCP, UDP waits skipped.")
     _emit(0, "baseline_and_pmtu", 0, 12, current_candidate="baseline")
 
     baseline_cfg = _config_from_snapshot(local_snap)
@@ -459,6 +506,7 @@ def run_staged_sweep(
         include_bidir=True,
         include_burst=True,
         unloaded_p50_ms=unloaded_p50,
+        skip_udp=skip_udp,
     )
     baseline_trial["id"] = "baseline"
     baseline_trial["name"] = "baseline"
@@ -482,7 +530,7 @@ def run_staged_sweep(
             tr = _evaluate_candidate(
                 cid, cand, mode, host, data_tcp_port, data_udp_port,
                 ctrl_client, local_driver, local_snap, caps_local, caps_remote,
-                session_id, sweep_dur, unloaded_p50, baseline_trial,
+                session_id, sweep_dur, unloaded_p50, baseline_trial, skip_udp=skip_udp,
             )
             tr["stage"] = stage
             if tr.get("remote_apply_warning"):
@@ -490,13 +538,13 @@ def run_staged_sweep(
             all_trials.append(tr)
             completed += 1
             scored_now = _update_scored_state(all_trials)
-            alive = [x for x in scored_now if not x["disqualified"]]
-            best_now = max(alive, key=lambda x: x["scores"][goal]) if alive else scored_now[0]
+            base_now = next((x for x in scored_now if x["id"] == "baseline"), scored_now[0])
+            best_now = _select_best_candidate(scored_now, base_now, goal, min_gain=0.0)
             _emit(stage, stage_names[stage], completed, est_total, best_score=best_now["scores"][goal])
         scored_stage = score_trials(all_trials, baseline_id="baseline")
-        alive_stage = [x for x in scored_stage if not x["disqualified"] and x["id"] != "baseline"]
-        if alive_stage:
-            best_stage = max(alive_stage, key=lambda x: x["scores"][goal])
+        base_stage = next((x for x in scored_stage if x["id"] == "baseline"), scored_stage[0])
+        best_stage = _select_best_candidate(scored_stage, base_stage, goal, min_gain=0.5)
+        if best_stage.get("id") != "baseline":
             best_cfg = copy.deepcopy(best_stage["config"])
 
     # Stage 4: Isolated carrier benchmarks
@@ -527,10 +575,15 @@ def run_staged_sweep(
     # Stage 5: Brutal Top-3 Finalist Soak vs Baseline
     _emit(5, "finalist_soak", completed, completed + 3, current_candidate="soak:baseline")
     scored_pre = score_trials(all_trials, baseline_id="baseline")
+    base_pre = next((x for x in scored_pre if x["id"] == "baseline"), scored_pre[0])
+    min_ratio = _MIN_THROUGHPUT_RATIO.get(goal, 0.92)
+    base_pre_tp = raw_throughput(base_pre)
     distinct_top = []
     seen_names = {"baseline"}
     for item in sorted(scored_pre, key=lambda x: x["scores"][goal], reverse=True):
-        if item["disqualified"]:
+        if item["disqualified"] or item.get("id") == "baseline":
+            continue
+        if base_pre_tp > 0.0 and raw_throughput(item) < base_pre_tp * min_ratio:
             continue
         nm = item["name"]
         if nm not in seen_names:
@@ -543,7 +596,7 @@ def run_staged_sweep(
     base_soak = _evaluate_candidate(
         "baseline", baseline_cfg, "safe", host, data_tcp_port, data_udp_port,
         ctrl_client, local_driver, local_snap, caps_local, caps_remote,
-        session_id, soak_dur, unloaded_p50, None,
+        session_id, soak_dur, unloaded_p50, None, skip_udp=skip_udp,
     )
     base_soak["stage"] = 5
     soak_trials.append(base_soak)
@@ -554,7 +607,7 @@ def run_staged_sweep(
         ftr = _evaluate_candidate(
             f"final_{idx}_{fcfg.get('name', 'cand')}", fcfg, mode, host, data_tcp_port, data_udp_port,
             ctrl_client, local_driver, local_snap, caps_local, caps_remote,
-            session_id, soak_dur, unloaded_p50, base_soak,
+            session_id, soak_dur, unloaded_p50, base_soak, skip_udp=skip_udp,
         )
         ftr["stage"] = 5
         soak_trials.append(ftr)
@@ -568,8 +621,7 @@ def run_staged_sweep(
 
     final_scored = score_trials(soak_trials, baseline_id="baseline")
     base_final = next(x for x in final_scored if x["id"] == "baseline")
-    alive_final = [x for x in final_scored if not x["disqualified"]]
-    winner_final = max(alive_final, key=lambda x: x["scores"][goal]) if alive_final else base_final
+    winner_final = _select_best_candidate(final_scored, base_final, goal, min_gain=1.0)
     best_trial_live = _live_trial_row(winner_final, goal)
 
     _emit(6, "completed", completed, completed, best_score=winner_final["scores"][goal], extra_rows=soak_rows_scored)

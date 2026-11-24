@@ -462,5 +462,248 @@ class TestSysstateWatchdogAuditApply(unittest.TestCase):
                 self.assertEqual(fh.read(), "net.ipv4.ip_local_reserved_ports=2333,443,8088\n")
 
 
+class TestTunerRealWorldRegressions(unittest.TestCase):
+    def test_pmtu_udp_blocked_does_not_collapse_to_1200(self):
+        from unittest import mock
+        from tuner.probes import probe_pmtu
+
+        class _TimeoutUdpSock:
+            def settimeout(self, _t):
+                pass
+            def setsockopt(self, *_a):
+                pass
+            def sendto(self, *_a):
+                pass
+            def recvfrom(self, _n):
+                raise socket.timeout("timed out")
+            def close(self):
+                pass
+
+        with mock.patch("tuner.probes.socket.socket", return_value=_TimeoutUdpSock()):
+            res = probe_pmtu("198.51.100.99", 29891, fast_test=False, tcp_port=0)
+        self.assertTrue(res["udp_blocked"])
+        self.assertFalse(res["blackhole_detected"])
+        self.assertEqual(res["forward_bytes"], 1500)
+        self.assertEqual(res["reverse_bytes"], 1500)
+
+        class _DummyTcpSock:
+            def close(self):
+                pass
+
+        with (
+            mock.patch("tuner.probes.socket.socket", return_value=_TimeoutUdpSock()),
+            mock.patch("tuner.probes.socket.create_connection", return_value=_DummyTcpSock()),
+            mock.patch("tuner.probes.read_tcp_info", return_value={"pmtu": 1460}),
+        ):
+            res_tcp = probe_pmtu("198.51.100.99", 29891, fast_test=False, tcp_port=29891)
+        self.assertTrue(res_tcp["udp_blocked"])
+        self.assertFalse(res_tcp["blackhole_detected"])
+        self.assertEqual(res_tcp["forward_bytes"], 1460)
+
+    def test_scoring_udp_blocked_path_does_not_disqualify_tcp_candidates(self):
+        from tuner.scoring import check_hard_fail, score_trials
+
+        trials = [
+            {
+                "id": "baseline",
+                "throughput_1_mbps": 100.0,
+                "throughput_n_mbps": 120.0,
+                "throughput_bidir_mbps": 90.0,
+                "unloaded_rtt_p50_ms": 50.0,
+                "loaded_rtt_p95_ms": 110.0,
+                "rtt_p50_ms": 52.0,
+                "rtt_p99_ms": 125.0,
+                "jitter_ms": 8.0,
+                "retrans_pct": 1.8,
+                "udp_loss_pct": 100.0,
+                "drop_delta": 0,
+                "stability_cov": 0.12,
+            },
+            {
+                "id": "bbr_fq_clean",
+                "throughput_1_mbps": 240.0,
+                "throughput_n_mbps": 260.0,
+                "throughput_bidir_mbps": 200.0,
+                "unloaded_rtt_p50_ms": 50.0,
+                "loaded_rtt_p95_ms": 58.0,
+                "rtt_p50_ms": 51.0,
+                "rtt_p99_ms": 62.0,
+                "jitter_ms": 2.0,
+                "retrans_pct": 0.2,
+                "udp_loss_pct": 100.0,
+                "drop_delta": 0,
+                "stability_cov": 0.03,
+            },
+        ]
+        scored = {t["id"]: t for t in score_trials(trials, baseline_id="baseline")}
+        self.assertFalse(scored["baseline"]["disqualified"])
+        self.assertFalse(scored["bbr_fq_clean"]["disqualified"])
+        self.assertGreater(scored["bbr_fq_clean"]["scores"]["balanced"], scored["baseline"]["scores"]["balanced"])
+        self.assertGreater(scored["bbr_fq_clean"]["subscores"]["R"], 90.0)
+
+        # If baseline has low UDP loss and candidate regresses UDP loss > 15% and +10% above baseline -> still disqualified
+        disq, reason = check_hard_fail({"throughput_mbps": 300.0, "udp_loss_pct": 25.0, "retrans_pct": 0.5}, {"udp_loss_pct": 1.0, "retrans_pct": 0.5})
+        self.assertTrue(disq)
+        self.assertIn("udp_loss", reason)
+
+    def test_bdp_buffers_floor_and_stage2_safe_lowat_and_cc_fairness(self):
+        from tuner.sweep import build_stage_candidates, compute_bdp_buffers
+
+        bdps = compute_bdp_buffers(bw_mbps=50.0, rtt_ms=60.0, ram_mb=2048)
+        self.assertGreaterEqual(bdps[0]["net.core.rmem_max"], 8 * 1024 * 1024)
+        self.assertGreaterEqual(bdps[1]["net.core.rmem_max"], 16 * 1024 * 1024)
+        self.assertGreaterEqual(bdps[2]["net.core.rmem_max"], 32 * 1024 * 1024)
+
+        low_ram = compute_bdp_buffers(bw_mbps=50.0, rtt_ms=60.0, ram_mb=256)
+        self.assertLessEqual(low_ram[0]["net.core.rmem_max"], int(256 * 1024 * 1024 * 0.10))
+
+        caps = {
+            "ram_mb": 2048,
+            "ipv6_active": False,
+            "has_ethtool": True,
+            "available_cc": ["bbr", "cubic", "hybla", "reno"],
+            "available_qdisc": ["fq", "fq_codel", "cake"],
+        }
+        base_cfg = {"mtu": 1500, "sysctl": {}, "route": {}, "qdisc": {"kind": "fq_codel", "params": {}}, "offloads": {}}
+        base_m = {"throughput_mbps": 120.0, "unloaded_rtt_p50_ms": 50.0}
+
+        s1 = build_stage_candidates(1, "brutal", caps, caps, base_cfg, base_m, {"forward_bytes": 1500, "reverse_bytes": 1500, "udp_blocked": True, "blackhole_detected": False}, fast_test=False)
+        self.assertFalse(any(c["name"] == "offloads_tso_off" for c in s1))
+        self.assertTrue(all(c["mtu"] >= 1380 for c in s1))
+
+        s2 = build_stage_candidates(2, "brutal", caps, caps, base_cfg, base_m, {"forward_bytes": 1500, "reverse_bytes": 1500, "blackhole_detected": False}, fast_test=False)
+        lowats = [int(c["sysctl"]["net.ipv4.tcp_notsent_lowat"]) for c in s2]
+        ccs = {c["sysctl"]["net.ipv4.tcp_congestion_control"] for c in s2}
+        self.assertTrue(all(lw >= 131072 for lw in lowats))
+        self.assertIn("bbr", ccs)
+        self.assertIn("cubic", ccs)
+        self.assertIn("hybla", ccs)
+
+        s3 = build_stage_candidates(3, "brutal", caps, caps, base_cfg, base_m, {"forward_bytes": 1500, "reverse_bytes": 1500}, fast_test=False)
+        self.assertTrue(all(c["route"]["initcwnd"] <= 32 for c in s3))
+        self.assertTrue(all("advmss" not in c["route"] for c in s3))
+
+    def test_route_apply_uses_default_route_and_restore_clears_attrs(self):
+        from tuner.sysstate import MockSysDriver, apply_candidate, capture_snapshot, restore_snapshot
+
+        drv = MockSysDriver()
+        drv.route_line = "default via 192.0.2.1 dev eth0 proto dhcp metric 100"
+        snap = capture_snapshot(drv, peer_ip="198.51.100.5")
+        self.assertTrue(snap["route_line"].startswith("default via"))
+        self.assertEqual(snap["route"], {})
+
+        res = apply_candidate(
+            drv,
+            {"route": {"initcwnd": 20, "initrwnd": 20, "advmss": 1420}},
+            iface="eth0",
+            peer_ip="198.51.100.5",
+        )
+        self.assertIn("route", res["applied"])
+        self.assertIn("initcwnd 20", drv.route_line)
+        self.assertIn("advmss 1420", drv.route_line)
+
+        restore_snapshot(drv, snap)
+        self.assertNotIn("initcwnd", drv.route_line)
+        self.assertNotIn("advmss", drv.route_line)
+
+    def test_apply_persistent_preserves_existing_base_sysctls_and_rich_status(self):
+        import tempfile
+        from tuner.apply import apply_persistent, rollback_persistent, tuner_status
+        from tuner.profile import build_profile
+        from tuner.sysstate import MockSysDriver
+
+        with tempfile.TemporaryDirectory() as td:
+            reserved = os.path.join(td, "99-rathole-reserved-ports.conf")
+            tune_conf = os.path.join(td, "99-rathole-tune.conf")
+            applied_json = os.path.join(td, "applied-profile.json")
+            unit_file = os.path.join(td, "rathole-net-tune.service")
+            snap_dir = os.path.join(td, "snapshots")
+            orig_tune = (
+                "# base hygiene sysctls\n"
+                "fs.file-max=2097152\n"
+                "net.netfilter.nf_conntrack_max=1048576\n"
+                "net.ipv4.ip_local_port_range=32768 60999\n"
+                "net.core.rmem_default=26214400\n"
+            )
+            with open(tune_conf, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(orig_tune)
+
+            prof = build_profile(
+                meta={"name": "preserve-base-test"},
+                environment={},
+                diagnostics=[],
+                benchmarks={},
+                iran_config={
+                    "mtu": 1460,
+                    "qdisc": {"kind": "fq", "params": {}},
+                    "sysctl": {
+                        "net.core.default_qdisc": "fq",
+                        "net.ipv4.tcp_congestion_control": "bbr",
+                        "net.core.rmem_max": 16777216,
+                    },
+                },
+                node_config={"mtu": 1460, "sysctl": {"net.ipv4.tcp_congestion_control": "bbr"}},
+            )
+            drv = MockSysDriver(ram_mb=2048)
+            paths = {
+                "sysctl_tune_file": tune_conf,
+                "reserved_ports_file": reserved,
+                "applied_profile_file": applied_json,
+                "systemd_unit_file": unit_file,
+                "snapshot_dir": snap_dir,
+            }
+            out = apply_persistent(drv, prof, side="iran", paths=paths)
+            self.assertTrue(out["ok"])
+            with open(tune_conf, encoding="utf-8") as fh:
+                merged_txt = fh.read()
+            self.assertIn("fs.file-max=2097152", merged_txt)
+            self.assertIn("net.netfilter.nf_conntrack_max=1048576", merged_txt)
+            self.assertIn("net.ipv4.ip_local_port_range=32768 60999", merged_txt)
+            self.assertIn("net.core.rmem_max=16777216", merged_txt)
+            self.assertNotIn("net.core.rmem_default=26214400", merged_txt)
+
+            st = tuner_status(drv, paths=paths)
+            self.assertEqual(st["current_mtu"], 1460)
+            self.assertEqual(st["current_qdisc_live"], "fq")
+            self.assertIn("tcp_rmem", st["current_sysctl"])
+
+            rb = rollback_persistent(drv, paths=paths)
+            self.assertTrue(rb["ok"])
+            with open(tune_conf, encoding="utf-8") as fh:
+                self.assertEqual(fh.read(), orig_tune)
+
+    def test_throughput_non_regression_guard_prevents_slower_winner(self):
+        from tuner.sweep import _select_best_candidate
+
+        baseline = {
+            "id": "baseline",
+            "throughput_1_mbps": 200.0,
+            "throughput_n_mbps": 200.0,
+            "throughput_bidir_mbps": 200.0,
+            "scores": {"balanced": 65.0},
+            "disqualified": False,
+        }
+        starved = {
+            "id": "starved_cand",
+            "throughput_1_mbps": 90.0,
+            "throughput_n_mbps": 90.0,
+            "throughput_bidir_mbps": 90.0,
+            "scores": {"balanced": 88.0},
+            "disqualified": False,
+        }
+        healthy = {
+            "id": "healthy_winner",
+            "throughput_1_mbps": 260.0,
+            "throughput_n_mbps": 260.0,
+            "throughput_bidir_mbps": 260.0,
+            "scores": {"balanced": 85.0},
+            "disqualified": False,
+        }
+        picked_bad = _select_best_candidate([baseline, starved], baseline, "balanced", min_gain=0.5)
+        self.assertEqual(picked_bad["id"], "baseline")
+        picked_good = _select_best_candidate([baseline, starved, healthy], baseline, "balanced", min_gain=1.0)
+        self.assertEqual(picked_good["id"], "healthy_winner")
+
+
 if __name__ == "__main__":
     unittest.main()

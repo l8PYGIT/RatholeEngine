@@ -70,4 +70,23 @@ got="$(jq -r '.domain' "$D/state.json" 2>/dev/null)"
 [ "$got" = "pty.example" ] || fail "domain-e tayp-shode zabt nashod (got='$got')"
 ok "rooye pty: domain porside shod va dar state zakhire shod"
 
+# ---- 4: sudo_piped_pty guards in install.sh / bootstrap.sh / install-panel.sh ----
+for sf in "$REPO_ROOT/install.sh" "$REPO_ROOT/bootstrap.sh" "$REPO_ROOT/rathole-manager/install-panel.sh"; do
+  grep -qF 'sudo_piped_pty' "$sf" || fail "sudo_piped_pty guard dar $sf nist"
+done
+piped_rc=0
+SUDO_USER=root RATHOLE_NO_TTY=1 bash -c '
+  set -euo pipefail
+  source <(sed "s/^main$/#main/" "$1" | sed "s/\\[ \"\$(id -u)\" -eq 0 \\]/true/")
+  if is_tty; then exit 10; fi
+  exit 0
+' _ "$REPO_ROOT/bootstrap.sh" </dev/null >/dev/null 2>&1 || piped_rc=$?
+[ "$piped_rc" -eq 0 ] || fail "bootstrap.sh dar halat sudo piped tty bayad is_tty=false bargardanad (rc=$piped_rc)"
+ok "sudo_piped_pty az gir kardan zir curl | sudo bash jelogiri mikonad"
+
+# ---- 5: install-monitor.sh same-directory check ----
+grep -qF 'SRC_REAL' "$REPO_ROOT/rathole-manager/ratholehub/install-monitor.sh" \
+  || fail "install-monitor.sh guard baraye ejra az /opt/ratholehub nadarad"
+ok "install-monitor.sh same-dir guard mojood ast"
+
 echo "hameye test-haye init-e taamoli pas shodand."

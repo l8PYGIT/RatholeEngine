@@ -9,6 +9,12 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-11-24
+
+### Fixed
+- **رفع گیر کردن منوی تعاملی زیر `curl | sudo bash`:** در Ubuntu/Debian جدید تنظیم پیش‌فرض `Defaults use_pty` در `sudo` اجازه نمی‌داد ورودی کیبورد به `/dev/tty` پس از pipe شدن به `sudo` برسد. اکنون `install.sh`، `bootstrap.sh` و `install-panel.sh` این حالت را تشخیص می‌دهند (در نصب قبلی مستقیم `--update` اجرا می‌شود و برای نصب تعاملی روی هاست تازه دستور درست `sudo bash -c "$(curl ...)"` راهنمایی و در مستندات جایگزین شد).
+- **فعال‌سازی کامل ربات مانیتورینگ از خود پنل RatholeHub:** با ذخیره‌کردن و فعال‌کردن مانیتور در `#/settings`، در صورت نبودن `ratholemonitor.service` خودِ هاب نصاب `install-monitor.sh --enable` را اجرا و سرویس را راه‌اندازی می‌کند؛ همچنین `install-monitor.sh` خطای `are the same file` هنگام اجرا از `/opt/ratholehub` را دیگر نمی‌دهد و `install-hub.sh`/`update.sh` یونیت را خودکار آماده می‌کنند.
+
 ## [2.2.0] - 2026-11-24
 
 ### Added

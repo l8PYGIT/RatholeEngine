@@ -2332,14 +2332,21 @@ async function loadMonitorSettings(){
  if(!box)return;
  if(status!==200||!j){box.innerHTML=`<div class="empty">${h((j&&j.error)||String(status))}</div>`;return;}
  const d=j;
+ const modeLbl={
+  auto:LANG==='fa'?'auto (خودکار — از طریق نود خارج در ایران)':'auto (direct → foreign SSH relay)',
+  ssh_auto:LANG==='fa'?'ssh_auto (همیشه از تونل SSH نود خارج)':'ssh_auto (always via foreign SSH node)',
+  proxy:'proxy',
+  direct:'direct'
+ };
  const modes=['auto','direct','proxy','ssh_auto'];
- const opts=modes.map(m=>`<option value="${h(m)}"${d.relay_mode===m?' selected':''}>${h(m)}</option>`).join('');
+ const opts=modes.map(m=>`<option value="${h(m)}"${d.relay_mode===m?' selected':''}>${h(modeLbl[m]||m)}</option>`).join('');
  const tokBadge=d.bot_token_set
   ?`<span class="badge b-ok">${h(t('mon_token_set'))}${d.bot_token_hint?' ('+h(d.bot_token_hint)+')':''}</span>`
   :`<span class="badge b-warn">${h(t('mon_token_unset'))}</span>`;
  const svcBadge=`<span class="badge ${d.service_active?'b-ok':'b-bad'}">${h(d.service_active?t('sec_2fa_on'):t('sec_2fa_off'))}</span>`;
+ const unitBadge=d.service_installed===false?`<span class="badge b-warn">${LANG==='fa'?'یونیت سرویس هنگام فعال‌سازی نصب می‌شود':'unit installs on enable'}</span>`:'';
  box.innerHTML=`<div class="sub" style="margin-bottom:10px">${h(t('mon_desc'))}</div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${svcBadge} ${tokBadge}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${svcBadge} ${tokBadge} ${unitBadge}</div>
   <div class="settings-form" style="max-width:680px">
    <div class="field"><label><input id="mon_enabled" type="checkbox"${d.enabled?' checked':''}> ${h(t('sec_2fa_on'))}</label></div>
    <div class="field"><label for="mon_token">${h(t('mon_bot_token'))}</label><input id="mon_token" type="password" autocomplete="off" placeholder="${h(d.bot_token_hint||'123456:ABC...')}"></div>
@@ -2384,7 +2391,7 @@ async function saveMonitorConfig(){
  if(tok)payload.bot_token=tok;
  const {status,j}=await api('POST','api/monitor/config',payload);
  if(status!==200){toast('error: '+((j&&j.error)||status));return;}
- toast(t('done'));
+ if(j&&j.service_error)toast('⚠️ '+j.service_error);else toast(t('done'));
  loadMonitorSettings();
 }
 

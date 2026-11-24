@@ -7,8 +7,7 @@ For a manual / fully custom install see the [full install manual](install-manual
     On the Iran server, run this and answer the prompts:
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
-      | sudo bash
+    sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh)"
     ```
 
     > No direct GitHub access on the server? Use the [Offline / Manual File Install guide](install-offline.en.md) (`bootstrap.sh --local`).
@@ -37,8 +36,7 @@ For a manual / fully custom install see the [full install manual](install-manual
 On the **Iran server**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
-  | sudo bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh)"
 ```
 
 ### What it asks

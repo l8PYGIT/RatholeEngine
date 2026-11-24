@@ -578,7 +578,7 @@ curl -H "Authorization: Bearer <TOKEN>" -H 'Content-Type: application/json' \
 
 ```bash
 # کاملاً تعاملی (حالت پنل/نود و اطلاعات را می‌پرسد)
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh)"
 
 # سرور ایران (پنل) غیرتعاملی:
 curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --panel \

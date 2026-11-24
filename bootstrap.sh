@@ -37,14 +37,18 @@ log(){ printf '%s %s\n' "$(c_g '[+]')" "$*"; }
 warn(){ printf '%s %s\n' "$(c_y '[*]')" "$*"; }
 err(){ printf '%s %s\n' "$(c_r '[!]')" "$*" >&2; }
 die(){ err "$*"; exit 1; }
-# zir-e `curl ... | sudo bash` stdin pipe ast na terminal؛ agar /dev/tty baz shavad
-# stdin ra be /dev/tty vasl mikonim ta hameye porsesh-ha va subshell-ha ba terminal kar konand.
-if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then
+sudo_piped_pty(){
+  [ "${RATHOLE_NO_TTY:-0}" = "1" ] || { [ ! -t 0 ] && [ -n "${SUDO_USER:-}${SUDO_UID:-}${SUDO_COMMAND:-}" ]; }
+}
+
+# zir-e `curl ... | bash` mustaghim stdin pipe ast؛ dar sudo use_pty (pipe be sudo)
+# dastresi be /dev/tty poshte pty gir mikonad va read az keyboard javab nemigirad.
+if [ ! -t 0 ] && ! sudo_piped_pty && { : < /dev/tty; } 2>/dev/null; then
   exec < /dev/tty
 fi
 
 TTY_DEV=""
-if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then TTY_DEV="/dev/tty"; fi
+if [ ! -t 0 ] && ! sudo_piped_pty && { : < /dev/tty; } 2>/dev/null; then TTY_DEV="/dev/tty"; fi
 is_tty(){ [ -t 0 ] || [ -n "$TTY_DEV" ]; }
 rdp(){ # read -rp: $1=prompt $2=nam-e motghayer
   local t="${RTH_READ_TIMEOUT:-300}"
@@ -380,8 +384,12 @@ main(){
 
   if [ "$RUN" -eq 0 ] || [ -z "$MODE" ]; then
     echo; log "amade-sazi kamel shod (bedoon ejra-ye nasab)."
-    echo "  panel:  $(c_y "sudo bash $INSTALL_DIR/install-panel.sh --domain <d> --fullchain <fc> --key <key>")"
-    echo "  node:  $(c_y "sudo bash $INSTALL_DIR/install-node.sh --server <d>:443 --name <n> --token <t> --inbound-port <p>")"
+    if sudo_piped_pty; then
+      warn "nokteh: 'curl | sudo bash' zir-e sudo use_pty keyboard ra nemikhanad; in dastoor-ha ba terminal-e vaghei kar mikonand:"
+      echo "  taamoli: $(c_y 'sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh)"')"
+    fi
+    echo "  panel:   $(c_y "sudo bash $INSTALL_DIR/install-panel.sh --domain <d> --fullchain <fc> --key <key>")"
+    echo "  node:    $(c_y "sudo bash $INSTALL_DIR/install-node.sh --server <d>:443 --name <n> --token <t> --inbound-port <p>")"
     exit 0
   fi
 

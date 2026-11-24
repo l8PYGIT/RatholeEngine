@@ -28,15 +28,23 @@ mkdir -p "$APP_DIR" "$CONF_DIR" "$STATE_DIR"
 chmod 755 "$CONF_DIR" 2>/dev/null || true
 chmod 700 "$STATE_DIR" 2>/dev/null || true
 
+SRC_REAL="$(cd "$SCRIPT_DIR" && pwd -P)"
+DST_REAL="$(cd "$APP_DIR" && pwd -P)"
 for f in tg_relay.py monitor.py; do
   [ -f "$SCRIPT_DIR/$f" ] || die "file peyda nashod: $SCRIPT_DIR/$f"
   sed -i 's/\r$//' "$SCRIPT_DIR/$f"
 done
-install -m644 "$SCRIPT_DIR/tg_relay.py" "$APP_DIR/tg_relay.py"
-install -m755 "$SCRIPT_DIR/monitor.py" "$APP_DIR/monitor.py"
-if [ -f "$SCRIPT_DIR/ssh_proxy.py" ]; then
-  sed -i 's/\r$//' "$SCRIPT_DIR/ssh_proxy.py"
-  install -m644 "$SCRIPT_DIR/ssh_proxy.py" "$APP_DIR/ssh_proxy.py"
+if [ "$SRC_REAL" != "$DST_REAL" ]; then
+  install -m644 "$SCRIPT_DIR/tg_relay.py" "$APP_DIR/tg_relay.py"
+  install -m755 "$SCRIPT_DIR/monitor.py" "$APP_DIR/monitor.py"
+  if [ -f "$SCRIPT_DIR/ssh_proxy.py" ]; then
+    sed -i 's/\r$//' "$SCRIPT_DIR/ssh_proxy.py"
+    install -m644 "$SCRIPT_DIR/ssh_proxy.py" "$APP_DIR/ssh_proxy.py"
+  fi
+else
+  chmod 644 "$APP_DIR/tg_relay.py"
+  chmod 755 "$APP_DIR/monitor.py"
+  [ -f "$APP_DIR/ssh_proxy.py" ] && { sed -i 's/\r$//' "$APP_DIR/ssh_proxy.py"; chmod 644 "$APP_DIR/ssh_proxy.py"; }
 fi
 
 if [ ! -f "$CONF_DIR/monitor.json" ]; then

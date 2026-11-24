@@ -7,8 +7,7 @@
     روی سرور ایران فقط این را بزن و به سؤال‌ها جواب بده:
 
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
-      | sudo bash
+    sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh)"
     ```
 
     > دسترسی به گیتهاب روی سرور قطع است؟ از [راهنمای نصب دستی با فایل (آفلاین)](install-offline.md) استفاده کن (`bootstrap.sh --local`).
@@ -37,8 +36,7 @@
 روی **سرور ایران**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh \
-  | sudo bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh)"
 ```
 
 ### چه چیزهایی می‌پرسد؟

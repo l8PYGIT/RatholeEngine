@@ -109,6 +109,9 @@ if systemctl is-active --quiet ratholehub; then
 else
   die "ratholehub bala niamd; journalctl -u ratholehub -n 30"
 fi
+if [ -f "$APP_DIR/install-monitor.sh" ] && [ ! -f /etc/systemd/system/ratholemonitor.service ]; then
+  bash "$APP_DIR/install-monitor.sh" || warn "amade-sazi unit-e ratholemonitor anjam nashod (az UI hub dubare talash mishavad)."
+fi
 
 # ---------- kelid SSH baraye atsal hab be serverha ----------
 KEY=/root/.ssh/id_ed25519

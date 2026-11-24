@@ -712,6 +712,59 @@ class TestM4MonitorHubHttpAndCli(unittest.TestCase):
         self.assertTrue(cli_out["ok"])
         self.assertGreaterEqual(cli_out["observations_count"], 3)
 
+    def test_hub_auto_installs_and_toggles_monitor_unit(self):
+        # Verify non-mock _monitor_config_save installs & enables ratholemonitor.service directly from Hub
+        with tempfile.TemporaryDirectory() as td:
+            unit_p = os.path.join(td, "ratholemonitor.service")
+            inst_p = os.path.join(td, "install-monitor.sh")
+            with open(inst_p, "w", encoding="utf-8") as f:
+                f.write("#!/usr/bin/env bash\nexit 0\n")
+            seen = []
+
+            def fake_run(cmd, **kw):
+                seen.append(list(cmd))
+                if cmd[:2] == ["bash", inst_p]:
+                    with open(unit_p, "w", encoding="utf-8") as uf:
+                        uf.write("[Unit]\nDescription=stub\n")
+                class _R:
+                    returncode = 0
+                    stdout = ""
+                    stderr = ""
+                return _R()
+
+            orig_mock = hub.MOCK
+            orig_unit = hub.MON_UNIT_PATH
+            orig_inst = hub.MON_INSTALLER_PATH
+            orig_run = hub.subprocess.run
+            try:
+                hub.MOCK = False
+                hub.MON_UNIT_PATH = unit_p
+                hub.MON_INSTALLER_PATH = inst_p
+                hub.subprocess.run = fake_run
+
+                st, res = self._req("POST", "/api/monitor/config", {
+                    "enabled": True,
+                    "bot_token": "987654321:M4_AutoInstallToken_XYZ",
+                    "allowed_chat_ids": [111],
+                    "relay_mode": "auto",
+                }, token=self.tok)
+                self.assertEqual(st, 200)
+                self.assertNotIn("service_error", res)
+                self.assertTrue(res["config"]["service_installed"])
+                self.assertIn(["bash", inst_p, "--enable"], seen)
+                self.assertIn(["systemctl", "enable", "--now", "ratholemonitor"], seen)
+                self.assertIn(["systemctl", "restart", "ratholemonitor"], seen)
+
+                seen.clear()
+                st2, res2 = self._req("POST", "/api/monitor/config", {"enabled": False}, token=self.tok)
+                self.assertEqual(st2, 200)
+                self.assertIn(["systemctl", "disable", "--now", "ratholemonitor"], seen)
+            finally:
+                hub.MOCK = orig_mock
+                hub.MON_UNIT_PATH = orig_unit
+                hub.MON_INSTALLER_PATH = orig_inst
+                hub.subprocess.run = orig_run
+
 
 if __name__ == "__main__":
     unittest.main()

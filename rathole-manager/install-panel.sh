@@ -26,11 +26,15 @@ die(){ err "$*"; exit 1; }
 # natije daghighan hamin bug bood: nasb dar marhale-ye «tanzimat avlih» bi-seda saat-ha migir.
 # hamchenin `[ -r /dev/tty ]` DOROGH migoyad (device hamishe readable ast، hatta bedoon-e
 # controlling terminal) — pas /dev/tty ra VAGHEAN BAZ mikonim, mesl-e bootstrap.sh.
+sudo_piped_pty(){
+  [ "${RATHOLE_NO_TTY:-0}" = "1" ] || { [ ! -t 0 ] && [ -n "${SUDO_USER:-}${SUDO_UID:-}${SUDO_COMMAND:-}" ]; }
+}
+
 TTY_DEV=""
-if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then
+if [ ! -t 0 ] && ! sudo_piped_pty && { : < /dev/tty; } 2>/dev/null; then
   exec < /dev/tty
 fi
-if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then TTY_DEV="/dev/tty"; fi
+if [ ! -t 0 ] && ! sudo_piped_pty && { : < /dev/tty; } 2>/dev/null; then TTY_DEV="/dev/tty"; fi
 is_tty(){ [ -t 0 ] || [ -n "$TTY_DEV" ]; }
 # backstop-e zamani ta terminal-e bi-morajea (screen-e detach-shode) ham nasb ra gir nayandazad.
 ask_tty(){

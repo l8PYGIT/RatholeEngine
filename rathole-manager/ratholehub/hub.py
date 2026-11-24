@@ -19,6 +19,8 @@ INV_PATH  = os.environ.get("RATHOLEHUB_INV",  "/etc/ratholehub/inventory.json")
 MOCK      = os.environ.get("RATHOLEHUB_MOCK") == "1"
 AUDIT_PATH = os.environ.get("RATHOLEHUB_AUDIT", "/etc/ratholehub/audit.log")
 MON_CONF_PATH = os.environ.get("RATHOLEMON_CONF", "/etc/ratholehub/monitor.json")
+MON_UNIT_PATH = os.environ.get("RATHOLEMON_UNIT", "/etc/systemd/system/ratholemonitor.service")
+MON_INSTALLER_PATH = os.environ.get("RATHOLEMON_INSTALLER", os.path.join(os.path.dirname(os.path.abspath(__file__)), "install-monitor.sh"))
 
 # ---------- tanzimat va inventory ----------
 # RLock (na Lock) ta helper-haye atomic betavanand read-modify-write ra yekja
@@ -2150,6 +2152,7 @@ class Handler(BaseHTTPRequestHandler):
     def _monitor_config_get(self):
         cur = load_monitor_config(MON_CONF_PATH)
         pub = public_monitor_config(cur)
+        pub["service_installed"] = bool(MOCK or os.path.exists(MON_UNIT_PATH))
         pub["service_active"] = self._monitor_service_active(cur)
         return self._send(200, pub)
 
@@ -2159,18 +2162,37 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             return self._send(400, {"error": err})
         save_monitor_config(new_cfg, MON_CONF_PATH)
-        if not MOCK and os.path.exists("/etc/systemd/system/ratholemonitor.service"):
+        svc_err = ""
+        if not MOCK:
             try:
                 if new_cfg.get("enabled"):
-                    subprocess.run(["systemctl", "enable", "--now", "ratholemonitor"],
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-                    subprocess.run(["systemctl", "restart", "ratholemonitor"],
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-                else:
-                    subprocess.run(["systemctl", "stop", "ratholemonitor"],
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-            except Exception:
-                pass
+                    if not os.path.exists(MON_UNIT_PATH) and os.path.isfile(MON_INSTALLER_PATH):
+                        ir = subprocess.run(
+                            ["bash", MON_INSTALLER_PATH, "--enable"],
+                            capture_output=True, text=True, timeout=20,
+                        )
+                        if ir.returncode != 0:
+                            svc_err = (ir.stderr or ir.stdout or f"install-monitor exited {ir.returncode}").strip()[:240]
+                    if os.path.exists(MON_UNIT_PATH):
+                        r1 = subprocess.run(
+                            ["systemctl", "enable", "--now", "ratholemonitor"],
+                            capture_output=True, text=True, timeout=8,
+                        )
+                        r2 = subprocess.run(
+                            ["systemctl", "restart", "ratholemonitor"],
+                            capture_output=True, text=True, timeout=8,
+                        )
+                        if r2.returncode != 0 and not svc_err:
+                            svc_err = (r2.stderr or r1.stderr or "systemctl restart ratholemonitor failed").strip()[:240]
+                    elif not svc_err:
+                        svc_err = "ratholemonitor.service not installed"
+                elif os.path.exists(MON_UNIT_PATH):
+                    subprocess.run(
+                        ["systemctl", "disable", "--now", "ratholemonitor"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8,
+                    )
+            except Exception as e:
+                svc_err = str(e)[:200]
         audit_log(
             self._user(),
             "hub",
@@ -2183,8 +2205,12 @@ class Handler(BaseHTTPRequestHandler):
             0,
         )
         pub = public_monitor_config(new_cfg)
+        pub["service_installed"] = bool(MOCK or os.path.exists(MON_UNIT_PATH))
         pub["service_active"] = self._monitor_service_active(new_cfg)
-        return self._send(200, {"ok": True, "config": pub})
+        resp = {"ok": True, "config": pub}
+        if svc_err:
+            resp["service_error"] = svc_err
+        return self._send(200, resp)
 
     def _monitor_diagnose_relay(self, d=None):
         d = d if isinstance(d, dict) else {}

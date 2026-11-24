@@ -106,10 +106,15 @@ if [ -n "$SIGNING_PUBKEY" ]; then
   valid_pubkey_path "$SIGNING_PUBKEY" || die "masir kelid-e omumi namotabar ast: '$SIGNING_PUBKEY'"
 fi
 
-# zir-e `curl | sudo bash` stdin pipe ast na terminal؛ agar /dev/tty baz shavad hanooz
-# mitavanim beporsim. (hamsan-e elgo-ye bootstrap.sh — `[ -r /dev/tty ]` DOROGH migoyad.)
+# zir-e `curl ... | sudo bash` (ba Defaults use_pty dar Ubuntu/Debian), stdin pipe ast va
+# /dev/tty-e jadid-e sudo vorodi keyboard ra nemigirad → `read` ta abad gir mikonad.
+sudo_piped_pty(){
+  [ ! -t 0 ] && [ -n "${SUDO_USER:-}${SUDO_UID:-}${SUDO_COMMAND:-}" ]
+}
+
+# zir-e `curl | bash` mustaghim (root bedoon sudo), agar /dev/tty baz shavad hanooz mitavanim beporsim.
 TTY_DEV=""
-if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then TTY_DEV="/dev/tty"; fi
+if [ ! -t 0 ] && ! sudo_piped_pty && { : < /dev/tty; } 2>/dev/null; then TTY_DEV="/dev/tty"; fi
 
 # faghat vaghti karbar NA flag dade va NA env — va terminal darim. Enter = latest.
 ask_release(){
@@ -416,7 +421,11 @@ PY
   [ -n "$SIGNING_PUBKEY" ] && export RATHOLE_SIGNING_PUBKEY="$SIGNING_PUBKEY"
   [ -n "$UPDATE_PROXY" ] && export RATHOLE_UPDATE_PROXY="$UPDATE_PROXY"
   local rc=0
-  if [ ! -t 0 ] && [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
+  if sudo_piped_pty; then
+    warn "zir-e 'curl | sudo bash' dastresi-e keyboard be sudo pty baste ast؛ edame dar halat-e bedoon-prompt."
+    export RATHOLE_NO_TTY=1
+    bash "$tmp/bootstrap.sh" --local "$bundle" "$@" || rc=$?
+  elif [ ! -t 0 ] && [ -r /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
     bash "$tmp/bootstrap.sh" --local "$bundle" "$@" < /dev/tty || rc=$?
   else
     bash "$tmp/bootstrap.sh" --local "$bundle" "$@" || rc=$?

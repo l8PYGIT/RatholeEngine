@@ -612,6 +612,9 @@ UNIT
       if [ -f "$HUB_DIR/install-monitor.sh" ]; then
         sed -i 's/\r$//' "$HUB_DIR/install-monitor.sh"
         install -m 755 "$HUB_DIR/install-monitor.sh" /opt/ratholehub/install-monitor.sh
+        if [ ! -f /etc/systemd/system/ratholemonitor.service ]; then
+          bash /opt/ratholehub/install-monitor.sh || warn "amade-sazi ratholemonitor.service nashod."
+        fi
       fi
       if [ -d "$HUB_DIR/ui" ]; then
         mkdir -p /opt/ratholehub/ui

@@ -31,6 +31,13 @@ install -m644 "$SCRIPT_DIR/hubsec.py" "$APP_DIR/hubsec.py"
 [ -f "$SCRIPT_DIR/hubupdate.py" ] && install -m644 "$SCRIPT_DIR/hubupdate.py" "$APP_DIR/hubupdate.py"
 [ -f "$SCRIPT_DIR/monitor.py" ] && install -m755 "$SCRIPT_DIR/monitor.py" "$APP_DIR/monitor.py"
 [ -f "$SCRIPT_DIR/install-monitor.sh" ] && install -m755 "$SCRIPT_DIR/install-monitor.sh" "$APP_DIR/install-monitor.sh"
+if [ -f "$SCRIPT_DIR/../rathole-tuner" ]; then
+  install -m755 "$SCRIPT_DIR/../rathole-tuner" /usr/local/bin/rathole-tuner
+fi
+if [ -d "$SCRIPT_DIR/../tuner" ]; then
+  mkdir -p /usr/local/share/rathole/tuner
+  install -m644 "$SCRIPT_DIR/../tuner/"*.py /usr/local/share/rathole/tuner/ 2>/dev/null || true
+fi
 mkdir -p "$APP_DIR/ui"
 for f in index.html app.css app.js i18n.js vazirmatn.woff2; do
   [ -f "$SCRIPT_DIR/ui/$f" ] || die "file-e UI peyda nashod: ui/$f (baste naghes ast)."

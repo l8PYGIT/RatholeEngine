@@ -9,6 +9,12 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-11-24
+
+### Fixed
+- **رفع خطای `node host invalid` هنگام اجرای تست `#/tuner` روی نودهای REST Agent:** نودهایی که با `transport: "api"` اضافه شده‌اند فیلد `host` ندارند و آدرسشان در `api_url` است؛ تابع `node_public_host` در `hub.py` اکنون آدرس نود را به‌ترتیب از مقدار صریح، `public_ip`، `host`، هاست `api_url` و کش overview (`_OVERVIEW_CACHE`) استخراج می‌کند (هم در `/api/tuner/start` و هم در `/api/servers/<node>/paqetconnect`).
+- **نرمال‌سازی فاصله در برچسب‌های تیونر و کپی پکیج `tuner` در `install-hub.sh`:** فاصله‌های احتمالی در تگ دیتاسنتر (`iran_dc` / `node_dc`) پیش از ارسال به `hubcmds` به `-` تبدیل می‌شوند و نصاب مستقل هاب فایل‌های `tuner/*.py` و `rathole-tuner` را نیز در `/usr/local/share/rathole/tuner` نصب می‌کند.
+
 ## [2.3.0] - 2026-11-24
 
 ### Added

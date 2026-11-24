@@ -217,6 +217,44 @@ class TestTunerHubHttpApi(unittest.TestCase):
         self.assertEqual(st, 200, c_res)
         self.assertTrue(c_res["ok"])
 
+    def test_tuner_start_resolves_api_transport_node_host(self):
+        orig_cache = dict(hub._OVERVIEW_CACHE)
+        self.addCleanup(lambda: (hub._OVERVIEW_CACHE.clear(), hub._OVERVIEW_CACHE.update(orig_cache)))
+
+        hub.set_inventory([
+            {"name": "rp01", "role": "iran", "host": "5.202.4.40"},
+            {"name": "api-node", "role": "node", "transport": "api", "api_url": "http://78.135.77.57:8089", "api_token": "agent-tok"},
+            {"name": "loop-node", "role": "node", "transport": "api", "api_url": "http://127.0.0.1:8089", "api_token": "loop-tok"},
+            {"name": "empty-node", "role": "node", "transport": "api"},
+        ])
+        hub._OVERVIEW_CACHE["loop-node"] = (time.time() + 60, {"public_ip": "91.107.14.22", "host": "127.0.0.1"})
+
+        # Resolution helper checks (when present)
+        self.assertEqual(hub.node_public_host({"name": "api-node", "transport": "api", "api_url": "http://78.135.77.57:8089"}), "78.135.77.57")
+        self.assertEqual(hub.node_public_host({"name": "loop-node", "transport": "api", "api_url": "http://127.0.0.1:8089"}), "91.107.14.22")
+        self.assertEqual(hub.node_public_host({"name": "loop-node", "public_ip": "1.2.3.4", "host": "5.6.7.8"}, explicit="9.9.9.9"), "9.9.9.9")
+        self.assertEqual(hub.node_public_host({"name": "empty-node"}), "")
+
+        # Starting tuner on REST Agent node without `host` or `public_ip` must succeed, incl. spaced tags
+        st, start_res = self._req("POST", "/api/tuner/start", {
+            "iran": "rp01", "node": "api-node", "mode": "brutal", "goal": "balanced",
+            "tags": {"iran_dc": "arvan tehran", "node_dc": "hetzner fsn1"},
+        })
+        self.assertIn(st, (200, 202), start_res)
+        jid = start_res["job_id"]
+        job = {}
+        for _ in range(40):
+            st, job = self._req("GET", f"/api/tuner/jobs/{jid}")
+            if job.get("status") in ("done", "error", "cancelled"):
+                break
+            time.sleep(0.05)
+        self.assertEqual(job.get("status"), "done", job)
+
+        # Unresolvable node still returns clear 400 error
+        st_bad, err_res = self._req("POST", "/api/tuner/start", {"iran": "rp01", "node": "empty-node"})
+        self.assertEqual(st_bad, 400)
+        self.assertIn("node host invalid", err_res.get("error", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

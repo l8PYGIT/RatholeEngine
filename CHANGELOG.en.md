@@ -6,6 +6,12 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-11-24
+
+### Fixed
+- **Fix `node host invalid` when starting `#/tuner` benchmarks on REST Agent nodes:** Nodes registered with `transport: "api"` store `api_url` without a separate `host`/`public_ip`. Added `node_public_host()` in `hub.py` to resolve peer host from explicit `peer_host`, `public_ip`, `host`, `api_url` hostname, or cached overview (`_OVERVIEW_CACHE`) for both `/api/tuner/start` and `/api/servers/<node>/paqetconnect`.
+- **Whitespace normalization on tuner datacenter tags & Hub installer staging:** Normalize whitespace in `iran_dc`/`node_dc` tags to `-` before `hubcmds` validation, and install `tuner/*.py` + `rathole-tuner` in standalone `install-hub.sh`.
+
 ## [2.3.0] - 2026-11-24
 
 ### Added

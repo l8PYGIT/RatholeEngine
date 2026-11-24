@@ -301,7 +301,7 @@ _HUB_START = time.time()
 
 # noskhe-i ke hub «akharin» midanad: az MANAGER_VERSION-e common.sh (bundle ke deploy mishavad)
 # khande mishavad ta ba noskhe-ye nasb-shode rooye har server moghayese shavad. fallback: rشته-ye sabet.
-HUB_FALLBACK_VERSION = "2.3.0"
+HUB_FALLBACK_VERSION = "2.3.1"
 def hub_manager_version():
     cands = []
     try:
@@ -638,6 +638,53 @@ def iran_public_host(server, fallback=""):
     return domain or reported or inventory or usable(fallback)
 
 
+def node_public_host(server, explicit=""):
+    """Resolve reachable host/IP for a foreign node across SSH, REST Agent api_url, or cached overview."""
+    server = server if isinstance(server, dict) else {}
+
+    def usable(val, allow_loopback=False):
+        s = str(val or "").strip()
+        if not s or not RE_HOST.fullmatch(s):
+            return ""
+        if not allow_loopback and (s in ("localhost", "::1") or s.startswith(("127.", "0.0.0.0"))):
+            return ""
+        return s
+
+    for cand in (explicit, server.get("public_ip")):
+        v = usable(cand, allow_loopback=True)
+        if v:
+            return v
+
+    inv_host = usable(server.get("host"))
+    if inv_host:
+        return inv_host
+
+    api_host = ""
+    raw_url = str(server.get("api_url") or "").strip()
+    if raw_url:
+        try:
+            api_host = usable(urlparse(_norm_agent_url(raw_url)).hostname or "")
+        except Exception:
+            api_host = ""
+    if api_host:
+        return api_host
+
+    name = str(server.get("name") or "").strip()
+    cached = _OVERVIEW_CACHE.get(name) if name else None
+    ov = cached[1] if isinstance(cached, tuple) and len(cached) == 2 and isinstance(cached[1], dict) else {}
+    for key in ("public_ip", "host"):
+        v = usable(ov.get(key))
+        if v:
+            return v
+
+    # Final fallback allowing loopback (useful for local/SSH-forwarded nodes or mock tests)
+    for cand in (server.get("host"), urlparse(_norm_agent_url(raw_url)).hostname if raw_url else "", ov.get("host")):
+        v = usable(cand, allow_loopback=True)
+        if v:
+            return v
+    return ""
+
+
 def _relay_deploy_to_server(server, cfg, gh, chan, proxy_url, req_sig):
     work_dir = tempfile.mkdtemp(prefix="rth-hub-deploy-")
     try:
@@ -913,9 +960,9 @@ def mock_run(server, cmd_args):
             "  --server rp01.l1t.ir:443 --name %s --token a0370655deadbeefcafe1234 --inbound-port 8444\n"
             "────────────────────────────────────────" % nm, "err": ""}
     if j == "ratholectl version":
-        return {"rc": 0, "out": "manager_version=2.3.0\nrole=panel\nrathole_version=0.5.0", "err": ""}
+        return {"rc": 0, "out": "manager_version=2.3.1\nrole=panel\nrathole_version=0.5.0", "err": ""}
     if j == "ratholenode version":
-        return {"rc": 0, "out": "manager_version=2.3.0\nrole=node\nrathole_version=0.5.0", "err": ""}
+        return {"rc": 0, "out": "manager_version=2.3.1\nrole=node\nrathole_version=0.5.0", "err": ""}
     if cmd_args[:2] == ["ratholectl", "ip-cert"]:
         return {"rc": 0, "out": "WSS-e self-signed faal shod.", "err": ""}
     if cmd_args[:2] == ["ratholectl", "ip-cert-show"]:
@@ -2650,7 +2697,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": False, "error": "paqet roshan nist ya key peida nashod",
                                     "raw": show.get("out", "") + show.get("err", "")})
         host_part, _, port_part = info["remote"].rpartition(":")
-        inv_host = str(s.get("host") or "").strip()
+        inv_host = node_public_host(s)
         if (not host_part or host_part in ("127.0.0.1", "0.0.0.0")) and inv_host:
             host_part = inv_host
         if not RE_HOST.fullmatch(host_part) or not RE_PORT.fullmatch(port_part):
@@ -3027,9 +3074,9 @@ class Handler(BaseHTTPRequestHandler):
         if not iran_srv or iran_srv.get("role") != "iran" or not node_srv or node_srv.get("role") != "node":
             return self._send(400, {"error": "iran/node pair not found"})
 
-        peer_host = str(node_srv.get("public_ip") or node_srv.get("host") or "").strip()
-        if not RE_HOST.match(peer_host):
-            return self._send(400, {"error": "node host invalid"})
+        peer_host = node_public_host(node_srv, d.get("peer_host", ""))
+        if not peer_host:
+            return self._send(400, {"error": "node host invalid (set public_ip, host, or api_url on node)"})
 
         prof_b64 = ""
         if d.get("profile") or d.get("profile_id"):
@@ -3041,7 +3088,11 @@ class Handler(BaseHTTPRequestHandler):
         job_id = "job_" + secrets.token_hex(6)
         sess_tok = secrets.token_hex(16)
         raw_tags = d.get("tags") if isinstance(d.get("tags"), dict) else {}
-        tags = {str(k): str(v) for k, v in raw_tags.items() if str(v or "").strip()}
+        tags = {}
+        for k, v in raw_tags.items():
+            clean_v = re.sub(r"\s+", "-", str(v or "").strip())
+            if clean_v:
+                tags[str(k)] = clean_v
 
         start_cmd = build_node_cmd("bench_listen_start", {"port": port, "data_port": port + 1 if port < 65535 else 29891, "token": sess_tok, "idle_timeout": 900})
         if prof_b64:

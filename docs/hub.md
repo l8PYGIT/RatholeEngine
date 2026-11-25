@@ -1,14 +1,14 @@
 # ratholehub — پنل وب مدیریت (REST API + UI)
 
-پنل مرکزی برای مدیریت چند سرور ایران و چند نود، بدون تداخل با سیستم فعلی. هاب به‌طور پیش‌فرض از طریق **SSH با کلید** کار می‌کند و به‌صورت اختیاری می‌تواند با **REST Agent** توکن‌دار (بدون SSH) هم صحبت کند.
+پنل مرکزی برای مدیریت چند سرور ایران و چند نود، بدون تداخل با سیستم فعلی. هاب از سه روش اتصال پشتیبانی می‌کند: **SSH با کلید** (پیش‌فرض)، **REST Agent** توکن‌دار (بدون SSH) و **Reverse WebSocket Agent (`reverse_ws`)** برای نودهای پشت NAT یا دارای IP فیلترشده بدون نیاز به هیچ پورت ورودی باز.
 
 ![معماری هاب](assets/hub-architecture.svg)
 
-*هاب روی `127.0.0.1` پشت nginx `/hub/` می‌شنود و `ratholectl`/`ratholenode` را با یک **argv اعتبارسنجی‌شده** روی هر سرور اجرا می‌کند — از طریق SSH یا REST Agent؛ هرگز رشته‌ی شل خام.*
+*هاب روی `127.0.0.1` پشت nginx `/hub/` می‌شنود و `ratholectl`/`ratholenode` را با یک **argv اعتبارسنجی‌شده** روی هر سرور اجرا می‌کند — از طریق SSH، REST Agent یا Reverse WebSocket؛ هرگز رشته‌ی شل خام.*
 
 ## چرا این طراحی
-- **SSH پیش‌فرض، Agent اختیاری**: پنل فقط روی یک سرور (معمولاً rp01) نصب می‌شود و از طریق **SSH با کلید** همان `ratholectl`/`ratholenode` تست‌شده را روی بقیه اجرا می‌کند؛ هیچ پورت/سرویس جدیدی روی نودها باز نمی‌شود. اگر SSH ممکن نبود، `ratholeagent.py` را روی سرور نصب می‌کنید تا هاب همان argvها را از طریق REST توکن‌دار (پیش‌فرض پورت `8089`) اجرا کند — [حالت REST Agent](#حالت-rest-agent-بدون-ssh).
-- **بدون وابستگی pip**: هاب و Agent فقط پایتون stdlib هستند. با هیچ‌چیز روی سرور تداخل نمی‌کنند.
+- **SSH پیش‌فرض، Agent مستقیم یا معکوس (Reverse WS):** پنل فقط روی یک سرور (معمولاً rp01) نصب می‌شود و از طریق **SSH با کلید** همان `ratholectl`/`ratholenode` تست‌شده را روی بقیه اجرا می‌کند؛ اگر SSH ممکن نبود، `ratholeagent.py` (نسخه `2.0.0`) هم می‌تواند با REST توکن‌دار (پیش‌فرض پورت `8089`) گوش دهد و هم با ماژول `wsutil.py` به‌صورت خروجی از سمت سرور مقصد به `/hub/ws/agent` (روی همان پورت ۴۴۳ پشت Nginx) وصل شود — [حالت REST و Reverse WS Agent](#حالت-rest-و-reverse-ws-agent-بدون-ssh).
+- **بدون وابستگی pip**: هاب و Agent فقط پایتون stdlib هستند (`wsutil.py` هم از کتابخانه استاندارد RFC 6455 استفاده می‌کند). با هیچ‌چیز روی سرور تداخل نمی‌کنند.
 - **REST API توکن‌دار**: برای اتصال ابزارهای دیگر/اتوماسیون و کنترل وضعیت.
 - **امن**: روی `127.0.0.1` می‌شنود؛ دسترسی از طریق SSH-forward یا nginx زیر همان دامنه (یک پورت/یک دامنه حفظ می‌شود). جزئیات در [مدل امنیتی](#مدل-امنیتی).
 
@@ -23,7 +23,7 @@ sudo bash install-hub.sh          # رمز مدیریت می‌پرسد، API TO
 sudo ratholectl hub on 8088       # → https://<domain>/hub/
 ```
 
-## افزودن سرورها — سه راه
+## افزودن سرورها — چهار راه
 
 **۱) نصب خودکار (پیشنهادی): دکمه‌ی Provision در داشبورد** — یا `POST /api/provision`. یک‌بار با **رمز SSH** به سرور وصل می‌شود (نیازمند `sshpass` روی هاب)، کلید عمومی هاب را به `authorized_keys` اضافه می‌کند (idempotent)، همان‌جا deploy از GitHub را اجرا و سرور را در inventory ثبت می‌کند. کلید هاب از config (`ssh_key_path`؛ نصاب `/root/.ssh/id_ed25519` می‌سازد) می‌آید و اگر خالی باشد هاب خودش `/etc/ratholehub/id_ed25519` تولید می‌کند.
 
@@ -32,7 +32,9 @@ sudo ratholectl hub on 8088       # → https://<domain>/hub/
 ssh-copy-id -i /root/.ssh/id_ed25519.pub root@<node_ip>
 ```
 
-**۳) REST Agent (بدون SSH):** روی سرور مقصد `install-agent.sh` یا `ratholectl agent on` / `ratholenode agent on` را اجرا کن، بعد رکورد را با `transport: "api"`، `api_url` و `api_token` اضافه کن — [حالت REST Agent](#حالت-rest-agent-بدون-ssh).
+**۳) REST Agent مستقیم (بدون SSH):** روی سرور مقصد `install-agent.sh` یا `ratholectl agent on` / `ratholenode agent on` را اجرا کن، بعد رکورد را با `transport: "api"`، `api_url` و `api_token` اضافه کن.
+
+**۴) Reverse WebSocket Agent (`reverse_ws` — بدون SSH و بدون پورت ورودی باز، مناسب نودهای فیلترشده یا پشت NAT):** در هاب نوع اتصال را روی `reverse_ws` بگذارید (یا در صفحهٔ یک سرور آفلاین روی دکمهٔ تبدیل به `reverse_ws` بزنید)، سپس دستور یک‌خطی نمایش‌داده‌شده در مودال (`sudo ratholenode agent reverse ...` یا `ratholectl agent reverse ...`) را روی سرور مقصد اجرا کنید تا خودش از طریق WebSocket خروجی به `/hub/ws/agent` (پورت ۴۴۳ Nginx) وصل شود — [بخش Reverse WebSocket Agent](#reverse-websocket-agent-reverse_ws--v240).
 
 > اگر هاب را با `ratholectl hub on` روی همان سرور ایران بالا آورده باشید، سرور لوکال (`iran-main` روی `127.0.0.1`) به‌طور خودکار در inventory ثبت می‌شود و کلید هاب همان‌جا authorize می‌گردد (`hub_auto_register_local`).
 
@@ -52,16 +54,16 @@ ssh -L 8088:127.0.0.1:8088 root@<rp01_ip>
 
 | صفحه | Hash | محتوا |
 |------|------|-------|
-| **داشبورد** | `#/dashboard` | **۴ کارت KPI** (کل سرورها، وضعیت اتصال، تعداد نود/سرویس، سلامت هاب)، نوار وضعیت هاب، فیلتر سریع (نقش/وضعیت/متن)، کارت/فهرست سرورها با badge پروتکل و نسخه، فرم افزودن/Provision و progress «آپدیت همه». |
-| **صفحه سرور** | `#/server/<name>` | سرور ایران: چهار تب «نودها و مسیرها»، «پروتکل‌ها و حامل‌ها»، «شبکه و ورودی‌ها»، «نگهداری و سیستم»، `paqet`، جستجوی زنده، Ports و ابزارهای عیب‌یابی. نود: تونل اصلی، پروفایل‌های سریع، `paqet`، `Managed Xray` + اسکنر کاور، جدول سرویس‌ها و upstreamها. |
-| **تستر و تیونر شبکه** | `#/tuner` | اجرای غیرهم‌زمان بنچمارک ۶ مرحله‌ای `rathole-tuner`، امتیاز ۵بعدی، کپی/ایمپورت `rthprof1:` و JSON برای AI، کتابخانه پروفایل دیتاسنترها، تست A/B و اعمال/Rollback دوطرفه. |
+| **داشبورد** | `#/dashboard` | **۴ کارت KPI** (کل سرورها، وضعیت اتصال، تعداد نود/سرویس، سلامت هاب)، نوار وضعیت هاب، فیلتر سریع (نقش/وضعیت/متن)، کارت/فهرست سرورها با badge پروتکل و نسخه، وضعیت آنلاین/در انتظار اتصال `reverse_ws`، فرم افزودن/Provision و progress «آپدیت همه». |
+| **صفحه سرور** | `#/server/<name>` | سرور ایران: چهار تب «نودها و مسیرها»، «پروتکل‌ها و حامل‌ها»، «شبکه و ورودی‌ها»، «نگهداری و سیستم»، `paqet`، جستجوی زنده، Ports و ابزارهای عیب‌یابی. نود: تونل اصلی، پروفایل‌های سریع، `paqet`، `Managed Xray` + اسکنر کاور، جدول سرویس‌ها، مودال دستور `reverse_ws` / دکمه تبدیل از سرور آفلاین و upstreamها. |
+| **تستر و تیونر شبکه** | `#/tuner` | اجرای غیرهم‌زمان بنچمارک ۶ مرحله‌ای `rathole-tuner` (با ماندگاری جاب‌ها هنگام رفرش از `GET /api/tuner/jobs`)، نمایش وضعیت زنده کرنل دو سرور (`GET /api/tuner/status`)، امتیاز ۵بعدی، کپی/ایمپورت `rthprof1:` و JSON برای AI، کتابخانه پروفایل دیتاسنترها، تست A/B و اعمال/Rollback دوفازه‌ای (`--confirm-ttl 45` + `bench confirm`). |
 | **نقشه مسیرها** | `#/routing` | **فقط‌خواندنی**: سه نما — گراف SVG قابل جابه‌جایی (چیدمان در مرورگر ذخیره می‌شود و دکمه‌ی reset دارد)، جدول خلاصه، و کنسول ingress/خروجی با دستور اتصال کلاینت برای هر نود. |
 | **گزارش فعالیت‌ها** | `#/audit` | ۱۰۰ رکورد آخر audit زنجیره‌ای SHA-256 (با جستجو/فیلتر زنده): زمان، کاربر، سرور، action و `rc`. |
 | **تنظیمات** | `#/settings` | انتخابگر سه‌حالتهٔ پوسته (**روشن / تاریک / هماهنگ با سیستم**)، تغییر زبان، پروکسی هاب، TOTP 2FA، توکن‌های RBAC، مانیتور مستقل و ربات تلگرام، رله آپدیت Ed25519 و تغییر رمز مدیر. |
 
 ![تستر و تیونر شبکه در RatholeHub](assets/screenshots/tuner.png)
 
-در هر صفحه با **`⌘K / Ctrl+K`** (یا دکمه‌ی جستجوی بالای نوار کناری) **پالت فرمان** باز می‌شود تا فوری به هر سرور، صفحه (از جمله `#/tuner`) یا تغییر تم/زبان بپرید. در عرض موبایل (≤820px) ناوبری به نوار پایین‌چسبیده تبدیل می‌شود (`v2.3.0`). صفحه‌ی «بورد سیم‌کشی» وجود ندارد؛ لینک قدیمی `#/wiring` به داشبورد برمی‌گردد.
+در هر صفحه با **`⌘K / Ctrl+K`** (یا دکمه‌ی جستجوی بالای نوار کناری) **پالت فرمان** باز می‌شود تا فوری به هر سرور، صفحه (از جمله `#/tuner`) یا تغییر تم/زبان بپرید. در عرض موبایل (≤820px) ناوبری به نوار پایین‌چسبیده تبدیل می‌شود (`v2.3.0`). از نسخهٔ `v2.4.0` هم قابلیت **Reverse WebSocket (`reverse_ws`)** و محافظ دوفازه‌ای Watchdog تیونر به‌صورت بومی در همین UI در دسترس است. صفحه‌ی «بورد سیم‌کشی» وجود ندارد؛ لینک قدیمی `#/wiring` به داشبورد برمی‌گردد.
 
 ### سلکتور حامل در ردیف هر نود (نسخهٔ ۲.۰.۴)
 
@@ -150,11 +152,11 @@ ssh -L 8088:127.0.0.1:8088 root@<rp01_ip>
 
 - **دکمه «تنظیم تانل اصلی» (set main tunnel)** در صفحه‌ی هر نود — نود را با ست‌کردن `SERVER=host:443` (action `set_server`/`set_main`) به یک سرور ایرانِ ثبت‌شده وصل می‌کند. فرم Provision هم select «سرور ایران» دارد و پس از deploy موفق تانل اصلی را خودکار ست می‌کند.
 
-## حالت REST Agent (بدون SSH)
+## حالت REST و Reverse WS Agent (بدون SSH)
 
-`rathole-manager/ratholeagent.py` یک دیمن **مبتنی بر stdlib پایتون** است که اجازه می‌دهد هاب بدون SSH سرور را مدیریت کند. سرویس systemd آن `rathole-agent.service` است.
+`rathole-manager/ratholeagent.py` (نسخه **`2.0.0`**) به‌همراه ماژول خالص stdlib **`rathole-manager/wsutil.py`** یک دیمن دوحالته است که مدیریت بدون SSH را چه به‌صورت **REST مستقیم** و چه به‌صورت **Reverse WebSocket (`reverse_ws`)** ممکن می‌سازد. سرویس systemd آن روی هر دو نقش `rathole-agent.service` است (سخت‌سازی‌شده در v2.4.0 با `StartLimitIntervalSec=0`، `LimitNOFILE=65535` و `KillMode=process`).
 
-### نصب و مدیریت
+### نصب و مدیریت (REST مستقیم)
 
 ```bash
 # روی خود سرور (root؛ python3 لازم است) — role خودکار از /etc/rathole/server.toml یا state.json تشخیص داده می‌شود
@@ -167,15 +169,37 @@ sudo ratholenode agent on 8089 [TOKEN]    # نود
 sudo ratholectl agent status|token|show|restart|off
 ```
 
-روی سرورِ نصب‌شده، agent از قبل همراه بسته نصب شده است: `install-panel.sh`/`install-node.sh` فایل‌های `ratholeagent.py` و `install-agent.sh` را در `/usr/local/share/rathole/` می‌گذارند و `install-agent.sh` را در `/usr/local/bin/` سیم‌لینک می‌کنند؛ پس همان `sudo install-agent.sh ...` بدون دانلود چیزی کار می‌کند. `update.sh` هر دو فایل را به‌روز، unit را ری‌استارت و توکن موجود را حفظ می‌کند؛ uninstallerها unit و `/etc/rathole-agent` را پاک می‌کنند.
+روی سرورِ نصب‌شده، فایل‌های agent از قبل همراه بسته نصب شده‌اند: `install-panel.sh`/`install-node.sh` فایل‌های `ratholeagent.py`، `wsutil.py` و `install-agent.sh` را در `/usr/local/share/rathole/` می‌گذارند و `install-agent.sh` را در `/usr/local/bin/` سیم‌لینک می‌کنند؛ پس همان `sudo install-agent.sh ...` بدون دانلود چیزی کار می‌کند. `update.sh` هر سه فایل را snapshot/به‌روز می‌کند و توکن موجود را نگه می‌دارد (و هنگام ری‌استارت از داخل خود agent از `_schedule_agent_restart` جداشده استفاده می‌کند تا سرویس وسط آپدیت کشته نشود)؛ uninstallerها unit و `/etc/rathole-agent` را پاک می‌کنند.
 
-توکن در `/etc/rathole-agent/token` (chmod 600) نگهداری می‌شود؛ اگر توکنی با `--token` (یا آرگومان CLI) داده نشود و فایل هم نباشد، یک توکن hex خودکار ساخته می‌شود. `agent show` آدرس API و توکن را برای ثبت در هاب چاپ می‌کند.
+توکن در `/etc/rathole-agent/token` (chmod 600) نگهداری می‌شود؛ اگر توکنی با `--token` (یا آرگومان CLI) داده نشود و فایل هم نباشد، یک توکن hex خودکار ساخته می‌شود. `agent show` آدرس و وضعیت حالت فعال (REST یا Reverse WS) و توکن را چاپ می‌کند.
 
-### قرارداد API
+### Reverse WebSocket Agent (`reverse_ws` — v2.4.0)
+
+وقتی IP نود یا پورت `8089` توسط فایروال/فیلترینگ/NAT بسته است ولی نود می‌تواند اتصال خروجی بزند، به‌جای گوش‌دادن سرور روی پورت ورودی، خودِ `ratholeagent.py` اتصال مداوم WebSocket (منطبق با RFC 6455 در `wsutil.py`) را از نود به هاب باز می‌کند:
+
+- **مسیر اتصال روی هاب:** `GET /hub/ws/agent` (روی پورت `443` پشت TLS Nginx؛ مناسب عبور از فیلترینگ) یا `GET /ws/agent` (مثلاً اتصال مستقیم `ws://<HUB_IP>:8088/ws/agent`).
+- **نصب از CLI (نود یا ایران):**
+  ```bash
+  sudo ratholenode agent reverse "wss://<DOMAIN>/hub/ws/agent" "<NAME>" "<TOKEN>" [--insecure-ssl] [--proxy <url>]
+  # روی سرور ایران:
+  sudo ratholectl agent reverse "wss://<DOMAIN>/hub/ws/agent" "<NAME>" "<TOKEN>" [--insecure-ssl] [--proxy <url>]
+  # یا با install-agent.sh:
+  sudo install-agent.sh --role node --reverse "wss://<DOMAIN>/hub/ws/agent" --name "<NAME>" --token "<TOKEN>" [--insecure-ssl] [--proxy <url>]
+  ```
+- **امکانات و ایمنی:** پشتیبانی از `--insecure-ssl` (برای گواهی self-signed هاب)، `--proxy <http://host:port>` (HTTP `CONNECT`)، Ping/Pong و TCP Keepalive خودکار، صف موازی اجرای دستورات (`ThreadPoolExecutor(16)`)، سقف فریم 4 MiB، backoff نمایی اتصال مجدد، شناسایی خودکار IP نود هنگام اعمال FRP/GRE/تیونر و اجرای آپدیت راه‌دور (`deploy`) روی نشست معکوس. در اتصال مجدد، نشست تازه به‌صورت اتمیک جایگزین نشست قبلی می‌شود.
+- **در رابط کاربری هاب:** هنگام افزودن سرور، گزینهٔ **Reverse WebSocket (`reverse_ws`)** در `#conn_tr` مودال کپی دستور آماده را باز می‌کند؛ همچنین روی سرورهای آفلاین REST API در `#/server/<name>` دکمهٔ تبدیل یک‌کلیکی به `reverse_ws` نمایش داده می‌شود و پس از اتصال، badge وضعیت آنلاین/در انتظار و قابلیت چرخش توکن (`rotate_token`) فعال می‌گردد.
+
+رکورد سرور `reverse_ws` در inventory:
+
+```json
+{"name":"node1","role":"node","transport":"reverse_ws","api_token":"<token>"}
+```
+
+### قرارداد API (حالت REST مستقیم)
 
 ```
 GET /api/ping
-→ {"ok":true,"role":"node","version":"1.0.0","hostname":"..."}      # بدون احراز هویت
+→ {"ok":true,"role":"node","version":"2.0.0","hostname":"..."}      # بدون احراز هویت
 
 POST /api/exec
 Authorization: Bearer <token>
@@ -183,18 +207,19 @@ Authorization: Bearer <token>
 → {"ok":true,"rc":0,"out":"...","err":""}
 ```
 
+- در سرور REST (`_AgentHTTPServer`) صف اتصال `request_queue_size = 64` به همراه `TCP_NODELAY` و TCP Keepalive فعال است و قطع سوکت پیش از پاسخ (`BrokenPipeError`/`ConnectionResetError`) تمیز مدیریت می‌شود.
 - احراز هویت: هدر `Authorization: Bearer <token>` با compare ثابت‌زمان (اجرای agent با توکن خالی مسدود است)؛ هدر غایب/طرح نامعتبر → `401`، توکن اشتباه → `403`.
 - بدنه: ۱ بایت تا ۱ مگابایت؛ `cmd` باید لیست غیرخالی از رشته‌ها باشد (بدون NUL)؛ `timeout` عدد صحیح ۱ تا ۳۶۰۰ ثانیه. پیشوند اختیاری `["timeout", N, ...]` هم پذیرفته و clamp می‌شود.
 - **لیست‌سفید باینری**: `ratholectl`، `ratholenode`، `systemctl`، `journalctl`، `jq`، `tail` (هر باینری دیگری یا `cmd[0]` دارای `/` → `403`).
 - اجرا مستقیم argv است (بدون شل)؛ در timeout، process group کشته می‌شود.
-- پیش‌فرض شنود: `--host 0.0.0.0 --port 8089 --role node|iran`.
+- پیش‌فرض شنود REST: `--host 0.0.0.0 --port 8089 --role node|iran`.
 
 ### HTTPS و گواهی self-signed
 
 - Agent: `--tls-cert`/`--tls-key`، یا `RATHOLE_AGENT_TLS_CERT`/`RATHOLE_AGENT_TLS_KEY`، یا فایل‌های پیش‌فرض `/etc/rathole-agent/cert.pem` و `key.pem`.
-- هاب به‌طور پیش‌فرض گواهی را verify می‌کند؛ برای گواهی self-signed در رکورد سرور `insecure_ssl: true` بگذارید یا روی هاب `RATHOLE_AGENT_INSECURE_SSL=1` ست کنید.
+- هاب به‌طور پیش‌فرض گواهی را verify می‌کند؛ برای گواهی self-signed در حالت REST رکورد سرور `insecure_ssl: true` بگذارید (یا `RATHOLE_AGENT_INSECURE_SSL=1`) و در حالت Reverse WS از فلگ `--insecure-ssl` روی کلاینت نود استفاده کنید.
 
-### سمت هاب
+### سمت هاب (REST مستقیم)
 
 رکورد سرور در inventory:
 
@@ -204,21 +229,22 @@ Authorization: Bearer <token>
  "insecure_ssl":true}
 ```
 
-`api_url` فقط باید طرح (`http`/`https`) + هاست + پورت اختیاری داشته باشد (بدون مسیر، userinfo یا query). هاب هر argv را به `<api_url>/api/exec` می‌فرستد (`run_on_agent`) و `{rc,out,err}` را مثل SSH برمی‌گرداند؛ پروکسی سراسری/سرور روی همین درخواست هم اعمال می‌شود. همه‌ی actionها همچنان از allow-list `hubcmds.py` عبور می‌کنند و عملیات نوشتاری در audit ثبت می‌شود. Agent پیش‌فرض روی همه‌ی اینترفیس‌ها گوش می‌دهد؛ پورت `8089` و توکن را محدود/محافظت کنید.
+`api_url` فقط باید طرح (`http`/`https`) + هاست + پورت اختیاری داشته باشد (بدون مسیر، userinfo یا query). هاب هر argv را به `<api_url>/api/exec` می‌فرستد (`run_on_agent`) و `{rc,out,err}` را مثل SSH برمی‌گرداند؛ پروکسی سراسری/سرور روی همین درخواست هم اعمال می‌شود. در حالت `reverse_ws` همان argv از طریق `run_on_reverse_agent` روی سوکت WebSocket بازشده از سوی نود فرستاده می‌شود. همه‌ی actionها همچنان از allow-list `hubcmds.py` عبور می‌کنند و عملیات نوشتاری در audit ثبت می‌شود.
 
 ## مرجع REST API
 
-همه‌ی مسیرها هدر `Authorization: Bearer <API_TOKEN>` (یا کوکی نشست از UI) می‌خواهند؛ فقط `GET /api/health` عمومی است. همان مسیرها با پیشوند `/hub/api/...` هم پذیرفته می‌شوند (چون nginx هاب را زیر `/hub/` سرو می‌کند).
+همه‌ی مسیرها هدر `Authorization: Bearer <API_TOKEN>` (یا کوکی نشست از UI) می‌خواهند؛ فقط `GET /api/health` عمومی است و `GET /ws/agent` با توکن سرور یا کوکی هاب احراز هویت می‌شود. همان مسیرها با پیشوند `/hub/api/...` (و `/hub/ws/agent`) هم پذیرفته می‌شوند (چون nginx هاب را زیر `/hub/` سرو می‌کند).
 
 | متد | مسیر | توضیح |
 |-----|------|-------|
 | GET | `/api/health` | عمومی: `{ok, mock}` |
+| GET | `/ws/agent` \| `/hub/ws/agent` | نقطه اتصال WebSocket برای `reverse_ws` Agent (ارتقای RFC 6455 + احراز هویت Bearer) |
 | POST | `/api/login` | `{"password":"..."}` → `{ok, token}` (همان API token) + کوکی `rhsession` |
 | GET | `/api/hubstatus` | وضعیت هاب: uptime/load/RAM/دیسک، سرویس‌ها، پروکسی، `latest_version` |
-| GET | `/api/servers` | لیست inventory |
-| POST | `/api/servers` | افزودن سرور: `{name, role, transport, host/ssh_user/ssh_port یا api_url/api_token, proxy?}` |
-| PUT | `/api/servers/<name>` | ویرایش رکورد |
-| DELETE | `/api/servers/<name>` | حذف رکورد |
+| GET | `/api/servers` | لیست inventory (به‌همراه وضعیت نشست آنلاین/در انتظار برای `reverse_ws`) |
+| POST | `/api/servers` | افزودن سرور: `{name, role, transport ("ssh"|"api"|"reverse_ws"), ...}` |
+| PUT | `/api/servers/<name>` | ویرایش رکورد (پشتیبانی از `rotate_token` برای تولید توکن جدید در `reverse_ws`) |
+| DELETE | `/api/servers/<name>` | حذف رکورد (و بستن نشست فعال در `reverse_ws`) |
 | POST | `/api/provision` | نصب خودکار با رمز SSH (کلید + deploy + ثبت) |
 | GET | `/api/servers/<name>/status` | اجرای چند بررسی read-only (`status`، `doctor`، `kcp_status`، `plain_status`، `noise_status`، `backhaul_status` و …) |
 | GET | `/api/servers/<name>/overview` | خلاصه + نسخه + doctor + carrierها + status |
@@ -240,8 +266,9 @@ Authorization: Bearer <token>
 | GET | `/api/releases/asset` | رله دریافت بسته‌های ریلیز و امضای Ed25519 از درون تونل |
 | POST | `/api/tuner/start` | شروع بنچمارک ۶ مرحله‌ای `rathole-tuner` (دسترسی `operate`) |
 | GET/POST | `/api/tuner/jobs` \| `/api/tuner/jobs/<id>/cancel` | وضعیت یا توقف جاب‌های بنچمارک تیونر |
+| GET | `/api/tuner/status` | دریافت وضعیت زنده کرنل دو سرور (`cc`، `qdisc`، `mtu`، `rmem_max`، `notsent_lowat`، پروفایل فعال) |
 | GET/POST/DELETE | `/api/tuner/profiles` | کتابخانه پروفایل دیتاسنترها (ایمپورت/خروجی `rthprof1:` و JSON) |
-| POST | `/api/tuner/apply` \| `/api/tuner/rollback` | اعمال دائمی یا بازگشت تنظیمات تیونر روی هر دو سرور |
+| POST | `/api/tuner/apply` \| `/api/tuner/rollback` | اعمال دوفازه‌ای ایمن (`--confirm-ttl 45` + `bench confirm`) با بازگشت خودکار ایران در صورت شکست نود، یا Rollback دستی |
 | POST | `/api/servers/<name>/action` | `{"action":"...","args":{...}}` → اجرای یک action مجاز |
 | GET | `/api/config` | پیکربندی redact‌شده (توکن فقط hint) |
 | POST | `/api/config` | چرخش توکن / تغییر رمز مدیر / پروکسی / `ssh_key_path` |
@@ -267,18 +294,18 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST $B/api/servers \
 هاب هیچ‌وقت **رشته‌ی خام** روی سرورها اجرا نمی‌کند. هر درخواست به یک `action` مجاز از allow-list نگاشت می‌شود و آرگومان‌ها با regex (خانواده‌ی `RE_*`) اعتبارسنجی می‌شوند؛ سپس `build_iran_cmd`/`build_node_cmd` آن را به یک **argv لیستی** تبدیل می‌کنند:
 
 - روی SSH: argv به‌صورت shell-safe (`shlex.join`) بعد از `--` به SSH داده می‌شود (`run_on_server` → `_ssh_base`).
-- روی REST Agent: همان argv به‌صورت آرایه‌ی JSON به `/api/exec` POST می‌شود؛ هیچ شلی در کار نیست.
+- روی REST Agent / Reverse WS Agent: همان argv به‌صورت آرایه‌ی JSON از طریق `POST /api/exec` (یا فریم RFC 6455 روی `/hub/ws/agent` از طریق `run_on_reverse_agent`) فرستاده می‌شود؛ هیچ شلی در کار نیست.
 
 این نقشه (regexها، `build_*_cmd`، `WRITE_ACTIONS`) از v1.6 در ماژول جدا و کوچکی به نام **`hubcmds.py`** زندگی می‌کند تا حساس‌ترین بخش هاب قابل‌مرور بماند.
 
-- **whitelist دقیق**: هر action تازه باید هم به `build_*_cmd` مربوطه و هم به allow-list افزوده شود و هر آرگومانش با regex بررسی شود.
-- **مشترک (هر دو نقش)**: `deploy` (آپدیت از راه دور: `install.sh --update` روی خود سرور + snapshot/rollback)، `status`, `version`, `logs`.
+- **whitelist دقیق**: هر action تازه باید هم به `build_*_cmd` مربوطه و هم به allow-list افزوده شود و هر آرگومانش با regex بررسی شود (`bench_confirm` در `v2.4.0` به `WRITE_ACTIONS` اضافه شده است).
+- **مشترک (هر دو نقش)**: `deploy` (آپدیت از راه دور: `install.sh --update` روی خود سرور + snapshot/rollback، حتی از طریق `reverse_ws`)، `status`, `version`, `logs`, `bench_apply`, `bench_confirm`, `bench_rollback`, `bench_status`.
 - **iran**: `ls`, `doctor`, `status`, `regen`, مدیریت transport (`kcp_*`, `plain_*`, `noise_*`, `backhaul_*`, `frp_*`, `gre_*`, `direct_*`)، مدیریت game (`game_*` — `game_cert` گواهی Let's Encrypt می‌گیرد و خروجی شامل **کلید خصوصی** است؛ فقط از هابِ احرازشده استفاده کن و لاگ نگه ندار)، مدیریت نود (`add_node`, `rm_node`, `edit_node`, `rename_node`, `rotate_node`, `show_node`)، دامنه/TLS (`domain_*`, `tls_*`) و ریورس‌پروکسی غیرتونلی (`proxy_*`).
 - **node**: `show`, `ls`, `upstream_*`, `set_server`, `set_main`, مدیریت سرویس (`add_svc`, `rm_svc`, `add_bh_svc`, `rm_bh_svc`)، کنترل مسیر (`control_path_*`)، transport (`kcp_*`, `plain_*`, `noise_*`, `backhaul_*`, `frp_*`, `gre_*`)، watchdog/adaptive و `apply`/`restart`/`migrate`.
 - **`WRITE_ACTIONS`** مجموعه‌ی actionهای نوشتاری را مشخص می‌کند؛ همان‌ها (به‌همراه `deploy`، `provision` و `config_save`) در **audit log** ثبت می‌شوند: کاربر (IP)، سرور، action، دستور و `rc` — فایل append-only در `/etc/ratholehub/audit.log` و قابل‌مشاهده در `#/audit`.
 - روی `127.0.0.1` می‌شنود (پشت nginx زیر `/hub/` یا SSH-forward)؛ هیچ پورت عمومی جدیدی باز نمی‌شود. ورود مدیر محدود به ۵ تلاش ناموفق در ۵ دقیقه برای هر IP است (`429`)؛ کوکی نشست `rhsession` = `hmac(api_token, expiry)` با اعتبار ۲۴ ساعت.
 - `deploy_to_server` (دکمه‌ی «آپدیت»/«آپدیت همه») روی خودِ سرور آخرین `install.sh` را از GitHub (از طریق حلقه‌ی mirror ghproxy) می‌گیرد و با `--update` اجرا می‌کند؛ slug مخزن از config (`gh_repo`، پیش‌فرض `l8PYGIT/RatholeEngine`، اعتبارسنجی با `RE_SLUG`) و کانال از `update_channel` (`stable|beta`، `RE_CHAN`) می‌آید و فقط همین دو مقدارِ اعتبارسنجی‌شده در دستور ثابت `bash -c` جای‌گذاری می‌شوند.
-- **REST Agent**: احراز هویت Bearer، مقایسهٔ ثابت‌زمان، لیست‌سفید باینری، سقف ۱ مگابایت بدنه و timeout ۱–۳۶۰۰ ثانیه. جزئیات در [حالت REST Agent](#حالت-rest-agent-بدون-ssh).
+- **REST / Reverse WS Agent**: احراز هویت Bearer، مقایسهٔ ثابت‌زمان، لیست‌سفید باینری (`ALLOWED_BINARIES`)، سقف ۱ مگابایت بدنه در HTTP و سقف فریم ۴ مگابایت در WebSocket (`wsutil.py`)، و timeout ۱–۳۶۰۰ ثانیه. جزئیات در [حالت REST و Reverse WS Agent](#حالت-rest-و-reverse-ws-agent-بدون-ssh).
 
 ## توسعه‌ی محلی (حالت Mock)
 
@@ -295,17 +322,20 @@ RATHOLEHUB_MOCK=1 RATHOLEHUB_PORT=8088 python3 rathole-manager/ratholehub/hub.py
 UI دیگر درون `hub.py` نیست و در `ratholehub/ui/` کنار آن زندگی می‌کند:
 
 ```
-ratholehub/
-├── hub.py          سرور اصلی (ThreadingHTTPServer، routing، SSH/Agent، API)
-├── hubcmds.py      نقشهٔ action→argv + regexهای آرگومان (حساس؛ کوچک بماند)
-├── ssh_proxy.py    پل SOCKS5/HTTP CONNECT برای SSH از طریق پروکسی
-├── README.md       همین سند به‌صورت خلاصه
-└── ui/
-    ├── index.html
-    ├── app.css
-    ├── app.js
-    ├── i18n.js         رشته‌های فارسی/انگلیسی
-    └── vazirmatn.woff2 فونت متغیر آفلاین (RTL)
+rathole-manager/
+├── ratholeagent.py   دیمن Agent دوحالته (REST :8089 و Reverse WS خروجی)
+├── wsutil.py         ماژول خالص stdlib کلاینت/سرور RFC 6455 WebSocket
+└── ratholehub/
+    ├── hub.py        سرور اصلی (ThreadingHTTPServer، routing، SSH/Agent/WS، API)
+    ├── hubcmds.py    نقشهٔ action→argv + regexهای آرگومان (حساس؛ کوچک بماند)
+    ├── ssh_proxy.py  پل SOCKS5/HTTP CONNECT برای SSH از طریق پروکسی
+    ├── README.md     همین سند به‌صورت خلاصه
+    └── ui/
+        ├── index.html
+        ├── app.css
+        ├── app.js
+        ├── i18n.js         رشته‌های فارسی/انگلیسی
+        └── vazirmatn.woff2 فونت متغیر آفلاین (RTL)
 ```
 
 فایل‌ها با **لیست‌سفید نام فایل** سرو می‌شوند (هیچ path joining، پس path traversal ممکن نیست). `install-hub.sh` و `update.sh` کل درخت را نصب/به‌روز می‌کنند.

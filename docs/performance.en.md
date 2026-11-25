@@ -7,18 +7,18 @@ This guide covers every place you can improve speed and stability after the tunn
 
 ---
 
-## 0A) Automated Brutal Benchmark & Auto-Tuner (`rathole-tuner` / `bench`, `v2.3.0+`)
+## 0A) Automated Brutal Benchmark & Auto-Tuner (`rathole-tuner` / `bench`, `v2.3.0+` / `v2.4.0`)
 
 Instead of guessing `sysctl` values or `MTU`, use **`rathole-tuner`** (via `ratholectl bench` / `ratholenode bench` or **`#/tuner`** in RatholeHub) to sweep the Iran↔node link across **6 stages**:
 
 ![rathole-tuner Architecture](assets/tuner-architecture.svg)
 
-1. **Binary PMTU & TCP MSS probe** (discovers fragmentation ceiling and PMTU blackholes)
-2. **NIC Offloads** (`TSO` / `GSO` / `GRO`)
-3. **Congestion Control & Qdisc** (`BBR`, `CAKE`, `FQ`, `CUBIC`)
-4. **TCP/UDP Buffers & Socket Knobs** (`rmem_max`, `wmem_max`, `tcp_rmem`, `tcp_notsent_lowat`, `initcwnd`)
-5. **Loaded Bufferbloat Stress Sweep** (throughput, loaded RTT p95, jitter, retransmissions, stability CoV)
-6. **Carrier Matrix & Non-Kernel Audit** (audits `Xray`, `Nginx`, `OpenSSL AES`, and `LimitNOFILE`) with **5D weighted scoring** and a deterministic **dead-man Watchdog rollback**.
+1. **Binary PMTU & TCP MSS probe** (detects UDP-blocked paths up front and falls back to `TCP_INFO` PMTU so blocked UDP never collapses MTU to `1200`)
+2. **NIC Offloads** (`TSO` / `GSO` / `GRO` — ignores `[fixed]` capabilities reported by `ethtool -k`, skips no-op mutations, and avoids disabling `TSO`/`GSO`)
+3. **Congestion Control & Qdisc** (`BBR`, `CAKE`, `FQ`, `CUBIC`, `hybla`, plus clean restoration of `mq`/`noqueue`/`default` qdiscs via `tc qdisc del dev <iface> root`)
+4. **TCP/UDP Buffers & Socket Knobs** (8/16/32 MiB floors clamped to 10% RAM for `rmem_max`/`wmem_max`, safe `262144` KiB cap for `rmem_default`/`wmem_default`, proxy-safe `tcp_notsent_lowat`, and `src <IP>` / `onlink` preservation on default routes)
+5. **Loaded Bufferbloat Stress Sweep** (throughput, loaded RTT p95, jitter, retransmissions, stability CoV, plus throughput non-regression guard so slower candidates cannot beat Baseline)
+6. **Carrier Matrix & Non-Kernel Audit** (audits `Xray`, `Nginx`, `OpenSSL AES`, and `LimitNOFILE`) with **5D weighted scoring**, initial pre-tuner `snapshot_path` preservation, and **two-phase dead-man Watchdog confirmation**.
 
 ```bash
 # On the foreign node: start ephemeral HMAC-authenticated responder
@@ -31,15 +31,17 @@ sudo ratholectl bench run --peer <NODE_IP>:44990 --token <SECRET> \
 # Live A/B/N profile comparison (only keeps winner when goal score beats baseline)
 sudo ratholectl bench test --peer <NODE_IP>:44990 --token <SECRET> --profile "rthprof1:..."
 
-# Persist winner to /etc/sysctl.d/99-rathole-tuner.conf or revert cleanly:
-sudo ratholectl bench apply --profile /tmp/dc.json
+# Two-phase dead-man Watchdog persistent apply (/etc/sysctl.d/99-rathole-tuner.conf), confirm, inspect, or revert:
+sudo ratholectl bench apply --profile /tmp/dc.json --confirm-ttl 45
+sudo ratholectl bench confirm <CONFIRM_ID>
+sudo ratholectl bench status --json
 sudo ratholectl bench rollback
 
 # Audit non-kernel stack (Xray / Nginx / OpenSSL / ulimit):
 sudo ratholectl bench audit --json
 ```
 
-> **Portable AI Profiles (`rthprof1:`):** Every run emits structured `rathole.netprofile.v1` JSON plus a gzip + SHA-256 verified `rthprof1:<base64url>` token you can paste into an AI assistant for root-cause diagnostics, share per datacenter pair, and import into Hub **`#/tuner`**.
+> **Two-phase Watchdog confirmation (`v2.4.0`) & Portable AI Profiles (`rthprof1:`):** When Hub applies a profile with `--confirm-ttl 45`, an independent `bench confirm <id>` round-trip must succeed within 45s or the dead-man watchdog reverts `sysctl --system` + `restore_snapshot()` automatically (and Hub rolls back Iran immediately if Node fails confirmation). Every run emits structured `rathole.netprofile.v1` JSON plus `rthprof1:<base64url>` with live kernel verification (`GET /api/tuner/status`) and persistent job state (`GET /api/tuner/jobs`) in **`#/tuner`**.
 
 ---
 
@@ -117,7 +119,7 @@ ratholenode tune    # on foreign node
 
 Sets these without a reboot or tunnel interruption:
 - **BBR + fq** (modern congestion control; biggest kernel win).
-- **Large UDP buffers** (`rmem_max/wmem_max=25 MB`) — required for high-throughput kcp.
+- **Large UDP/TCP max buffers with safe socket defaults** (`rmem_max/wmem_max=25 MB` required for high-throughput KCP/QUIC, paired with `rmem_default=262144` / `wmem_default=262144` — 256 KiB in `v2.4.0` — to avoid memory exhaustion under high connection counts).
 - file-max / conntrack_max / somaxconn / backlog — eliminates 502s under burst.
 - tcp_fastopen, mtu_probing, slow_start_after_idle=0.
 
@@ -189,12 +191,12 @@ The mux profile (`common.sh:backhaul_mux_profile`) must be **identical on both e
 
 ---
 
-## 7) Management Plane (REST Agent / HTTPS) — Negligible Overhead
+## 7) Management Plane (REST Agent / Reverse WS Agent / HTTPS) — Negligible Overhead
 
-- The agent is a **control plane**, not a data path: no user traffic byte passes through it. Only management commands (status/apply/restart/…) are sent as one short `POST /api/exec` request.
-- The server is a `ThreadingHTTPServer`, so concurrent management requests do not block each other. Each call is an independent request (no persistent keep-alive) and the hub's default timeout is 120 s.
-- HTTPS adds one TLS handshake per request; because calls are few and short, its overhead is effectively zero next to tunnel traffic. A self-signed certificate requires `insecure_ssl: true` on the server record (or `RATHOLE_AGENT_INSECURE_SSL=1`).
-- The agent listens on `0.0.0.0:8089` by default; change the port or firewall it to the management network (payload capped at 1 MiB and a binary allow-list is enforced).
+- The agent (v`2.0.0`, running either direct REST on `:8089` or outbound **Reverse WebSocket (`reverse_ws`, `wsutil.py`)** to `/hub/ws/agent`) is a **control plane**, not a data path: no user traffic byte passes through it. Only management commands (`status`/`apply`/`restart`/…) are exchanged over `POST /api/exec` or RFC 6455 WebSocket frames.
+- Direct REST (`ThreadingHTTPServer`) uses `request_queue_size = 64`, `TCP_NODELAY`, and TCP keepalive; `reverse_ws` maintains one persistent outbound WebSocket with Ping/Pong keepalive and `ThreadPoolExecutor(16)` command workers — zero impact on tunnel data throughput.
+- HTTPS adds negligible TLS setup overhead (`reverse_ws` reuses one persistent TLS connection behind Nginx `:443`). Self-signed certs require `insecure_ssl: true` (or `RATHOLE_AGENT_INSECURE_SSL=1`) in `api` mode, or `--insecure-ssl` on the agent CLI in `reverse_ws` mode.
+- Restrict/firewall port `8089` in direct `api` mode; in `reverse_ws` mode **zero inbound ports** are opened on the target (1 MiB HTTP payload cap, 4 MiB WS frame cap, and `ALLOWED_BINARIES` allow-list enforced).
 
 ---
 

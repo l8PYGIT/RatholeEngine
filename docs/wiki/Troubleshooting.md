@@ -1,6 +1,6 @@
 # عیب‌یابی، بک‌آپ و رول‌بک
 
-**نسخه‌ی مرجع: v2.0.2** — این صفحه شامل عیب‌یابی تانل، **REST Agent**، ناسازگاری حامل‌ها (Backhaul/FRP/GRE)، آپدیت از مخزن خصوصی و رول‌بک است.
+**نسخه‌ی مرجع: v2.4.0** — این صفحه شامل عیب‌یابی تانل، **REST و Reverse WS Agent**، Watchdog دوفازه‌ای **`rathole-tuner`**، ناسازگاری حامل‌ها (Backhaul/FRP/GRE)، آپدیت از مخزن خصوصی و رول‌بک است.
 
 !!! tip "📢 گیر کردی؟ کانال تلگرام [@l8PY4NET](https://t.me/l8PY4NET)"
     سریع‌ترین راه گرفتن جواب همین‌جاست. اگر باگ است و لاگ داری،
@@ -97,19 +97,30 @@ sudo journalctl -u rathole-agent -n 50 --no-pager
 | نود وصل است ولی ترافیک نمی‌رسد | `map $uri` یا `inbound_port` اشتباه | `ratholectl ls` → port نود با config Xray/VLESS تطبیق بده |
 | بعد از `control-path rotate` تانل قطع شد | نود به‌روزرسانی نشده یا core قدیمی است | `ratholenode control-path set '<مسیر>'` و برای هر upstream: `ratholenode upstream control-path <id> set '<مسیر>'`؛ مسیر `/` همیشه سازگار است |
 
-### REST Agent (مدیریت بدون SSH)
+### REST و Reverse WS Agent (مدیریت بدون SSH)
 
 | نشانه | علت | راه‌حل |
 |-------|-----|---------|
-| هاب badge `no_agent` یا `Agent connection error` | سرویس agent خاموش، پورت اشتباه، یا فایروال | `sudo ratholectl agent status`، `journalctl -u rathole-agent -n 30`، سپس `curl -s http://<ip>:8089/api/ping` (بدون auth) |
+| هاب badge `no_agent` یا `Agent connection error` | سرویس agent خاموش، پورت `8089` بسته، یا IP نود فیلتر شده | `sudo ratholectl agent status`، `journalctl -u rathole-agent -n 30`، تست `curl -s http://<ip>:8089/api/ping`؛ اگر IP/پورت `8089` فیلتر است، در صفحهٔ سرور روی تبدیل به **`reverse_ws`** بزنید و `ratholenode agent reverse ...` را اجرا کنید |
+| سرور `reverse_ws` در حالت انتظار می‌ماند (وصل نمی‌شود) | نود نتوانسته اتصال خروجی WebSocket به `/hub/ws/agent` بزند یا گواهی TLS خودامضاست | لاگ `journalctl -u rathole-agent -n 40` را ببینید؛ برای گواهی self-signed پرچم `--insecure-ssl` و در صورت نیاز `--proxy http://host:port` اضافه کنید، یا مستقیم با `ws://<HUB_IP>:8088/ws/agent` تست بگیرید و از پشتیبانی Nginx از `Upgrade`/`Connection` مطمئن شوید |
+| ورود `--name` یا توکن با سرور هاب نمی‌خواند (قطع WebSocket) | `--name` یا `api_token` بین نود و رکورد هاب ناهماهنگ است | در ویرایش سرور هاب توکن درست (یا `rotate_token`) را بگذارید، با `--name` دقیقاً برابر نام سرور در هاب اجرا کنید و `ratholenode agent restart` بزنید |
 | ۴۰۱ `Missing Authorization header` یا `Invalid Authorization scheme` | توکن در رکورد هاب خالی/غلط است یا درخواست بدون Bearer می‌رود | رکورد سرور را در هاب Edit کن و `api_token` را بگذار؛ `sudo ratholectl agent token` مقدار درست را می‌دهد |
 | ۴۰۳ `Invalid token` | توکن هاب با `/etc/rathole-agent/token` یکی نیست (بعد از reinstall/rotate) | توکن را از agent بخوان و در رکورد سرور به‌روزرسانی کن؛ `ratholectl agent restart` |
 | `connection reset`/قطع ناگهانی یا بدنه‌ی بزرگ رد می‌شود | payload باید ۱ بایت تا ۱ مگابایت و `cmd` لیست غیرخالی رشته باشد | اندازه‌ی بدنه و شکل `{"cmd":[...]}` را بررسی کن (سرورهای قدیمی‌تر بدنه را در auth-fail نمی‌خواندند؛ آپدیت کن) |
 | `Binary '...' is not permitted` | agent فقط allow-list را اجرا می‌کند | از `ratholectl`/`ratholenode`/`systemctl`/`journalctl`/… (فهرست مجاز) استفاده کن یا action هاب را برای همان کار بساز |
 | `Execution timed out` یا `rc:124` | دستور طولانی‌تر از timeout بود (max ۳۶۰۰ ثانیه) | همان دستور را دستی روی سرور اجرا کن؛ برای `doctor`/`update` زمان کافی بده |
-| خطای `CERTIFICATE_VERIFY_FAILED` (HTTPS self-signed) | هاب گواهی agent را trust نمی‌کند | در رکورد همان سرور `insecure_ssl: true` بگذار (یا `RATHOLE_AGENT_INSECURE_SSL=1` در محیط هاب)، یا گواهی معتبر نصب کن (`--tls-cert`/`--tls-key`) |
-| برای نود REST API فیلدهای IP در GRE خالی است | `public_ip` روی رکورد ثبت نشده و autodetect نشد | در Edit server هاب `public_ip` را دستی بگذار |
-| agent بعد از آپدیت خاموش شد | unit فعال نبوده یا توکن جابه‌جا شده | `update.sh` اگر unit موجود باشد آن را ری‌استارت می‌کند و توکن `/etc/rathole-agent/token` را حفظ می‌کند؛ در غیر این صورت `ratholectl agent on` |
+| خطای `CERTIFICATE_VERIFY_FAILED` (HTTPS self-signed) | هاب گواهی agent را trust نمی‌کند | در حالت REST روی هاب `insecure_ssl: true` (یا `RATHOLE_AGENT_INSECURE_SSL=1`) بگذارید و در حالت `reverse_ws` پرچم `--insecure-ssl` را به کلاینت بدهید |
+| برای نود REST API / Reverse WS فیلدهای IP در GRE خالی است | `public_ip` روی رکورد ثبت نشده و autodetect نشد | از v2.4.0 هاب IP خروجی نشست `reverse_ws` را خودکار می‌گیرد؛ در صورت چند-IP بودن، `public_ip` را در Edit server دستی ست کنید |
+| agent بعد از آپدیت خاموش شد | unit فعال نبوده یا توکن legacy در unit بود | `update.sh` از v2.4.0 علاوه بر حفظ توکن و نصب `wsutil.py`، ری‌استارت `rathole-agent` را به‌صورت جداشده (`_schedule_agent_restart`) انجام می‌دهد؛ در صورت نیاز `ratholectl agent on` |
+
+### تیونر شبکه (`rathole-tuner`) و Watchdog دوفازه‌ای (`v2.4.0`)
+
+| نشانه | علت | راه‌حل |
+|-------|-----|---------|
+| تنظیمات کرنل حدود ۴۵ ثانیه پس از Apply خودکار برگشت خورد | در حالت دوفازه‌ای (`--confirm-ttl 45`) فرمان `bench confirm <id>` به‌موقع نرسیده یا ارتباط پس از اعمال قطع شده است | این رفتار محافظتی ددمن-واچ‌داگ است تا سرور هرگز قفل نشود؛ وضعیت شبکه و ایجنت را چک کن و دوباره Apply بزن، یا از `bench apply --profile ... --confirm-ttl 45` و بلافاصله `bench confirm <id>` استفاده کن |
+| سرعت پس از اعمال پروفایل کاهش یافته | اتصالات قدیمی روی پارامترهای قبلی باز مانده‌اند یا نیاز به بازگشت به اسنپ‌شات قبل است | ابتدا تانل/سرویس را یک‌بار restart کن تا سوکت‌های تازه از sysctl جدید استفاده کنند؛ اگر باز هم مناسب نبود در هاب Rollback بزن یا `sudo ratholectl bench rollback` (و `ratholenode bench rollback`) را اجرا کن |
+| خطای MTU پایین (`1200`) در مسیرهایی که UDP فیلتر است | نسخه قدیمی تیونر (پیش از `v2.3.4`) انسداد UDP را به اشتباه blackhole تشخیص می‌داد | هر دو سمت را به `v2.4.0` آپدیت کن تا `probe_pmtu()` انسداد UDP را تشخیص دهد و از `TCP_INFO` استفاده کند |
+| وضعیت زنده کرنل یا پیشرفت بنچمارک پس از رفرش دیده می‌شود؟ | از v2.3.2–v2.4.0 جاب‌های `#/tuner` ذخیره می‌شوند و وضعیت زنده در `GET /api/tuner/status` برگردانده می‌شود | صفحه `#/tuner` را رفرش کن یا روی سرور `sudo ratholectl bench status --json` بزن |
 
 ### ناسازگاری حامل‌ها (Carrier Mismatch)
 

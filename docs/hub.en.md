@@ -1,15 +1,15 @@
 # ratholehub — Web Management Panel
 
-Central web panel for managing multiple Iran servers and foreign nodes without touching the existing system. The hub speaks **SSH with key auth** by default and can optionally drive servers through a token-authenticated **REST Agent** (no SSH).
+Central web panel for managing multiple Iran servers and foreign nodes without touching the existing system. The hub supports three connection transports: **SSH with key auth** (default), token-authenticated **REST Agent** (`api`, no SSH), and **Reverse WebSocket Agent** (`reverse_ws`, outbound from filtered/NAT nodes to `/hub/ws/agent` with zero open inbound ports).
 
 ![Hub architecture](assets/hub-architecture.svg)
 
-*Hub listens on `127.0.0.1` behind nginx at `/hub/`. It runs `ratholectl`/`ratholenode` on each server through a **validated argv list** — over SSH or the REST Agent, never raw shell strings.*
+*Hub listens on `127.0.0.1` behind nginx at `/hub/`. It runs `ratholectl`/`ratholenode` on each server through a **validated argv list** — over SSH, direct REST Agent, or Reverse WebSocket, never raw shell strings.*
 
 ## Why this design
 
-- **SSH by default, agent optional** — the hub runs on one server (usually rp01) and drives the rest over SSH with the already-tested CLIs; no new port or service on nodes. If SSH is not possible, install `ratholeagent.py` on the server and the hub runs the same argv lists over a token-authenticated REST API (default port `8089`) — see [REST Agent Mode](#rest-agent-mode-ssh-free).
-- **No pip dependencies** — hub and agent are pure Python stdlib. No conflicts with anything on the server.
+- **SSH by default, direct or reverse agent optional** — the hub runs on one server (usually rp01) and drives the rest over SSH with the already-tested CLIs. When SSH is not possible, `ratholeagent.py` (v2.0.0) can either listen as a token-authenticated REST API (default port `8089`) or dial outbound as a **Reverse WebSocket Agent (`reverse_ws`, `wsutil.py`)** to `/hub/ws/agent` behind Nginx `:443` — see [REST & Reverse WS Agent Mode](#rest--reverse-ws-agent-mode-ssh-free).
+- **No pip dependencies** — hub, agent, and RFC 6455 WebSocket transport (`wsutil.py`) are pure Python stdlib. No conflicts with anything on the server.
 - **Token-authenticated REST API** — for automation and external tooling.
 - **Secure** — listens on `127.0.0.1`; access via SSH forward or nginx under the same domain. Single-port/single-domain is preserved. Details in [Security Model](#security-model).
 
@@ -34,7 +34,9 @@ sudo ratholectl hub on 8088       # → https://<domain>/hub/
 ssh-copy-id -i /root/.ssh/id_ed25519.pub root@<node_ip>
 ```
 
-**3) REST Agent (no SSH):** install the agent on the target with `install-agent.sh` or `ratholectl agent on` / `ratholenode agent on`, then add the record with `transport: "api"`, `api_url`, and `api_token` — see [REST Agent Mode](#rest-agent-mode-ssh-free).
+**3) Direct REST Agent (no SSH):** install the agent on the target with `install-agent.sh` or `ratholectl agent on` / `ratholenode agent on`, then add the record with `transport: "api"`, `api_url`, and `api_token`.
+
+**4) Reverse WebSocket Agent (`reverse_ws`, no SSH and zero inbound ports — ideal behind NAT or firewalls):** select `reverse_ws` in the dashboard Add Server form (or click the convert-to-`reverse_ws` button inside an unreachable REST server's offline banner on `#/server/<name>`), then run the generated one-line `ratholenode agent reverse ...` / `ratholectl agent reverse ...` command on the target so it dials the Hub's `/hub/ws/agent` endpoint outbound — see [Reverse WebSocket Agent (`reverse_ws`)](#reverse-websocket-agent-reverse_ws--v240).
 
 > If the hub was brought up with `ratholectl hub on` on the same Iran server, the local server (`iran-main` at `127.0.0.1`) is auto-registered in the inventory and the hub key is authorized locally (`hub_auto_register_local`).
 
@@ -59,16 +61,16 @@ The UI is a static asset tree under `ratholehub/ui/` (`index.html`, `app.css`, `
 
 | Page | Hash | Content |
 |------|------|---------|
-| **Dashboard** | `#/dashboard` | **4 KPI cards** (servers, connectivity, nodes/services, hub health), hub status strip, role/reachability/text filter bar, server cards/table with carrier protocol and version badges, add-server/Provision forms, and Update All progress. |
-| **Server page** | `#/server/<name>` | Iran server: four tabs (Nodes & Paths, Carriers & Protocols, Network & Ingress, Maintenance & System), live table filter, `paqet`, Ports, and diagnostics. Node: main tunnel, quick presets, carrier select, watchdog & adaptive, `paqet`, Managed Xray (REALITY/XHTTP + cover scanner), upstreams, and diagnostics. |
-| **Network Tuner** | `#/tuner` | Async 6-stage `rathole-tuner` benchmark runner, 5D score strip, Baseline/Winner table, `rthprof1:` & JSON AI profile export/import, Datacenter Profile Library, live A/B testing, and two-sided apply/rollback (`/api/tuner/*`). |
+| **Dashboard** | `#/dashboard` | **4 KPI cards** (servers, connectivity, nodes/services, hub health), hub status strip, role/reachability/text filter bar, server cards/table with carrier protocol, version badges, and live online/waiting `reverse_ws` badges, add-server/Provision/`reverse_ws` modal, and Update All progress. |
+| **Server page** | `#/server/<name>` | Iran server: four tabs (Nodes & Paths, Carriers & Protocols, Network & Ingress, Maintenance & System), live table filter, `paqet`, Ports, and diagnostics. Node: main tunnel, quick presets, carrier select, watchdog & adaptive, `paqet`, Managed Xray (REALITY/XHTTP + cover scanner), `reverse_ws` setup / offline-conversion controls, upstreams, and diagnostics. |
+| **Network Tuner** | `#/tuner` | Async 6-stage `rathole-tuner` benchmark runner (persisted across refreshes via `GET /api/tuner/jobs`), live kernel state card (`GET /api/tuner/status`), 5D score strip, Baseline/Winner table, `rthprof1:` & JSON AI profile export/import, Datacenter Profile Library, live A/B testing, and two-phase dead-man Watchdog apply/confirm/rollback (`/api/tuner/*`). |
 | **Routing map** | `#/routing` | **Read-only**: three views — a draggable SVG graph (layout persisted in the browser, with reset), a summary table, and an ingress/output console with per-node client connection recipes. |
 | **Activity log** | `#/audit` | Last 100 SHA-256 hash-chained audit records (with live text filter): time, user, server, action, and `rc`. |
 | **Settings** | `#/settings` | 3-state Appearance selector (**Light / Dark / System**), language toggle, hub proxy, TOTP 2FA, scoped API tokens, standalone Monitor & Telegram Relay settings, Ed25519 relayed update policy, and admin password. |
 
 ![RatholeHub Auto-Tuner UI](assets/screenshots/tuner.png)
 
-Press **`⌘K / Ctrl+K`** anywhere (or click the sidebar trigger) to open the **Command Palette** and jump straight to any server, page (including `#/tuner`), or theme/language toggle. On mobile widths (≤820px) navigation collapses into a fixed bottom bar (`v2.3.0`). There is no wiring-board page; `#/wiring` falls back to `#/dashboard`.
+Press **`⌘K / Ctrl+K`** anywhere (or click the sidebar trigger) to open the **Command Palette** and jump straight to any server, page (including `#/tuner`), or theme/language toggle. On mobile widths (≤820px) navigation collapses into a fixed bottom bar (`v2.3.0`). **v2.4.0** adds native Reverse WebSocket (`reverse_ws`) onboarding and two-phase dead-man Watchdog kernel apply inside this UI. There is no wiring-board page; `#/wiring` falls back to `#/dashboard`.
 
 ### Per-node carrier selector (v2.0.4)
 
@@ -153,11 +155,11 @@ To edit, click **Manage** in the **Ports** section. `sub-path` and `hub-path` ar
 - **"Wire to node"** on the Iran node table — registers an Iran node (real name/token/inbound) as a service on a foreign node or one of its upstreams. Endpoint: `GET /api/servers/<iran>/nodeconnect/<node>` (the token is masked in `ls`), then `add_svc` (or `upstream_add_svc`).
 - **"Set main tunnel"** on every node page — links the node to a registered Iran server by setting `SERVER=host:443` (`set_server`/`set_main`). The Provision form also has an "Iran server" select and sets the main tunnel automatically after a successful deploy.
 
-## REST Agent Mode (SSH-free)
+## REST & Reverse WS Agent Mode (SSH-free)
 
-`rathole-manager/ratholeagent.py` is a **stdlib-only** daemon that lets the hub manage a server without SSH. Its systemd unit is `rathole-agent.service`.
+`rathole-manager/ratholeagent.py` (v**`2.0.0`**) together with the pure-stdlib RFC 6455 module **`rathole-manager/wsutil.py`** provides a dual-mode daemon for SSH-free management via either **direct REST** or outbound **Reverse WebSocket (`reverse_ws`)**. Its systemd unit on both roles is `rathole-agent.service` (hardened in v2.4.0 with `StartLimitIntervalSec=0`, `LimitNOFILE=65535`, and `KillMode=process`).
 
-### Install and manage
+### Install and manage (direct REST)
 
 ```bash
 # On the target itself (root; python3 required) — role auto-detected from /etc/rathole/server.toml or state.json
@@ -170,15 +172,37 @@ sudo ratholenode agent on 8089 [TOKEN]    # node
 sudo ratholectl agent status|token|show|restart|off
 ```
 
-On an installed server the agent is already shipped: `install-panel.sh`/`install-node.sh` place `ratholeagent.py` and `install-agent.sh` in `/usr/local/share/rathole/` and symlink `install-agent.sh` into `/usr/local/bin/`, so `sudo install-agent.sh ...` works without downloading anything. `update.sh` refreshes both files, restarts the unit, and keeps the existing token; the uninstallers remove the unit and `/etc/rathole-agent`.
+On an installed server the agent is already shipped: `install-panel.sh`/`install-node.sh` place `ratholeagent.py`, `wsutil.py`, and `install-agent.sh` in `/usr/local/share/rathole/` and symlink `install-agent.sh` into `/usr/local/bin/`, so `sudo install-agent.sh ...` works without downloading anything. `update.sh` snapshots and refreshes all three files, preserves the existing token, and schedules self-restarts outside the agent's systemd cgroup via `_schedule_agent_restart()`; the uninstallers remove the unit and `/etc/rathole-agent`.
 
-The token is stored in `/etc/rathole-agent/token` (chmod 600); if no token is supplied and the file does not exist, an automatic hex token is generated. `agent show` prints the API URL and token for the hub record.
+The token is stored in `/etc/rathole-agent/token` (chmod 600); if no token is supplied and the file does not exist, an automatic hex token is generated. `agent show` prints the active mode URL and token for the hub record.
 
-### API contract
+### Reverse WebSocket Agent (`reverse_ws` — v2.4.0)
+
+When a node's IP or port `8089` is filtered, firewalled, or behind NAT while outbound HTTPS works, `ratholeagent.py` initiates a persistent outbound WebSocket tunnel (RFC 6455 via `wsutil.py`) from the node to the Hub instead of listening on an inbound port:
+
+- **Hub endpoints:** `GET /hub/ws/agent` (behind Nginx on port `443` TLS) or `GET /ws/agent` (for example direct `ws://<HUB_IP>:8088/ws/agent`).
+- **CLI & installer commands:**
+  ```bash
+  sudo ratholenode agent reverse "wss://<DOMAIN>/hub/ws/agent" "<NAME>" "<TOKEN>" [--insecure-ssl] [--proxy <url>]
+  # Or on an Iran panel:
+  sudo ratholectl agent reverse "wss://<DOMAIN>/hub/ws/agent" "<NAME>" "<TOKEN>" [--insecure-ssl] [--proxy <url>]
+  # Or directly via install-agent.sh:
+  sudo install-agent.sh --role node --reverse "wss://<DOMAIN>/hub/ws/agent" --name "<NAME>" --token "<TOKEN>" [--insecure-ssl] [--proxy <url>]
+  ```
+- **Capabilities & safety:** supports `--insecure-ssl` (for self-signed Hub certs), `--proxy <http://host:port>` (HTTP `CONNECT`), Ping/Pong + TCP keepalive, concurrent execution via `ThreadPoolExecutor(16)`, a 4 MiB frame cap, exponential reconnect backoff with atomic session replacement, automatic node egress IP resolution for FRP/GRE/Tuner, and remote `deploy` updates over the Reverse WS channel.
+- **In Hub UI:** selecting `reverse_ws` in `#conn_tr` generates the token and opens the 1-line setup modal (`showReverseSetupModal`); unreachable REST servers also display a one-click convert-to-`reverse_ws` button inside their `#/server/<name>` offline help block, with live online/waiting status badges and `rotate_token` support.
+
+Inventory record for `reverse_ws`:
+
+```json
+{"name":"node1","role":"node","transport":"reverse_ws","api_token":"<token>"}
+```
+
+### API contract (direct REST)
 
 ```
 GET /api/ping
-→ {"ok":true,"role":"node","version":"1.0.0","hostname":"..."}      # no auth required
+→ {"ok":true,"role":"node","version":"2.0.0","hostname":"..."}      # no auth required
 
 POST /api/exec
 Authorization: Bearer <token>
@@ -186,18 +210,19 @@ Authorization: Bearer <token>
 → {"ok":true,"rc":0,"out":"...","err":""}
 ```
 
+- Direct REST server (`_AgentHTTPServer`) sets `request_queue_size = 64`, enables `TCP_NODELAY` and TCP keepalive, and swallows client disconnect `BrokenPipeError`/`ConnectionResetError` cleanly in `_send_json`.
 - Auth: `Authorization: Bearer <token>` with a constant-time compare (agent refuses requests/startup if token is empty); missing header/invalid scheme → `401`, wrong token → `403`.
 - Body: 1 byte to 1 MiB; `cmd` must be a non-empty list of strings (no NUL); `timeout` is an integer from 1 to 3600 seconds. An optional leading `["timeout", N, ...]` wrapper is accepted and clamped.
 - **Binary allow-list**: `ratholectl`, `ratholenode`, `systemctl`, `journalctl`, `jq`, `tail` (anything else, or a `cmd[0]` containing `/`, → `403`).
 - Execution is a direct argv (no shell); on timeout the process group is killed.
-- Default listen: `--host 0.0.0.0 --port 8089 --role node|iran`.
+- Default REST listen: `--host 0.0.0.0 --port 8089 --role node|iran`.
 
 ### HTTPS and self-signed certificates
 
 - Agent: `--tls-cert`/`--tls-key`, or `RATHOLE_AGENT_TLS_CERT`/`RATHOLE_AGENT_TLS_KEY`, or the default files `/etc/rathole-agent/cert.pem` and `key.pem`.
-- The hub verifies the certificate by default; for a self-signed certificate set `insecure_ssl: true` on the server record or `RATHOLE_AGENT_INSECURE_SSL=1` on the hub.
+- The hub verifies certificates by default; for self-signed certs use `insecure_ssl: true` (or `RATHOLE_AGENT_INSECURE_SSL=1`) in direct REST mode, and pass `--insecure-ssl` to `agent reverse` / `install-agent.sh` in Reverse WS mode.
 
-### Hub side
+### Hub side (direct REST)
 
 The inventory record:
 
@@ -207,21 +232,22 @@ The inventory record:
  "insecure_ssl":true}
 ```
 
-`api_url` must be a scheme (`http`/`https`), a host, and an optional port only — no credentials, path, or query. The hub POSTs each argv to `<api_url>/api/exec` (`run_on_agent`) and returns `{rc,out,err}` just like SSH; the global/per-server proxy is applied to these requests too. Every action still goes through the `hubcmds.py` allow-list, and mutating operations are audit-logged. The agent listens on all interfaces by default; restrict/protect port `8089` and its token.
+`api_url` must be a scheme (`http`/`https`), a host, and an optional port only — no credentials, path, or query. The hub POSTs each argv to `<api_url>/api/exec` (`run_on_agent`) and returns `{rc,out,err}` just like SSH; the global/per-server proxy is applied to these requests too. For `reverse_ws`, the hub dispatches the identical argv over the active WebSocket session via `run_on_reverse_agent`. Every action still goes through the `hubcmds.py` allow-list, and mutating operations are audit-logged.
 
 ## REST API Reference
 
-All routes require `Authorization: Bearer <API_TOKEN>` (or the session cookie from the UI); only `GET /api/health` is public. The same routes are also accepted under the `/hub/api/...` prefix (nginx serves the hub under `/hub/`).
+All `/api/*` routes require `Authorization: Bearer <API_TOKEN>` (or the session cookie from the UI); only `GET /api/health` is public, and `GET /ws/agent` authenticates via Bearer server token or hub auth. The same routes are accepted under the `/hub/api/...` and `/hub/ws/agent` prefixes (nginx serves the hub under `/hub/`).
 
 | Method | Route | Description |
 |--------|-------|-------------|
 | GET | `/api/health` | Public: `{ok, mock}` |
+| GET | `/ws/agent` \| `/hub/ws/agent` | RFC 6455 WebSocket upgrade endpoint for `reverse_ws` agents (Bearer auth) |
 | POST | `/api/login` | `{"password":"..."}` → `{ok, token}` (the API token) + `rhsession` cookie |
 | GET | `/api/hubstatus` | Hub status: uptime/load/RAM/disk, services, proxy, `latest_version` |
-| GET | `/api/servers` | Inventory list |
-| POST | `/api/servers` | Add a server: `{name, role, transport, host/ssh_user/ssh_port or api_url/api_token, proxy?}` |
-| PUT | `/api/servers/<name>` | Edit the record |
-| DELETE | `/api/servers/<name>` | Delete the record |
+| GET | `/api/servers` | Inventory list (includes live online/waiting state for `reverse_ws`) |
+| POST | `/api/servers` | Add a server: `{name, role, transport ("ssh"\|"api"\|"reverse_ws"), ...}` |
+| PUT | `/api/servers/<name>` | Edit record (supports `rotate_token` to rotate a `reverse_ws` token) |
+| DELETE | `/api/servers/<name>` | Delete record (closes active `reverse_ws` session if connected) |
 | POST | `/api/provision` | Auto-install with an SSH password (key + deploy + register) |
 | GET | `/api/servers/<name>/status` | Runs several read-only checks (`status`, `doctor`, `kcp_status`, `plain_status`, `noise_status`, `backhaul_status`, …) |
 | GET | `/api/servers/<name>/overview` | Compact overview + version + doctor + carriers + status |
@@ -243,8 +269,9 @@ All routes require `Authorization: Bearer <API_TOKEN>` (or the session cookie fr
 | GET | `/api/releases/asset` | Tunnel-relayed GitHub Release artifact & Ed25519 signature fetcher |
 | POST | `/api/tuner/start` | Launch async 6-stage `rathole-tuner` benchmark (`operate` scope) |
 | GET/POST | `/api/tuner/jobs` \| `/api/tuner/jobs/<id>/cancel` | List or cancel running/completed tuner benchmark jobs |
+| GET | `/api/tuner/status` | Live applied kernel state (`cc`, `qdisc`, `mtu`, `rmem_max`, `notsent_lowat`, active profile) |
 | GET/POST/DELETE | `/api/tuner/profiles` | Datacenter Profile Library (import/export `rthprof1:` or JSON) |
-| POST | `/api/tuner/apply` \| `/api/tuner/rollback` | Two-sided apply (`99-rathole-tuner.conf`) or rollback via hub allow-list |
+| POST | `/api/tuner/apply` \| `/api/tuner/rollback` | Two-phase dead-man apply (`--confirm-ttl 45` + `bench confirm`) with automatic Iran rollback on Node failure, or manual rollback |
 | POST | `/api/servers/<name>/action` | `{"action":"...","args":{...}}` → run one allowed action |
 | GET | `/api/config` | Redacted configuration (token shown as a hint only) |
 | POST | `/api/config` | Rotate token / change admin password / proxy / `ssh_key_path` |
@@ -272,18 +299,18 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST $B/api/servers \
 The hub never executes raw strings on servers. Every request is mapped to an allowed `action`, every argument is validated against the `RE_*` regex family, and `build_iran_cmd`/`build_node_cmd` turn it into an **argv list**:
 
 - Over SSH: the argv is passed shell-safe (`shlex.join`) after `--` to SSH (`run_on_server` → `_ssh_base`).
-- Over the REST Agent: the same argv is POSTed as a JSON array to `/api/exec`; no shell involved.
+- Over direct REST Agent / Reverse WS Agent: the same argv is sent as a JSON array to `POST /api/exec` (or inside an RFC 6455 frame over `/hub/ws/agent` via `run_on_reverse_agent`); no shell involved.
 
 This map (regexes, `build_*_cmd`, `WRITE_ACTIONS`) has lived in the small, reviewable **`hubcmds.py`** module since v1.6.
 
-- **Strict whitelist** — a new action must be added to the right `build_*_cmd` and the allow-list, and every argument must be regex-validated.
-- *Shared (both roles):* `deploy` (remote update: `install.sh --update` on the server itself + snapshot/rollback), `status`, `version`, `logs`.
+- **Strict whitelist** — a new action must be added to the right `build_*_cmd` and the allow-list, and every argument must be regex-validated (`bench_confirm` added to `WRITE_ACTIONS` in `v2.4.0`).
+- *Shared (both roles):* `deploy` (remote update: `install.sh --update` on the server itself + snapshot/rollback, also works over `reverse_ws`), `status`, `version`, `logs`, `bench_apply`, `bench_confirm`, `bench_rollback`, `bench_status`.
 - *Iran:* `ls`, `doctor`, `status`, `regen`, transport management (`kcp_*`, `plain_*`, `noise_*`, `backhaul_*`, `frp_*`, `gre_*`, `direct_*`), game management (`game_*` — `game_cert` fetches a Let's Encrypt cert and returns the **private key**; only use from an authenticated hub and don't log it), node management (`add_node`, `rm_node`, `edit_node`, `rename_node`, `rotate_node`, `show_node`), domain/TLS (`domain_*`, `tls_*`), and the non-tunnel reverse proxy (`proxy_*`).
 - *Node:* `show`, `ls`, `upstream_*`, `set_server`, `set_main`, service management (`add_svc`, `rm_svc`, `add_bh_svc`, `rm_bh_svc`), control path (`control_path_*`), transport (`kcp_*`, `plain_*`, `noise_*`, `backhaul_*`, `frp_*`, `gre_*`), watchdog/adaptive, and `apply`/`restart`/`migrate`.
 - **`WRITE_ACTIONS`** marks the mutating actions; those (plus `deploy`, `provision`, and `config_save`) are written to the **audit log**: user (IP), server, action, command, and `rc` — an append-only file at `/etc/ratholehub/audit.log`, visible at `#/audit`.
 - Listens on `127.0.0.1` (behind nginx at `/hub/` or via SSH forward); no new public port is opened. Admin login is limited to 5 failed attempts per 5 minutes per IP (`429`); the session cookie `rhsession` is `hmac(api_token, expiry)` valid for 24 hours.
 - `deploy_to_server` (the "Update"/"Update All" buttons) fetches the latest `install.sh` **on the server itself** from GitHub (through the ghproxy mirror loop) and runs it with `--update`; the repo slug comes from config (`gh_repo`, default `l8PYGIT/RatholeEngine`, validated by `RE_SLUG`) and the channel from `update_channel` (`stable|beta`, `RE_CHAN`), and only those two validated values are substituted into the fixed `bash -c` script.
-- **REST Agent**: Bearer auth, constant-time compare, binary allow-list, 1 MiB body cap, and a 1–3600 s timeout. See [REST Agent Mode](#rest-agent-mode-ssh-free).
+- **REST & Reverse WS Agent**: Bearer auth, constant-time compare, `ALLOWED_BINARIES` allow-list, 1 MiB HTTP body / 4 MiB WebSocket frame (`wsutil.py`) cap, and a 1–3600 s timeout. See [REST & Reverse WS Agent Mode](#rest--reverse-ws-agent-mode-ssh-free).
 
 ## Local Development (Mock Mode)
 
@@ -300,17 +327,20 @@ Environment variables: `RATHOLEHUB_HOST`, `RATHOLEHUB_PORT`, `RATHOLEHUB_CONF`, 
 The UI is no longer inlined in `hub.py`; it lives in `ratholehub/ui/` alongside `hub.py`:
 
 ```
-ratholehub/
-├── hub.py          Main server (ThreadingHTTPServer, routing, SSH/Agent, API)
-├── hubcmds.py      Action→argv map + argument regexes (security-critical, keep small)
-├── ssh_proxy.py    SOCKS5/HTTP CONNECT bridge for SSH through a proxy
-├── README.md       Condensed copy of this document
-└── ui/
-    ├── index.html
-    ├── app.css
-    ├── app.js
-    ├── i18n.js         Persian/English strings
-    └── vazirmatn.woff2 Bundled offline variable font (RTL)
+rathole-manager/
+├── ratholeagent.py   Dual-mode Agent daemon (direct REST :8089 & outbound Reverse WS)
+├── wsutil.py         Pure-stdlib RFC 6455 WebSocket client/server module
+└── ratholehub/
+    ├── hub.py        Main server (ThreadingHTTPServer, routing, SSH/Agent/WS, API)
+    ├── hubcmds.py    Action→argv map + argument regexes (security-critical, keep small)
+    ├── ssh_proxy.py  SOCKS5/HTTP CONNECT bridge for SSH through a proxy
+    ├── README.md     Condensed copy of this document
+    └── ui/
+        ├── index.html
+        ├── app.css
+        ├── app.js
+        ├── i18n.js         Persian/English strings
+        └── vazirmatn.woff2 Bundled offline variable font (RTL)
 ```
 
 Files are served with a **filename whitelist** (no path joining, so path traversal is impossible). `install-hub.sh` and `update.sh` both install/update the full tree.

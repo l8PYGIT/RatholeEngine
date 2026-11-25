@@ -88,13 +88,13 @@ ratholectl certs                       # جدول همه گواهی‌ها: DOMA
 ratholectl recover                     # بازگشت به حالت سالم تک‌دامنه‌ای (حذف دامنه‌های اضافی + regenerate)
 ratholectl tune                        # BBR + لیمیت‌های سیستم/nginx (بدون ری‌استارت سرور)
 ratholectl fakeweb start|stop|rm|status [port]   # سایت فیک پنل روی fake_port (پیش‌فرض 8080؛ اگر fake_port ست نشده باشد fallback: 8000)
-ratholectl agent <on [port] [token]|off|status|token|show|restart>   # آژنت REST برای مدیریت بدون SSH (پیش‌فرض 8089)
+ratholectl agent <on [port] [token]|reverse <ws_url> <name> [token] [--insecure-ssl] [--proxy <url>]|off|status|token|show|restart>   # آژنت REST مستقیم یا Reverse WebSocket (بدون SSH)
 ratholectl control-path <show|rotate [--dry-run]|clear>      # مسیر مخفی کانال کنترل (/_rh/<hex32>)
 ratholectl doctor                      # بررسی سلامت
 ratholectl version                     # نسخهٔ manager + rathole (manager_version=/rathole_version=)
 ratholectl update                      # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholectl update beta                 # کانال بتا: آخرین pre-release (آزمایشی)
-ratholectl update v2.0.2               # آپدیت به نسخه‌ی خاص
+ratholectl update v2.4.0               # آپدیت به نسخه‌ی خاص
 ratholectl menu                        # منوی تعاملی کامل
 ```
 
@@ -177,7 +177,7 @@ ratholenode set SERVER newdomain:443   # تغییر سرور (تانل اصلی/
 ratholenode set-main <host:port> [tls_hostname] [trusted_root]
 # تنظیم اتمیک سرور + SNI + CA سفارشی — برای اتصال به IP با گواهی self-signed:
 # ratholenode set-main <ip>:443 <ip> /etc/rathole/trusted-<ip>.pem
-ratholenode agent <on [port] [token]|off|status|token|show|restart>   # آژنت REST روی نود (پیش‌فرض 8089)
+ratholenode agent <on [port] [token]|reverse <ws_url> <name> [token] [--insecure-ssl] [--proxy <url>]|off|status|token|show|restart>   # آژنت REST مستقیم یا Reverse WebSocket روی نود
 ratholenode control-path show               # مسیر مخفی کانال کنترل (پیش‌فرض /)
 ratholenode control-path set <path>         # فقط بعد از rotate سمت ایران؛ restart + rollback خودکار
 ratholenode control-path clear              # بازگشت به /
@@ -196,7 +196,7 @@ ratholenode backup [file]              # snapshot از node.env + services + ups
 ratholenode restore <file>             # بازگردانی + بازتولید config + restart
 ratholenode update                     # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholenode update beta                # کانال بتا: آخرین pre-release (آزمایشی)
-ratholenode update v2.0.2              # آپدیت به نسخه‌ی خاص
+ratholenode update v2.4.0              # آپدیت به نسخه‌ی خاص
 ratholenode version                    # نسخهٔ manager + rathole
 ratholenode status [--json] | logs | apply
 ```
@@ -454,7 +454,7 @@ ratholenode gre off [gre_name]
 
 ### ۲.۱۲) `bench` — تستر و تیونر بی‌رحمانه شبکه و کرنل (`rathole-tuner`)
 
-موتور دوطرفه ۶ مرحله‌ای برای کشف بهینه **PMTU/MSS**، **آف‌لودهای NIC**، **کنترل ازدحام و Qdisc (BBR/CAKE/FQ)**، **بافرهای TCP/UDP**، تست استرس **Bufferbloat** و مقایسه حامل‌ها با **Watchdog بازگشت خودکار** و تولید پروفایل قابل‌تحلیل AI (`rathole.netprofile.v1` و رشته `rthprof1:`):
+موتور دوطرفه ۶ مرحله‌ای برای کشف بهینه **PMTU/MSS** (همراه با تشخیص انسداد UDP و `TCP_INFO`)، **آف‌لودهای غیر-fixed NIC**، **کنترل ازدحام و Qdisc (BBR/CAKE/FQ)**، **بافرهای ایمن TCP/UDP** (`rmem_default`/`wmem_default = 262144`)، تست استرس **Bufferbloat** و مقایسه حامل‌ها با **محافظ دوفازه‌ای Watchdog** و تولید پروفایل قابل‌تحلیل AI (`rathole.netprofile.v1` و رشته `rthprof1:`):
 
 ```bash
 # روی نود خارج (بازشدن موقت پورت با احراز هویت HMAC و بسته‌شدن خودکار):
@@ -464,9 +464,11 @@ sudo ratholenode bench listen --port 44990 --token <SECRET> --idle-sec 300
 sudo ratholectl bench run --peer <NODE_IP>:44990 --token <SECRET> \
   --mode brutal --goal balanced --iran-dc arvan --node-dc hetzner-fsn1 --out /tmp/dc.json
 
-# تست مقایسه زنده A/B پروفایل دیگران، اعمال دائمی یا بازگشت:
+# تست مقایسه زنده A/B پروفایل دیگران، اعمال دوفازه‌ای ایمن (--confirm-ttl)، وضعیت زنده یا بازگشت:
 sudo ratholectl bench test --peer <NODE_IP>:44990 --token <SECRET> --profile "rthprof1:..."
-sudo ratholectl bench apply --profile /tmp/dc.json
+sudo ratholectl bench apply --profile /tmp/dc.json --confirm-ttl 45
+sudo ratholectl bench confirm <CONFIRM_ID>
+sudo ratholectl bench status --json
 sudo ratholectl bench rollback
 ```
 

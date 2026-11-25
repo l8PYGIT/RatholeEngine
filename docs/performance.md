@@ -8,18 +8,18 @@
 
 ---
 
-## ۰-الف) تیونر خودکار بی‌رحمانه (`rathole-tuner` / `bench`) و پروفایل‌های AI (`v2.3.0+`)
+## ۰-الف) تیونر خودکار بی‌رحمانه (`rathole-tuner` / `bench`) و پروفایل‌های AI (`v2.3.0+` / `v2.4.0`)
 
 به‌جای حدس‌زدن `sysctl` یا `MTU`، از موتور **`rathole-tuner`** (قابل اجرا با `ratholectl bench` / `ratholenode bench` یا از صفحه **`#/tuner`** در RatholeHub) استفاده کن تا لینک ایران↔نود در **۶ مرحله** بررسی شود:
 
 ![معماری rathole-tuner](assets/tuner-architecture.svg)
 
-1. **PMTU و MSS باینری** (کشف سقف بسته بدون تکه‌تکه شدن + تست blackhole)
-2. **آف‌لودهای کارت شبکه** (`TSO` / `GSO` / `GRO`)
-3. **کنترل ازدحام و Qdisc** (`BBR`، `CAKE`، `FQ`، `CUBIC`)
-4. **بافرهای کرنل و TCP Tuning** (`rmem_max`، `wmem_max`، `tcp_rmem`، `tcp_notsent_lowat`، `initcwnd`)
-5. **تست استرس هم‌زمان و Bufferbloat** (اندازه‌گیری Throughput + Loaded RTT p95 + Jitter + Retrans)
-6. **ماتریس حامل‌ها + ممیزی غیرکرنلی** (بررسی `Xray`، `Nginx`، `OpenSSL AES`، `LimitNOFILE`) با امتیازدهی ۵بعدی و **Watchdog بازگشت خودکار** (`rollback_sec`).
+1. **PMTU و MSS باینری** (کشف سقف بسته بدون تکه‌تکه شدن + تشخیص پیش‌دستانهٔ مسدودبودن UDP با fallback روی `TCP_INFO` تا MTU اشتباهاً به ۱۲۰۰ سقوط نکند)
+2. **آف‌لودهای کارت شبکه** (`TSO` / `GSO` / `GRO` با نادیده‌گرفتن ویژگی‌های `[fixed]` در `ethtool -k` و پرهیز از غیرفعالسازی مخرب TSO/GSO)
+3. **کنترل ازدحام و Qdisc** (`BBR`، `CAKE`، `FQ`، `CUBIC`، `hybla` و بازگردانی ایمن qdiscهای `mq`/`noqueue`/`default` با `tc qdisc del root`)
+4. **بافرهای کرنل و TCP Tuning** (کف‌های ۸/۱۶/۳۲ MiB برای `rmem_max`/`wmem_max` تا سقف ۱۰٪ RAM، پایین‌آوردن ایمن `rmem_default`/`wmem_default` به ۲۵۶ کیلوبایت، حذف `tcp_notsent_lowat` گلوگاه‌ساز برای پروکسی و حفظ `src <IP>`/`onlink` در route پیش‌فرض)
+5. **تست استرس هم‌زمان و Bufferbloat** (اندازه‌گیری Throughput + Loaded RTT p95 + Jitter + Retrans + محافظ عدم افت پهنای‌باند تا هیچ کاندید کندتر از Baseline برنده نشود)
+6. **ماتریس حامل‌ها + ممیزی غیرکرنلی** (بررسی `Xray`، `Nginx`، `OpenSSL AES`، `LimitNOFILE`) با امتیازدهی ۵بعدی، **محافظ دوفازه‌ای Watchdog (`--confirm-ttl`)** و نگهداری `snapshot_path` اولیه پیش از تیونر.
 
 ```bash
 # روی نود خارج: راه‌اندازی موقت responder امن (HMAC-SHA256، بسته شدن خودکار)
@@ -32,15 +32,17 @@ sudo ratholectl bench run --peer <NODE_IP>:44990 --token <SECRET> \
 # تست مقایسه زنده A/B/N با یک پروفایل اشتراکی (بدون اعمال دائمی تا تایید برنده)
 sudo ratholectl bench test --peer <NODE_IP>:44990 --token <SECRET> --profile "rthprof1:..."
 
-# اعمال دائمی برنده (/etc/sysctl.d/99-rathole-tuner.conf) یا بازگشت به وضعیت قبل:
-sudo ratholectl bench apply --profile /tmp/dc.json
+# اعمال دائمی دوفازه‌ای با Watchdog ددمن (/etc/sysctl.d/99-rathole-tuner.conf) + تأیید، وضعیت یا بازگشت:
+sudo ratholectl bench apply --profile /tmp/dc.json --confirm-ttl 45
+sudo ratholectl bench confirm <CONFIRM_ID>
+sudo ratholectl bench status --json
 sudo ratholectl bench rollback
 
 # ممیزی تنظیمات غیرکرنلی (Xray / Nginx / ulimit / OpenSSL):
 sudo ratholectl bench audit --json
 ```
 
-> **پروفایل قابل‌تحلیل توسط AI (`rthprof1:`):** خروجی JSON با اسکیمای `rathole.netprofile.v1` به‌همراه رشته فشرده `rthprof1:<base64url>` (با کنترلسام SHA-256) شامل کل متریک‌های baseline/winner و تنظیمات ایران/نود است تا مستقیماً به مدل هوش مصنوعی بدهی یا در تب `#/tuner` ذخیره و بین سرورها تست کنی.
+> **محافظ دوفازه‌ای Watchdog (`v2.4.0`):** هنگام اعمال دائمی از طریق هاب (`--confirm-ttl 45`)، پس از تغییر کرنل حتماً باید فرمان `bench confirm <id>` برسد؛ اگر اتصال پس از اعمال قطع شود، تایمر ددمن ظرف ۴۵ ثانیه به‌طور خودکار `sysctl --system` و سپس `restore_snapshot()` را اجرا می‌کند (و در هاب با شکست تأیید نود، سمت ایران هم بلافاصله rollback می‌شود). همچنین خروجی `rathole.netprofile.v1` و رشته `rthprof1:` در صفحه `#/tuner` همراه با کارت وضعیت زنده کرنل و ماندگاری جاب‌ها نمایش داده می‌شود.
 
 ---
 
@@ -115,7 +117,7 @@ ratholenode tune    # روی نود
 ```
 این‌ها را ست می‌کند (بدون ریبوت، بدون قطع تونل):
 - **BBR + fq** (کنترل ازدحام مدرن؛ مهم‌ترین برد کرنل).
-- **بافر بزرگ UDP** (`rmem_max/wmem_max=25MB`) — برای throughput بالای kcp ضروری.
+- **بافر بزرگ UDP با پیش‌فرض ایمن** (`rmem_max/wmem_max=25MB` برای throughput بالای KCP و QUIC، همراه با `rmem_default=262144` / `wmem_default=262144` یعنی ۲۵۶ کیلوبایت در `v2.4.0` تا در اتصالات هم‌زمان بالا حافظهٔ سرور اشغال نشود).
 - file-max / conntrack_max / somaxconn / backlog بالا — رفع ۵۰۲ زیر برست.
 - tcp_fastopen، mtu_probing، slow_start_after_idle=0.
 
@@ -185,12 +187,12 @@ ratholenode kcp on <IRAN_IP>:443 <KEY> <profile>
 
 ---
 
-## ۷) صفحه‌ی مدیریت (REST Agent / HTTPS) — سربارِ ناچیز
+## ۷) صفحه‌ی مدیریت (REST Agent / Reverse WS Agent / HTTPS) — سربارِ ناچیز
 
-- Agent یک **لایه‌ی مدیریت (control plane)** است، نه مسیر داده: هیچ بایتی از ترافیک کاربر از آن رد نمی‌شود. فقط دستورهای مدیریتی (status/apply/restart/…) به‌صورت یک درخواست کوتاه به `POST /api/exec` فرستاده می‌شوند.
-- سرور `ThreadingHTTPServer` است، پس درخواست‌های مدیریتی هم‌زمان یکدیگر را بلاک نمی‌کنند. هر فراخوانی یک درخواست مستقل است (keep-alive پایدار ندارد) و timeout پیش‌فرض هاب ۱۲۰ ثانیه است.
-- HTTPS فقط یک TLS handshake به‌ازای هر درخواست اضافه می‌کند؛ چون تعداد فراخوانی‌ها کم و هرکدام کوتاه است، سربارش در برابر ترافیک تونل عملاً صفر است. برای گواهی self-signed باید رکورد سرور `insecure_ssl: true` داشته باشد (یا `RATHOLE_AGENT_INSECURE_SSL=1`).
-- Agent به‌صورت پیش‌فرض روی `0.0.0.0:8089` گوش می‌دهد؛ پورتش را عوض کن یا با فایروال به شبکه‌ی مدیریتی محدودش کن (payload حداکثر ۱ MiB و لیست سفید باینری اعمال می‌شود).
+- Agent (نسخهٔ `2.0.0`، در حالت REST مستقیم روی `:8089` یا حالت **Reverse WebSocket (`reverse_ws`، `wsutil.py`)** روی `/hub/ws/agent`) یک **لایه‌ی مدیریت (control plane)** است، نه مسیر داده: هیچ بایتی از ترافیک کاربر از آن رد نمی‌شود. فقط دستورهای مدیریتی (`status`/`apply`/`restart`/…) به‌صورت یک درخواست کوتاه `POST /api/exec` یا پیام متنی RFC 6455 روی اتصال خروجی نود جابه‌جا می‌شوند.
+- سرور REST (`ThreadingHTTPServer`) با `request_queue_size = 64`، `TCP_NODELAY` و TCP Keepalive کار می‌کند؛ در حالت `reverse_ws` نیز یک سوکت مداوم با Ping/Pong خودکار و اجرای هم‌زمان (`ThreadPoolExecutor(16)`) فعال است و سربار فریم روی ترافیک داده صفر است.
+- HTTPS فقط یک TLS handshake اضافه می‌کند (در `reverse_ws` همان اتصال وب‌سوکت پشت Nginx `:443` را reuse می‌کند)؛ برای گواهی self-signed در `api` مقدار `insecure_ssl: true` روی رکورد هاب (یا `RATHOLE_AGENT_INSECURE_SSL=1`) و در `reverse_ws` فلگ `--insecure-ssl` روی کلاینت لازم است.
+- پورت `8089` در حالت `api` فقط برای شبکهٔ مدیریتی باز بماند؛ در `reverse_ws` اصلاً پورت ورودی روی نود باز نمی‌شود (payload HTTP حداکثر ۱ MiB، سقف فریم WS برابر ۴ MiB و لیست سفید باینری `ALLOWED_BINARIES` اعمال می‌شود).
 
 ---
 

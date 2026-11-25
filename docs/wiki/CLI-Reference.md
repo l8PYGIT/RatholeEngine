@@ -1,6 +1,6 @@
 # مرجع کامل دستورات CLI
 
-**نسخه‌ی مرجع: v2.0.2** — همه‌ی دستورات زیر از dispatcher و `usage()` خود `ratholectl`/`ratholenode` گرفته شده‌اند.
+**نسخه‌ی مرجع: v2.4.0** — همه‌ی دستورات زیر از dispatcher و `usage()` خود `ratholectl`/`ratholenode` گرفته شده‌اند.
 
 ## نمای سریع (Quick Reference)
 
@@ -16,6 +16,7 @@
 | دامنه/گواهی | `domain` · `cert` · `ip-cert` · `ip-cert-show` · `ip-cert-off` | — |
 | مسیر کنترلی | `control-path` | `control-path` · `upstream control-path` |
 | Hub/Agent | `hub` · `agent` | `agent` |
+| تیونر کرنل | `bench run|test|apply|confirm|rollback|status|audit` | `bench listen|run|test|apply|confirm|rollback|status|audit` |
 | سیستم | `tune` · `fakeweb` · `restart` · `enable` · `update` · `menu` | `tune` · `fakeweb` · `restart` · `update` |
 
 ---
@@ -226,21 +227,26 @@ ratholectl hub status      # وضعیت service و port، هشدار اگر port
 ratholectl hub auto-add    # ثبت خودکار همین سرور در inventory هاب (مترادف add-local)
 ```
 
-### REST Agent (مدیریت بدون SSH)
+### REST و Reverse WS Agent (مدیریت بدون SSH)
 
 ```bash
-ratholectl agent on [port] [token]   # نصب/فعال‌سازی rathole-agent.service (پیش‌فرض پورت ۸۰۸۹)
+# ۱) حالت REST مستقیم (پورت ۸۰۸۹)
+ratholectl agent on [port] [token]   # نصب/فعال‌سازی rathole-agent.service
 # مترادف‌ها: install / start
 # توکن: آرگومان > /etc/rathole-agent/token > ساخت خودکار (chmod 600)
 # در پایان «API URL» و «Token» را برای ثبت در هاب چاپ می‌کند
+
+# ۲) حالت Reverse WebSocket (v2.4.0 — اتصال خروجی به هاب روی /hub/ws/agent، بدون پورت ورودی)
+ratholectl agent reverse <ws_url> <name> [token] [--insecure-ssl] [--proxy <url>]
+
 ratholectl agent off                 # توقف و حذف unit (مترادف: stop)
 ratholectl agent restart
-ratholectl agent status              # active/inactive + توکن
+ratholectl agent status              # active/inactive + حالت (REST/Reverse WS) + توکن
 ratholectl agent token               # چاپ توکن از فایل
-ratholectl agent show [port]         # چاپ API URL + توکن
+ratholectl agent show [port]         # چاپ آدرس/وضعیت فعال + توکن
 ```
 
-> روی سروری که با `install-panel.sh` نصب شده، `ratholeagent.py` و `install-agent.sh` از قبل در `/usr/local/share/rathole/` هستند و `install-agent.sh` در `/usr/local/bin/` symlink دارد؛ بنابراین `sudo install-agent.sh --role iran [--port 8089] [--token T]` هم بدون دانلود کار می‌کند. برای HTTPS به `ratholeagent.py` گزینه‌های `--tls-cert`/`--tls-key` بدهید؛ در سمت هاب برای گواهی self-signed `RATHOLE_AGENT_INSECURE_SSL=1` یا `insecure_ssl: true` در رکورد inventory همان سرور لازم است.
+> روی سروری که با `install-panel.sh` نصب شده، `ratholeagent.py`، `wsutil.py` و `install-agent.sh` از قبل در `/usr/local/share/rathole/` هستند و `install-agent.sh` در `/usr/local/bin/` symlink دارد؛ بنابراین `sudo install-agent.sh --role iran [--port 8089] [--token T]` یا `sudo install-agent.sh --role iran --reverse "wss://<DOMAIN>/hub/ws/agent" --name "<NAME>" --token <T> [--insecure-ssl] [--proxy <url>]` بدون دانلود کار می‌کند. برای HTTPS مستقیم به `ratholeagent.py` گزینه‌های `--tls-cert`/`--tls-key` بدهید؛ در سمت هاب برای گواهی self-signed در `api` مقدار `RATHOLE_AGENT_INSECURE_SSL=1` یا `insecure_ssl: true` و در `reverse_ws` فلگ `--insecure-ssl` لازم است.
 
 ### سیستم
 
@@ -258,7 +264,7 @@ ratholectl enable              # enable + start سرویس rathole-server
 ratholectl update              # آپدیت به آخرین نسخه‌ی پایدار (snapshot + health-check + rollback خودکار)
 ratholectl update beta         # آخرین نسخه‌ی pre-release
 ratholectl update stable       # صریحاً کانال پایدار
-ratholectl update v2.0.2       # آپدیت به یک نسخه‌ی خاص
+ratholectl update v2.4.0       # آپدیت به یک نسخه‌ی خاص
 ratholectl menu                # منوی تعاملی (پیش‌فرض)
 ```
 
@@ -404,11 +410,12 @@ ratholenode control-path set <path>     # تنظیم + gen + restart + rollback 
 ratholenode control-path clear          # بازگشت به /
 ```
 
-### REST Agent
+### REST و Reverse WS Agent
 
 ```bash
 ratholenode agent on [port] [token]   # فعال‌سازی rathole-agent.service با role=node (پیش‌فرض 8089)
 # مترادف‌ها: install / start
+ratholenode agent reverse <ws_url> <name> [token] [--insecure-ssl] [--proxy <url>]   # اتصال معکوس WebSocket به هاب (v2.4.0)
 ratholenode agent off                 # مترادف: stop
 ratholenode agent restart
 ratholenode agent status
@@ -436,11 +443,12 @@ ratholenode migrate
 ```bash
 ratholenode tune             # اعمال sysctl برای بهینه‌سازی (BBR، buffer، ...)
 
-# Auto-Bench & Kernel/Network Tuner (v2.3.0+, یکسان در ratholectl و ratholenode)
+# Auto-Bench & Kernel/Network Tuner (v2.3.0+ / v2.4.0, یکسان در ratholectl و ratholenode)
 ratholenode bench listen --port 44990 --token <SECRET> [--idle-sec 300]
 ratholectl  bench run --peer <IP>:44990 --token <SECRET> --mode <brutal|safe> --goal <balanced|low-latency|max-throughput|anti-loss> [--iran-dc tag] [--node-dc tag] [--deep] [--out profile.json] [--b64-out profile.b64]
 ratholectl  bench test --peer <IP>:44990 --token <SECRET> --profile <file.json|rthprof1:...>
-ratholectl  bench apply --profile <file.json|rthprof1:...>
+ratholectl  bench apply --profile <file.json|rthprof1:...> [--confirm-ttl <sec>]
+ratholectl  bench confirm <confirm_id>   # تأیید فاز دوم Watchdog ددمن پیش از اتمام TTL (v2.4.0)
 ratholectl  bench rollback | status | audit [--json] | stop-listen | job <id>
 ratholenode fakeweb start [port]   # سایت فیک سبک برای fallback inbound (پیش‌فرض ۸۰۸۱)
 ratholenode fakeweb stop
@@ -449,7 +457,7 @@ ratholenode fakeweb status
 ratholenode restart          # ری‌استارت rathole-client (اگر tunnel=frp باشد، apply می‌کند)
 ratholenode update           # آپدیت به آخرین نسخه‌ی پایدار
 ratholenode update beta      # آخرین pre-release
-ratholenode update v2.0.2    # آپدیت به نسخه‌ی خاص
+ratholenode update v2.4.0    # آپدیت به نسخه‌ی خاص
 ```
 
 ---

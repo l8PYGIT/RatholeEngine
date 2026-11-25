@@ -1,6 +1,6 @@
 # راهنمای شروع سریع (Getting Started)
 
-این راهنما روش‌های نصب و راه‌اندازی **RatholeEngine** (نسخه‌ی **v2.3.0**) را به همراه معماری لایه‌ای، نمای حامل‌ها و قدم‌های بعدی توضیح می‌دهد.
+این راهنما روش‌های نصب و راه‌اندازی **RatholeEngine** (نسخه‌ی **v2.4.0**) را به همراه معماری لایه‌ای، نمای حامل‌ها و قدم‌های بعدی توضیح می‌دهد.
 
 !!! tip "می‌خواهی سریع تمام شود؟"
     نسخهٔ **مرحله‌به‌مرحله و تعاملی** (یک دستور + توضیح همهٔ سؤال‌ها + جدول عیب‌یابی) اینجاست:
@@ -106,7 +106,7 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 
 برای pin کردن نسخه‌ی مشخص:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.1.0 --update
+curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.sh | sudo bash -s -- --release v2.4.0 --update
 ```
 
 ### 🔒 نصب/آپدیت از مخزن خصوصی
@@ -116,7 +116,7 @@ curl -fsSL https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/install.
 ```bash
 curl -fsSL -H "Authorization: Bearer <GITHUB_PAT>" \
   https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh -o /tmp/install.sh
-sudo RATHOLE_GH=owner/repo bash /tmp/install.sh --token <GITHUB_PAT> --release v2.1.0 --update
+sudo RATHOLE_GH=owner/repo bash /tmp/install.sh --token <GITHUB_PAT> --release v2.4.0 --update
 ```
 
 توکن از طریق متغیرهای `RATHOLE_GH_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` هم پذیرفته می‌شود و به‌صورت `RATHOLE_GH_TOKEN` به `bootstrap.sh` پاس داده می‌شود. برای آپدیت سروری که از قبل نصب شده، `tools/update-private.sh` همین مسیر را (از release assets یا سورس `main`) انجام می‌دهد:
@@ -129,22 +129,24 @@ sudo RATHOLE_GH=owner/repo bash tools/update-private.sh   # توکن را مخف
 
 ---
 
-## 🤖 راه‌اندازی سریع REST Agent (اختیاری)
+## 🤖 راه‌اندازی سریع REST / Reverse WS Agent (اختیاری)
 
-REST Agent به هاب اجازه می‌دهد سرور را بدون SSH و از طریق HTTP(S) توکن‌دار مدیریت کند. روی هر سروری که `install-panel.sh`/`install-node.sh` روی آن اجرا شده، فایل‌ها از قبل نصب‌اند:
+Agent (نسخه‌ی `2.0.0`) به هاب اجازه می‌دهد سرور را بدون SSH مدیریت کند. روی هر سروری که `install-panel.sh`/`install-node.sh` روی آن اجرا شده، فایل‌های `ratholeagent.py` و `wsutil.py` از قبل نصب‌اند:
 
 ```bash
-# روی سرور ایران
+# ۱) حالت REST مستقیم (نیازمند دسترسی هاب به پورت ۸۰۸۹ سرور مقصد):
 sudo install-agent.sh --role iran --port 8089
-# روی نود خارج
 sudo install-agent.sh --role node --port 8089
-
-# یا از داخل خود CLIها (پورت پیش‌فرض 8089، توکن خودکار ساخته می‌شود)
+# یا از داخل خود CLIها (پورت پیش‌فرض 8089، توکن خودکار ساخته می‌شود):
 sudo ratholectl agent on
 sudo ratholenode agent on
+
+# ۲) حالت Reverse WebSocket (v2.4.0 — مناسب نود فیلترشده یا پشت NAT، بدون پورت ورودی باز):
+sudo ratholenode agent reverse "wss://<DOMAIN>/hub/ws/agent" "<NAME>" "<TOKEN>" [--insecure-ssl] [--proxy <url>]
+sudo install-agent.sh --role node --reverse "wss://<DOMAIN>/hub/ws/agent" --name "<NAME>" --token "<TOKEN>"
 ```
 
-خروجی دستور `API URL` و `Token` را چاپ می‌کند؛ همین دو مقدار را در هاب به‌عنوان اتصال **REST Agent** ثبت کنید. توکن در `/etc/rathole-agent/token` (chmod 600) نگه داشته می‌شود و واحد systemd آن `rathole-agent.service` است. برای HTTPS، `--tls-cert`/`--tls-key` (یا `/etc/rathole-agent/cert.pem` و `key.pem`) بدهید؛ برای گواهی self-signed در سمت هاب `RATHOLE_AGENT_INSECURE_SSL=1` بگذارید یا `insecure_ssl: true` را در رکورد آن سرور داخل `inventory.json` ست کنید.
+در حالت REST مستقیم، خروجی دستور `API URL` و `Token` را چاپ می‌کند؛ در حالت **Reverse WebSocket (`reverse_ws`)** کافی است سرور را در هاب با نوع اتصال `reverse_ws` اضافه کنید (یا از صفحهٔ سرور آفلاین روی تبدیل به `reverse_ws` بزنید) و دستور مودال را روی نود بزنید تا خودش به `/hub/ws/agent` (پورت ۴۴۳ Nginx) وصل شود. توکن در `/etc/rathole-agent/token` (chmod 600) نگه داشته می‌شود و واحد systemd آن `rathole-agent.service` است. برای HTTPS مستقیم، `--tls-cert`/`--tls-key` (یا `/etc/rathole-agent/cert.pem` و `key.pem`) بدهید؛ برای گواهی self-signed در حالت `api` روی هاب `RATHOLE_AGENT_INSECURE_SSL=1` / `insecure_ssl: true` و در حالت `reverse_ws` فلگ `--insecure-ssl` را به کلاینت بدهید.
 
 ---
 

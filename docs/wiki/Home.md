@@ -2,9 +2,9 @@
 
 خوش آمدید به مستندات جامع و ویکی پروژه **RatholeEngine**.
 
-این سیستم یک راهکار **معکوس‌تونل (Reverse Tunnel)** پیشرفته و چندموقعیتی بر پایه‌ی **rathole + Nginx** برای عبور از فیلترینگ شدید است. در نسخه‌های اخیر، کنار lane رتهول چند **هسته‌ی مستقل** هم اضافه شده است: **Backhaul (SMUX)**، **FRP**، تونل لایه‌۳ **GRE** و حالت ترکیبی **FRP + GRE**؛ به‌علاوه‌ی **REST Agent** که اجازه می‌دهد هاب سرورها را بدون SSH و از طریق یک API توکن‌دار مدیریت کند.
+این سیستم یک راهکار **معکوس‌تونل (Reverse Tunnel)** پیشرفته و چندموقعیتی بر پایه‌ی **rathole + Nginx** برای عبور از فیلترینگ شدید است. در نسخه‌های اخیر، کنار lane رتهول چند **هسته‌ی مستقل** هم اضافه شده است: **Backhaul (SMUX)**، **FRP**، تونل لایه‌۳ **GRE**، حالت ترکیبی **FRP + GRE** و **Paqet (Direct PCK)**؛ به‌علاوه‌ی **REST Agent** و **Reverse WebSocket Agent (`reverse_ws`)** که اجازه می‌دهد هاب سرورهای پشت NAT یا دارای IP فیلترشده را هم بدون SSH و بدون هیچ پورت ورودی باز مدیریت کند.
 
-> نسخه‌ی فعلی: **v2.3.0** — اضافه شدن موتور **تست و تیونر بی‌رحمانه `rathole-tuner`** (بررسی ۶ مرحله‌ای MTU/MSS، آف‌لودهای NIC، BBR/CAKE/FQ، بافرها، Bufferbloat و حامل‌ها با **Watchdog بازگشت خودکار**، پروفایل قابل‌تحلیل AI با **`rthprof1:` / JSON** و صفحه جدید **`#/tuner`** در هاب) در کنار حامل **Paqet (Direct PCK)**، **Managed Xray** (`VLESS+REALITY+Vision` / `XHTTP` + اسکنر سایت کاور TLS 1.3)، مانیتور و ربات تلگرام چندمسیره (`ratholemonitor.service`)، توکن‌های باسطح دسترسی، TOTP 2FA، `/metrics` پرومتئوس، زنجیره جایگزین چندحامله و آپدیت با امضای Ed25519.
+> نسخه‌ی فعلی: **v2.4.0** — اضافه شدن **Reverse WebSocket Agent (`reverse_ws`)** برای اتصال خروجی از نودهای فیلترشده به `/hub/ws/agent` (پشت پورت ۴۴۳ Nginx) به‌همراه **محافظ دوفازه‌ای Watchdog (`--confirm-ttl` + `bench confirm`)** و سخت‌سازی ایمنی کرنل/سرویس در موتور **تیونر شبکه `rathole-tuner`** (با پروفایل‌های **`rthprof1:` / JSON** و صفحه **`#/tuner`**)، در کنار حامل **Paqet**، **Managed Xray** (`VLESS+REALITY+Vision` / `XHTTP` + اسکنر سایت کاور TLS 1.3)، مانیتور و ربات تلگرام چندمسیره، توکن‌های RBAC، TOTP 2FA، `/metrics` پرومتئوس و آپدیت با امضای Ed25519.
 
 ![داشبورد RatholeHub — نسخهٔ نمایشی](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
 
@@ -28,7 +28,7 @@
 
 3. 📖 **[مرجع کامل دستورات CLI (CLI Reference)](CLI-Reference)**
    - دستورات سرور ایران (`ratholectl`) و نود خارج (`ratholenode`)
-   - مدیریت REST Agent (`agent on|off|status|token`)، **Managed Xray** (`xray`) و **`bench` (`rathole-tuner`)**
+   - مدیریت REST و Reverse WS Agent (`agent on|reverse|off|status|token`)، **Managed Xray** (`xray`) و **`bench` (`rathole-tuner`)**
    - ۹ حامل: WS، KCP، Plain، Noise، **Backhaul (SMUX)**، **FRP** (`7000/TCP` + `7000/UDP`)، **GRE**، **FRP + GRE** و **Paqet (Direct PCK)**
    - مسیر مخفی کنترلی (`control-path`)، upstream چندسروره، `migrate` و `set-main`
    - آپدیت، بک‌آپ و رول‌بک
@@ -36,27 +36,28 @@
 4. 🖥️ **[مدیریت مرکزی با Hub (Hub Management)](Hub-Management)**
    - نصب و کانفیگ پنل وب Hub (`hub.py`) با رابط Apple Glass، `⌘K / Ctrl+K` و **`#/tuner`**
    - سلکتور یک‌کلیکی حامل، منوی `⋯` کنترل سرویس‌ها، Paqet/Xray و مانیتور تلگرام
-   - اتصال REST Agent (بدون SSH) در برابر اتصال SSH
+   - اتصال **Reverse WebSocket (`reverse_ws`)**، REST Agent مستقیم و SSH
    - REST API، مدل امنیتی، 2FA/RBAC و آپدیت گروهی با امضای Ed25519
 
 5. 🛠️ **[عیب‌یابی، بک‌آپ و رول‌بک (Troubleshooting)](Troubleshooting)**
    - عیب‌یابی اتصالات، تاریخچه `state.json` و `history`/`undo`
-   - خطاهای REST Agent (401/403، توکن، HTTPS self-signed)
+   - خطاهای REST و Reverse WS Agent (`reverse_ws`، خطای 401/403، `--insecure-ssl`، پروکسی) و رول‌بک Watchdog تیونر
    - ناسازگاری حامل‌ها (پروتکل `?`، توکن/profile بک‌هال، MTU و probe در GRE، پورت UDP ۷۰۰۰ و transport در FRP)
    - آپدیت از مخزن خصوصی و رول‌بک
 
 6. 📋 **[راهنماهای عملی (Workflow Guides)](Workflow-Guides)**
-   - راه‌اندازی REST Agent برای یک سرور
+   - راه‌اندازی REST Agent مستقیم یا **Reverse WebSocket (`reverse_ws`)** برای نود فیلترشده/پشت NAT
    - تغییر حامل یک سرویس با کنترل‌های سرویس (همگام‌سازی دو سمت)
-   - اجرای بنچمارک `rathole-tuner`، تحلیل AI با `rthprof1:` و تست A/B/N دیتاسنترها
+   - اجرای بنچمارک `rathole-tuner`، تحلیل AI با `rthprof1:`، تست A/B/N و اعمال دوفازه‌ای (`--confirm-ttl 45`)
    - مهاجرت Backhaul ↔ Noise، راه‌اندازی direct-IP، دامنه دوم، multi-upstream و آپدیت مخزن خصوصی
 
 ---
 
-## 🆕 تازه در نسخه‌های ۲.۱ تا ۲.۳.۰
+## 🆕 تازه در نسخه‌های ۲.۱ تا ۲.۴.۰
 
 | موضوع | خلاصه |
 |-------|-------|
+| **Reverse WS Agent و سخت‌سازی کرنل (`v2.4.0`)** | ایجنت WebSocket معکوس خالص stdlib (`wsutil.py` + `ratholeagent.py` v2.0.0) روی `/hub/ws/agent` بدون نیاز به پورت ورودی باز (با تبدیل یک‌کلیکی سرورهای آفلاین در هاب)، به‌همراه محافظ دوفازه‌ای Watchdog ددمن (`--confirm-ttl 45` + `bench confirm`)، حفظ `src`/`onlink` در route، بافر پیش‌فرض ایمن `262144`، پرش از offload `[fixed]` و رول‌بک صحیح `tc qdisc del root`. |
 | **تستر و تیونر بی‌رحمانه (`v2.3.0`)** | موتور ۶ مرحله‌ای `rathole-tuner` (`ratholectl|ratholenode bench` و صفحه `#/tuner` هاب): بررسی باینری PMTU/MSS، آف‌لودها، BBR/CAKE/FQ، بافرها، Bufferbloat، مقایسه حامل‌ها، ممیزی غیرکرنلی، Watchdog بازگشت خودکار و خروجی قابل‌حمل **`rthprof1:` / JSON** با تست زنده A/B/N. |
 | **حامل Paqet و Managed Xray (`v2.2.0`)** | حامل خام Direct PCK بدون هندشیک TLS، راه‌اندازی خودکار `VLESS+REALITY+Vision` و `XHTTP` روی نودها و اسکنر هم‌زمان سایت کاور TLS 1.3 + ALPN `h2`. |
 | **مانیتور تلگرام، امنیت هاب و Ed25519 (`v2.2.0`)** | سرویس مستقل `ratholemonitor.service` با رله چندمسیره (`direct`/`proxy`/`node_tunnel`)، TOTP 2FA، توکن‌های RBAC، `/metrics` پرومتئوس، لاگ ممیزی SHA-256، تست دوطرفه لینک، کشف انحراف ناوگان و آپدیت با امضای Ed25519. |

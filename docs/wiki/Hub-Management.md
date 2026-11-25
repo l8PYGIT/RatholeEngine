@@ -1,17 +1,18 @@
 # مدیریت مرکزی با پنل وب Hub
 
-**RatholeHub** یک پنل وب Python 3 stdlib (بدون pip و بدون build فرانت‌اند) است که مدیریت چندین سرور ایران و نود خارج را متمرکز می‌کند. backend در `hub.py`/`hubcmds.py` و UI آفلاین آن (`index.html`، `app.css`، `app.js`، `i18n.js`، `vazirmatn.woff2`) در پوشه‌ی `ui/` قرار دارد. هاب می‌تواند هر سرور را به دو روش کنترل کند:
+**RatholeHub** یک پنل وب Python 3 stdlib (بدون pip و بدون build فرانت‌اند) است که مدیریت چندین سرور ایران و نود خارج را متمرکز می‌کند. backend در `hub.py`/`hubcmds.py` و UI آفلاین آن (`index.html`، `app.css`، `app.js`، `i18n.js`، `vazirmatn.woff2`) در پوشه‌ی `ui/` قرار دارد. هاب می‌تواند هر سرور را به سه روش کنترل کند:
 
 | روش اتصال | `transport` | پیش‌نیاز | توضیح |
 |-----------|-------------|----------|-------|
 | **SSH** | `ssh` | کلید SSH هاب در `authorized_keys` سرور | روش سنتی؛ هر دستور به‌صورت argv از طریق SSH اجرا می‌شود. |
 | **REST Agent** | `api` | سرویس `rathole-agent.service` روی سرور + API URL/توکن | بدون SSH؛ هاب درخواست را به `POST <api_url>/api/exec` می‌فرستد. |
+| **Reverse WS Agent** | `reverse_ws` | اتصال خروجی سرور به `/hub/ws/agent` (پورت ۴۴۳ Nginx) + توکن | بدون SSH و بدون نیاز به باز بودن هیچ پورت ورودی روی نود (`v2.4.0`). |
 
-> در نسخه‌ی **v2.3.0** رابط کاربری شیشه‌ای **Apple Glass** در هاب به صفحه جدید **تستر و تیونر شبکه (`#/tuner`)** (اجرای ۶ مرحله‌ای بنچمارک و مدیریت پروفایل‌های `rthprof1:`)، پشتیبانی کامل **Paqet / Managed Xray**، مانیتور و ربات تلگرام چندمسیره، **TOTP 2FA** و توکن‌های **RBAC** تجهیز شده است (تم روشن/تاریک/سیستم، `⌘K / Ctrl+K`، ۴ کارت KPI). صفحه‌ی قدیمی `#/wiring` از v2.0.2 حذف شده است.
+> در نسخه‌ی **v2.4.0** علاوه بر امکانات **v2.3.0** (رابط شیشه‌ای **Apple Glass**، تستر و تیونر شبکه **`#/tuner`** با پروفایل‌های `rthprof1:`، پشتیبانی **Paqet / Managed Xray**، مانیتور و ربات تلگرام چندمسیره، **TOTP 2FA** و توکن‌های **RBAC**)، پشتیبانی کامل از **Reverse WebSocket Agent (`reverse_ws`)**، تبدیل یک‌کلیکی سرورهای آفلاین REST به `reverse_ws`، وضعیت زنده کرنل (`GET /api/tuner/status`) و **محافظ دوفازه‌ای Watchdog (`--confirm-ttl 45` + `bench confirm`)** اضافه شده است. صفحه‌ی قدیمی `#/wiring` از v2.0.2 حذف شده است.
 
 ![معماری هاب](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/hub-architecture.svg)
 
-![داشبورد پنل هاب RatholeHub v2.3.0](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
+![داشبورد پنل هاب RatholeHub v2.4.0](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
 
 ![تستر و تیونر شبکه — امتیاز ۵بعدی و پروفایل rthprof1](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/tuner.png)
 
@@ -92,7 +93,24 @@ sudo ratholenode agent on 8089
 
 **HTTPS:** به `ratholeagent.py` گزینه‌های `--tls-cert`/`--tls-key` بدهید (یا `RATHOLE_AGENT_TLS_CERT`/`RATHOLE_AGENT_TLS_KEY`، یا فایل‌های پیش‌فرض `/etc/rathole-agent/cert.pem` و `key.pem`). گواهی self-signed یا با `insecure_ssl: true` در رکورد inventory همان سرور پذیرفته می‌شود یا با `RATHOLE_AGENT_INSECURE_SSL=1` در محیط هاب (هر دو فقط بررسی گواهی را خاموش می‌کنند؛ ترافیک هنوز TLS است).
 
-> در هاب، badge سرور نشان می‌دهد `⚡ REST API` یا `🔑 SSH` است. اگر agent در دسترس نباشد، وضعیت سرور `no_agent` نمایش داده می‌شود (و نه `no_ssh`).
+> در هاب، badge سرور نشان می‌دهد `⚡ REST API`، `🔄 Reverse WS` یا `🔑 SSH` است (و برای `reverse_ws` وضعیت آنلاین یا در انتظار اتصال نمایش داده می‌شود). اگر agent مستقیم در دسترس نباشد، وضعیت سرور `no_agent` نمایش داده می‌شود (و نه `no_ssh`).
+
+### روش ۳ — Reverse WebSocket Agent (بدون SSH و بدون پورت ورودی — v2.4.0)
+
+مناسب نودهایی که IP یا پورت `8089` آن‌ها فیلتر شده یا پشت NAT قرار دارند، ولی ترافیک خروجی (HTTPS روی ۴۴۳) به سمت ایران/هاب باز است:
+
+۱. در داشبورد هنگام افزودن سرور، نوع اتصال را روی **Reverse WebSocket (`reverse_ws`)** بگذارید (یا اگر قبلاً با REST API ساخته‌اید و آفلاین شده، در صفحهٔ سرور `#/server/<name>` داخل بخش راهنمای آفلاین روی دکمهٔ تبدیل به `reverse_ws` کلیک کنید).
+۲. هاب به‌صورت خودکار توکن می‌سازد و دستور یک‌خطی آماده را در مودال نمایش می‌دهد؛ همان را روی نود خارج (یا پنل ایران) اجرا کنید:
+```bash
+sudo ratholenode agent reverse "wss://<DOMAIN>/hub/ws/agent" "<NAME>" "<TOKEN>" [--insecure-ssl] [--proxy <url>]
+# معادل روی سرور ایران:
+sudo ratholectl agent reverse "wss://<DOMAIN>/hub/ws/agent" "<NAME>" "<TOKEN>" [--insecure-ssl] [--proxy <url>]
+# یا از نصاب:
+sudo install-agent.sh --role node --reverse "wss://<DOMAIN>/hub/ws/agent" --name "<NAME>" --token "<TOKEN>"
+```
+- در اتصال مستقیم بدون Nginx می‌توانید از آدرس `ws://<HUB_IP>:8088/ws/agent` هم استفاده کنید.
+- برای گواهی TLS خودامضا روی هاب پرچم `--insecure-ssl` و در صورت نیاز به پروکسی HTTP `CONNECT` فلگ `--proxy http://host:port` را اضافه کنید.
+- `ratholeagent.py` (نسخه `2.0.0`) به‌کمک ماژول `wsutil.py` اتصال خروجی RFC 6455 برقرار می‌کند؛ هاب IP خروجی نود را خودکار برای FRP/GRE/Tuner تشخیص می‌دهد و حتی آپدیت از راه دور (`deploy`) را روی همین نشست انجام می‌دهد. چرخش توکن نیز از طریق `PUT /api/servers/<name>` (`rotate_token`) در دسترس است.
 
 ---
 
@@ -100,14 +118,14 @@ sudo ratholenode agent on 8089
 
 | صفحه | آدرس | محتوا |
 |------|------|-------|
-| **داشبورد** | `#/dashboard` | **۴ کارت KPI**، نوار وضعیت هاب، فیلتر سریع (نقش/وضعیت/متن)، کارت/فهرست سرورها، وضعیت و badge نسخه؛ افزودن/Provision؛ آپدیت همه با progress |
-| **صفحه سرور** | `#/server/<name>` | overview، دامنه/گواهی، پورت/path، carrierها، `paqet`، `Managed Xray`، ingress، جستجوی زنده و سرویس‌های rathole و Backhaul، game، upstreamها و ابزارهای تشخیص |
-| **تستر و تیونر شبکه** | `#/tuner` | اجرای غیرهم‌زمان بنچمارک ۶ مرحله‌ای `rathole-tuner`، امتیاز ۵بعدی، کپی/ایمپورت `rthprof1:` و JSON، کتابخانه پروفایل دیتاسنترها، تست A/B و اعمال/Rollback دوطرفه |
+| **داشبورد** | `#/dashboard` | **۴ کارت KPI**، نوار وضعیت هاب، فیلتر سریع (نقش/وضعیت/متن)، کارت/فهرست سرورها، وضعیت آنلاین/در انتظار `reverse_ws`، افزودن/Provision/`reverse_ws` و آپدیت همه با progress |
+| **صفحه سرور** | `#/server/<name>` | overview، دامنه/گواهی، پورت/path، carrierها، `paqet`، `Managed Xray`، ابزار اتصال/تبدیل `reverse_ws`، ingress، جستجوی زنده و سرویس‌های rathole و Backhaul، game، upstreamها و ابزارهای تشخیص |
+| **تستر و تیونر شبکه** | `#/tuner` | اجرای غیرهم‌زمان بنچمارک ۶ مرحله‌ای `rathole-tuner` (ماندگار هنگام رفرش)، کارت وضعیت زنده کرنل (`GET /api/tuner/status`)، امتیاز ۵بعدی، کپی/ایمپورت `rthprof1:` و JSON، کتابخانه پروفایل دیتاسنترها، تست A/B و اعمال دوفازه‌ای (`--confirm-ttl 45` + `bench confirm`) یا Rollback |
 | **مسیریابی / کنسول** | `#/routing` | **فقط‌خواندنی**: نمای گراف/جدول topology و کنسول؛ تغییر مسیر از ردیف سرویس یا کارت حامل انجام می‌شود |
 | **فعالیت** | `#/audit` | تاریخچه‌ی عملیات با جستجوی زنده (زمان، کاربر، سرور، action، rc) — ۱۰۰ رکورد آخر |
 | **تنظیمات** | `#/settings` | انتخابگر سه‌حالتهٔ تم (**روشن / تاریک / سیستم**)، تغییر زبان، پروکسی هاب، TOTP 2FA، توکن‌های RBAC، مانیتور تلگرام و تغییر رمز مدیر |
 
-رابط شیشه‌ای **Apple Glass** (نسخه‌ی **v2.3.0**) برای موبایل/دسکتاپ ریسپانسیو است، تم **روشن / تاریک / هماهنگ با سیستم**، RTL/LTR، فونت آفلاین **`vazirmatn.woff2`** (بدون CDN)، **`⌘K / Ctrl+K` پالت فرمان**، مودال‌های `<dialog>`، بارگذاری موازی سریع‌تر سرورها، پیام شفاف همگام‌سازی دوطرفه و `prefers-reduced-motion` دارد. زبان و تم در مرورگر ذخیره می‌شوند. نوار ناوبری پنج بخش دارد: داشبورد، نقشه مسیرها، تستر و تیونر شبکه، گزارش فعالیت‌ها، تنظیمات.
+رابط شیشه‌ای **Apple Glass** (نسخه‌ی **v2.4.0**) برای موبایل/دسکتاپ ریسپانسیو است، تم **روشن / تاریک / هماهنگ با سیستم**، RTL/LTR، فونت آفلاین **`vazirmatn.woff2`** (بدون CDN)، **`⌘K / Ctrl+K` پالت فرمان**، مودال‌های `<dialog>`، بارگذاری موازی سریع‌تر سرورها، پیام شفاف همگام‌سازی دوطرفه و `prefers-reduced-motion` دارد. زبان و تم در مرورگر ذخیره می‌شوند. نوار ناوبری پنج بخش دارد: داشبورد، نقشه مسیرها، تستر و تیونر شبکه، گزارش فعالیت‌ها، تنظیمات.
 
 ---
 
@@ -182,11 +200,12 @@ sudo ratholenode agent on 8089
 
 ```
 GET    /api/health                              سلامت هاب (بدون auth)
+GET    /ws/agent | /hub/ws/agent                ارتقای RFC 6455 برای Reverse WS Agent (احراز هویت Bearer)
 POST   /api/login                              {"password":"..."} → کوکی نشست + توکن
-GET    /api/servers                            لیست سرورها
-POST   /api/servers                            افزودن سرور (ssh یا api)
-PUT    /api/servers/<name>                     ویرایش متادیتا (host/port/کاربر/role/public_ip؛ برای api: api_url/api_token)
-DELETE /api/servers/<name>                     حذف سرور از inventory
+GET    /api/servers                            لیست سرورها (به‌همراه وضعیت آنلاین/در انتظار reverse_ws)
+POST   /api/servers                            افزودن سرور (ssh، api یا reverse_ws)
+PUT    /api/servers/<name>                     ویرایش متادیتا (+ rotate_token در reverse_ws)
+DELETE /api/servers/<name>                     حذف سرور از inventory (و بستن نشست فعال reverse_ws)
 POST   /api/provision                          نصب خودکار SSH (کلید SSH + deploy + ثبت)
 GET    /api/hubstatus                          وضعیت هاب + latest_version
 GET    /api/config                             تنظیمات هاب (listen، proxy، ssh_key، hint توکن، insecure)
@@ -210,6 +229,11 @@ GET    /metrics                                متریک‌های Prometheus (�
 GET    /api/tokens | POST /api/2fa/*           توکن‌های باسطح دسترسی و TOTP 2FA
 GET    /api/monitor/config | POST              پیکربندی مانیتور و ربات تلگرام
 GET    /api/releases/asset                     رله دریافت فایل ریلیز و امضای Ed25519
+POST   /api/tuner/start                        شروع بنچمارک ۶ مرحله‌ای rathole-tuner
+GET/POST /api/tuner/jobs | /jobs/<id>/cancel   وضعیت ماندگار یا لغو جاب‌های تیونر
+GET    /api/tuner/status                       وضعیت زنده کرنل ایران و نود (cc/qdisc/mtu/rmem_max/lowat)
+GET/POST/DELETE /api/tuner/profiles            کتابخانه پروفایل دیتاسنترها (rthprof1: و JSON)
+POST   /api/tuner/apply | /api/tuner/rollback  اعمال دوفازه‌ای (--confirm-ttl 45 + bench confirm) یا رول‌بک
 POST   /api/ip-tls/prepare                     آماده‌سازی گواهی IP برای direct-IP/backhaul direct_ip
 ```
 
@@ -231,9 +255,9 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST \
 
 1. هر درخواست به یک **action مجاز** از allow-list نگاشت می‌شود (`hubcmds.py` → `build_iran_cmd` / `build_node_cmd`)
 2. آرگومان‌ها با regex (`RE_NAME`, `RE_IPPORT`, `RE_KEY`, …) اعتبارسنجی می‌شوند
-3. دستورات به‌صورت **argv لیستی** اجرا می‌شوند — برای SSH با هر آرگومان جدا، و برای REST Agent به‌صورت `{"cmd":[...]}` — نه string interpolation
-4. actionهای تغییردهنده در `WRITE_ACTIONS` علامت‌گذاری شده‌اند و در **audit log** ثبت می‌شوند
-5. **سخت‌گیری سمت agent:** فقط بایناری‌های `ratholectl`، `ratholenode`، `systemctl`، `journalctl`، `jq`، `tail` مجاز هستند و `cmd[0]` دارای `/` مسدود می‌شود؛ اجرای agent با توکن خالی رد می‌شود؛ payload بین ۱ بایت و ۱ مگابایت، `timeout` بین ۱ تا ۳۶۰۰ ثانیه، و احراز هویت با مقایسه‌ی constant-time.
+3. دستورات به‌صورت **argv لیستی** اجرا می‌شوند — برای SSH با هر آرگومان جدا، برای REST Agent به‌صورت `{"cmd":[...]}` و برای `reverse_ws` داخل فریم متنی RFC 6455 (سقف ۴ MiB) — نه string interpolation
+4. actionهای تغییردهنده در `WRITE_ACTIONS` علامت‌گذاری شده‌اند (شامل `bench_confirm` در `v2.4.0`) و در **audit log** ثبت می‌شوند
+5. **سخت‌گیری سمت agent:** فقط باینری‌های `ratholectl`، `ratholenode`، `systemctl`، `journalctl`، `jq`، `tail` مجاز هستند و `cmd[0]` دارای `/` مسدود می‌شود؛ اجرای agent با توکن خالی رد می‌شود؛ payload HTTP بین ۱ بایت و ۱ مگابایت، فریم WebSocket حداکثر ۴ مگابایت، `timeout` بین ۱ تا ۳۶۰۰ ثانیه، و احراز هویت با مقایسه‌ی constant-time.
 6. دکمه «آپدیت» در خودِ سرور آخرین `install.sh` را از GitHub (از طریق mirror ghproxy برای مخزن عمومی) می‌گیرد و با `--update` اجرا می‌کند؛ slug مخزن (`gh_repo`) و کانال آپدیت از config می‌آیند و هر دو regex-validated هستند.
 
 ---
@@ -241,7 +265,7 @@ curl -s -H "Authorization: Bearer $TOKEN" -X POST \
 ## آپدیت گروهی و مخزن خصوصی
 
 - دکمه‌ی update هر سرور = `deploy_to_server`: روی خود سرور `install.sh` آخرین Release را دانلود و `--update` را اجرا می‌کند (snapshot + health-check + rollback خودکار). هاب به bundle محلی وابسته نیست.
-- `deploy` برای اتصال **api** هم همان مسیر را طی می‌کند: دستور روی سرور اجرا می‌شود، نه از روی هاب.
+- `deploy` برای اتصال **api** و **reverse_ws** هم همان مسیر را طی می‌کند: دستور روی سرور اجرا می‌شود، نه از روی هاب (و در `update.sh` ری‌استارت `rathole-agent.service` به‌صورت جداشده انجام می‌شود تا نشست قطع نگردد).
 - کانال آپدیت از config (`update_channel`: `stable` یا `beta`؛ پیش‌فرض `stable`) خوانده می‌شود. برای سرورهای بتا حتماً `beta` بگذارید تا به نسخه‌ی پایدار قدیمی‌تر downgrade نشوند.
 - slug مخزن از config (`gh_repo`، پیش‌فرض `l8PYGIT/RatholeEngine`) و با `RE_SLUG` اعتبارسنجی می‌شود.
 - **مخزن خصوصی:** آپدیت گروهی از هاب برای مخزن خصوصی پشتیبانی نمی‌شود (هاب روی سرور به توکن GitHub دسترسی ندارد)؛ روی هر سرور از `tools/update-private.sh` یا `install.sh --token` استفاده کنید. جزئیات: **[Workflow Guides](Workflow-Guides)**.

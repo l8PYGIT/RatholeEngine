@@ -14,22 +14,23 @@
 |------|---------|----------------|
 | **Iran panel** | [`ratholectl`](../rathole-manager/ratholectl) (bash) | rathole **server** + nginx. Owns node inventory. Generates `server.toml` + `rathole.conf`. |
 | **Foreign node** | [`ratholenode`](../rathole-manager/ratholenode) (bash) | rathole **client**. Generates `client.toml`. |
-| **Hub** | [`ratholehub/hub.py`](../rathole-manager/ratholehub/hub.py) (Python, stdlib only) | Central web panel driving multiple Iran servers/nodes over SSH **or** the REST Agent. Details: [`hub.en.md`](hub.en.md). |
-| **REST Agent** (optional) | [`ratholeagent.py`](../rathole-manager/ratholeagent.py) (Python, stdlib only; unit `rathole-agent.service`) | Lightweight management daemon on an Iran server/node so the hub can manage it without SSH. Details: [`hub.en.md`](hub.en.md). |
+| **Hub** | [`ratholehub/hub.py`](../rathole-manager/ratholehub/hub.py) (Python, stdlib only) | Central web panel driving multiple Iran servers/nodes over SSH, direct REST Agent, or Reverse WS (`wsutil.py`). Details: [`hub.en.md`](hub.en.md). |
+| **REST / Reverse WS Agent** (optional) | [`ratholeagent.py`](../rathole-manager/ratholeagent.py) + [`wsutil.py`](../rathole-manager/wsutil.py) (Python, stdlib only; unit `rathole-agent.service`) | Dual-mode daemon on an Iran server/node for SSH-free management (direct REST `:8089` or outbound Reverse WebSocket to `/hub/ws/agent`). Details: [`hub.en.md`](hub.en.md). |
 
 `common.sh` is sourced by both bash tools (colors/logging, `kcp_profile`, `install_kcptun`, `backhaul_mux_profile`, `backhaul_client_transport`, `install_backhaul`, `install_frp`, `frp_systemd_unit`, `gre_setup_interface`, `gre_teardown_interface`, `apply_sysctl_tuning`, `fakeweb_service`).
 
 ---
 
-## Management Plane: SSH or REST Agent
+## Management Plane: SSH, REST Agent, or Reverse WS
 
-The hub has two ways to run commands on a server; each server record's `transport` field selects one:
+The hub has three ways to run commands on a server; each server record's `transport` field selects one:
 
 - **`transport: "ssh"` (default):** SSH key auth; the command runs as an argv list with every argument passed separately.
-- **`transport: "api"`:** the hub sends the request to the server's REST Agent — `POST <api_url>/api/exec` with body `{"cmd":[...], "timeout": N}` and header `Authorization: Bearer <api_token>`. `GET /api/ping` is public and returns `{ok, role, version, hostname}`.
-- **Security:** on both paths the hub never runs raw shell strings; `hubcmds.build_iran_cmd`/`build_node_cmd` map an action + regex-validated args (`RE_*`) to an argv list. The agent only accepts argv (binary allow-list, payload capped at 1 MiB, constant-time token compare).
-- **HTTPS:** the agent listens on HTTP at `0.0.0.0:8089` by default (port configurable); `--tls-cert`/`--tls-key` (or the default `/etc/rathole-agent/cert.pem` + `key.pem`) switch it to HTTPS. A self-signed cert is accepted only when the hub server record sets `insecure_ssl: true` (or `RATHOLE_AGENT_INSECURE_SSL=1`).
-- **Install:** `install-agent.sh [--port 8089] [--token T] [--role iran|node]`, or from the CLIs: `ratholectl agent on [port] [token]` and `ratholenode agent on [port] [token]`. The token lives in `/etc/rathole-agent/token` (chmod 600).
+- **`transport: "api"`:** the hub sends the request to the server's REST Agent — `POST <api_url>/api/exec` with body `{"cmd":[...], "timeout": N}` and header `Authorization: Bearer <api_token>`. `GET /api/ping` is public and returns `{ok, role, version: "2.0.0", hostname}`.
+- **`transport: "reverse_ws"` (`v2.4.0`):** for filtered or NAT-bound servers where port `8089` is unreachable, `ratholeagent.py` dials outbound over RFC 6455 WebSocket (`wsutil.py`) to `GET /hub/ws/agent` (behind Nginx TLS `:443`) or `/ws/agent` — zero open inbound ports required on the target, with `--insecure-ssl` and HTTP `CONNECT` proxy support.
+- **Security:** on all three paths the hub never runs raw shell strings; `hubcmds.build_iran_cmd`/`build_node_cmd` map an action + regex-validated args (`RE_*`) to an argv list. The agent only accepts argv (`ALLOWED_BINARIES` allow-list, payload capped at 1 MiB for HTTP / 4 MiB frames for WebSocket, constant-time token compare).
+- **HTTPS & daemon hardening:** direct REST listens on HTTP at `0.0.0.0:8089` by default (`request_queue_size=64` + TCP keepalive); `--tls-cert`/`--tls-key` switch it to HTTPS. Self-signed certs require `insecure_ssl: true` (or `RATHOLE_AGENT_INSECURE_SSL=1`) in `api` mode, or `--insecure-ssl` on the agent CLI in `reverse_ws` mode. The `rathole-agent.service` unit is hardened with `StartLimitIntervalSec=0`, `LimitNOFILE=65535`, `KillMode=process`, and cgroup-safe self-restarts via `_schedule_agent_restart()` in `update.sh`.
+- **Install:** `install-agent.sh [--port 8089] [--token T] [--role iran|node]` (or `--reverse <ws_url> --name <name> --token T`), or from the CLIs: `ratholectl|ratholenode agent on [port] [token]` and `ratholectl|ratholenode agent reverse <ws_url> <name> [token] [--insecure-ssl] [--proxy <url>]`. The token lives in `/etc/rathole-agent/token` (chmod 600).
 
 ---
 
@@ -66,11 +67,11 @@ A service/path on an Iran server lives in exactly one of these lanes, while seve
 
 ---
 
-## Network Auto-Tuner (`rathole-tuner`) & Fleet Monitor (`v2.3.0`)
+## Network Auto-Tuner (`rathole-tuner`) & Fleet Monitor (`v2.4.0`)
 
 ![rathole-tuner Architecture](assets/tuner-architecture.svg)
 
-- **`rathole-tuner` (`ratholectl|ratholenode bench` & `#/tuner`):** 6-stage bidirectional benchmark & sysctl/interface auto-tuner (PMTU/MSS, offloads, BBR/CAKE/FQ, buffers, Bufferbloat, carrier matrix) over an ephemeral HMAC-authenticated peer (`:44990`), backed by live kernel snapshots, dead-man Watchdog rollback, and AI-analyzable **`rathole.netprofile.v1` / `rthprof1:`** profiles. See [`performance.en.md`](performance.en.md).
+- **`rathole-tuner` (`ratholectl|ratholenode bench` & `#/tuner`):** 6-stage bidirectional benchmark & sysctl/interface auto-tuner (PMTU/MSS with UDP-blocked `TCP_INFO` fallback, non-fixed offloads, `BBR/CAKE/FQ`, safe socket buffers, Bufferbloat, carrier matrix) over an ephemeral HMAC-authenticated peer (`:44990`), backed by **two-phase dead-man Watchdog confirmation** (`bench apply --confirm-ttl 45` + `bench confirm <id>`), live `bench status`, initial pre-tuner snapshot preservation, safe `sysctl --system` + `tc qdisc del root` rollback, and AI-analyzable **`rathole.netprofile.v1` / `rthprof1:`** profiles. See [`performance.en.md`](performance.en.md).
 - **`ratholemonitor.service`:** standalone hysteresis fleet monitor and multi-path Telegram bot (`direct`, `proxy`, or `node_tunnel`).
 - **Managed Xray (`ratholenode xray`):** native `VLESS+REALITY+Vision` and `XHTTP` lifecycle on nodes with an asynchronous TLS 1.3 + ALPN `h2` cover scanner.
 

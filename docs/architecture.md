@@ -12,20 +12,21 @@
 |-----|--------|-----|
 | **پنل ایران** | [`ratholectl`](../rathole-manager/ratholectl) (bash) | rathole **server** + nginx. مالک inventory نودها. `server.toml` و `rathole.conf` را تولید می‌کند. |
 | **نود خارج** | [`ratholenode`](../rathole-manager/ratholenode) (bash) | rathole **client**. `client.toml` را تولید می‌کند. |
-| **هاب** | [`ratholehub/hub.py`](../rathole-manager/ratholehub/hub.py) (Python، فقط stdlib) | پنل وب مرکزی که چند سرور ایران/نود را از طریق SSH یا REST Agent مدیریت می‌کند. جزئیات: [`hub.md`](hub.md). |
-| **REST Agent** (اختیاری) | [`ratholeagent.py`](../rathole-manager/ratholeagent.py) (Python، فقط stdlib؛ unit `rathole-agent.service`) | دیمن مدیریتی سبک روی سرور ایران/نود برای مدیریت بدون SSH از طرف هاب. جزئیات: [`hub.md`](hub.md). |
+| **هاب** | [`ratholehub/hub.py`](../rathole-manager/ratholehub/hub.py) (Python، فقط stdlib) | پنل وب مرکزی که چند سرور ایران/نود را از طریق SSH، REST Agent یا Reverse WS (`wsutil.py`) مدیریت می‌کند. جزئیات: [`hub.md`](hub.md). |
+| **REST / Reverse WS Agent** (اختیاری) | [`ratholeagent.py`](../rathole-manager/ratholeagent.py) + [`wsutil.py`](../rathole-manager/wsutil.py) (Python، فقط stdlib؛ unit `rathole-agent.service`) | دیمن مدیریتی دوحالته روی سرور ایران/نود برای مدیریت بدون SSH (REST مستقیم روی `:8089` یا WebSocket خروجی روی `/hub/ws/agent`). جزئیات: [`hub.md`](hub.md). |
 
 `common.sh` توسط هر دو ابزار bash سورس می‌شود (رنگ/لاگ، `kcp_profile`، `install_kcptun`، `backhaul_mux_profile`، `backhaul_client_transport`، `install_backhaul`، `install_frp`، `frp_systemd_unit`، `gre_setup_interface`، `gre_teardown_interface`، `apply_sysctl_tuning`، `fakeweb_service`).
 
-## صفحه‌ی مدیریت (Management plane): SSH یا REST Agent
+## صفحه‌ی مدیریت (Management plane): SSH، REST Agent یا Reverse WS
 
-هاب برای اجرای دستور روی هر سرور دو مسیر دارد و رکورد هر سرور با `transport` مشخص می‌کند که کدام استفاده شود:
+هاب برای اجرای دستور روی هر سرور سه مسیر دارد و رکورد هر سرور با `transport` مشخص می‌کند که کدام استفاده شود:
 
 - **`transport: "ssh"` (پیش‌فرض):** کلید SSH؛ دستور به‌صورت argv و با هر آرگومان جدا اجرا می‌شود.
-- **`transport: "api"`:** هاب درخواست را به REST Agent روی سرور می‌فرستد — `POST <api_url>/api/exec` با بدنه‌ی `{"cmd":[...], "timeout": N}` و هدر `Authorization: Bearer <api_token>`. `GET /api/ping` عمومی است و `{ok, role, version, hostname}` برمی‌گرداند.
-- **امنیت:** در هر دو مسیر هاب هیچ رشته‌ی shell خام اجرا نمی‌کند؛ `hubcmds.build_iran_cmd`/`build_node_cmd` اکشن + آرگومان‌های اعتبارسنجی‌شده (`RE_*`) را به لیست argv تبدیل می‌کند. Agent هم فقط argv می‌گیرد (لیست سفید باینری، payload حداکثر ۱ MiB، توکن با مقایسه‌ی constant-time).
-- **HTTPS:** Agent به‌صورت پیش‌فرض HTTP روی `0.0.0.0:8089` (پورت قابل تغییر) گوش می‌دهد؛ با `--tls-cert`/`--tls-key` (یا فایل‌های پیش‌فرض `/etc/rathole-agent/cert.pem` و `key.pem`) HTTPS می‌شود. گواهی self-signed فقط وقتی هاب قبول می‌کند که رکورد سرور `insecure_ssl: true` داشته باشد (یا `RATHOLE_AGENT_INSECURE_SSL=1`).
-- **نصب:** `install-agent.sh [--port 8089] [--token T] [--role iran|node]` یا از خود CLIها: `ratholectl agent on [port] [token]` و `ratholenode agent on [port] [token]`. توکن در `/etc/rathole-agent/token` (chmod 600) نگه داشته می‌شود.
+- **`transport: "api"`:** هاب درخواست را به REST Agent روی سرور می‌فرستد — `POST <api_url>/api/exec` با بدنه‌ی `{"cmd":[...], "timeout": N}` و هدر `Authorization: Bearer <api_token>`. `GET /api/ping` عمومی است و `{ok, role, version: "2.0.0", hostname}` برمی‌گرداند.
+- **`transport: "reverse_ws"` (`v2.4.0`):** برای سرورهایی که IP یا پورت `8089` آن‌ها فیلتر یا پشت NAT است: خود `ratholeagent.py` اتصال خروجی مداوم WebSocket (RFC 6455 از طریق `wsutil.py`) را به `GET /hub/ws/agent` (پورت `443` پشت Nginx) یا `/ws/agent` باز می‌کند؛ هیچ پورت ورودی روی نود نیاز نیست و از `--insecure-ssl` و پروکسی HTTP `CONNECT` هم پشتیبانی می‌شود.
+- **امنیت:** در هر سه مسیر هاب هیچ رشته‌ی shell خام اجرا نمی‌کند؛ `hubcmds.build_iran_cmd`/`build_node_cmd` اکشن + آرگومان‌های اعتبارسنجی‌شده (`RE_*`) را به لیست argv تبدیل می‌کند. Agent هم فقط argv می‌گیرد (لیست سفید باینری `ALLOWED_BINARIES`، payload حداکثر ۱ MiB در HTTP و فریم ۴ MiB در WebSocket، توکن با مقایسه‌ی constant-time).
+- **HTTPS و سخت‌سازی سرویس:** Agent در حالت REST به‌صورت پیش‌فرض HTTP روی `0.0.0.0:8089` (با `request_queue_size=64` و TCP keepalive) گوش می‌دهد و با `--tls-cert`/`--tls-key` HTTPS می‌شود؛ برای گواهی self-signed در `api` مقدار `insecure_ssl: true` روی رکورد سرور (یا `RATHOLE_AGENT_INSECURE_SSL=1`) و در `reverse_ws` فلگ `--insecure-ssl` استفاده می‌شود. واحد systemd نیز با `StartLimitIntervalSec=0`، `LimitNOFILE=65535` و ری‌استارت جداشدهٔ `_schedule_agent_restart` در `update.sh` سخت‌سازی شده است.
+- **نصب:** `install-agent.sh [--port 8089] [--token T] [--role iran|node]` (یا با `--reverse <ws_url> --name <name>`)، یا از خود CLIها: `ratholectl|ratholenode agent on [port] [token]` و `ratholectl|ratholenode agent reverse <ws_url> <name> [token] [--insecure-ssl] [--proxy <url>]`. توکن در `/etc/rathole-agent/token` (chmod 600) نگه داشته می‌شود.
 
 ## اصل مرکزی: state → regenerate → hot-reload
 
@@ -54,11 +55,11 @@ lane اصلی rathole چهار حامل دارد (websocket+TLS پیش‌فرض�
 
 هر سرویس/مسیر روی یک سرور ایران فقط در یکی از این laneهاست، ولی چند lane می‌توانند هم‌زمان برای سرویس‌های متفاوت روشن باشند. جابه‌جایی یک سرویس بین laneها **path و پورت ایران را عوض نمی‌کند**. جزئیات کامل: [`transport-modes.md`](transport-modes.md).
 
-## تیونر شبکه (`rathole-tuner`) و مانیتور ناوگان (`v2.3.0`)
+## تیونر شبکه (`rathole-tuner`) و مانیتور ناوگان (`v2.4.0`)
 
 ![معماری rathole-tuner](assets/tuner-architecture.svg)
 
-- **`rathole-tuner` (`ratholectl|ratholenode bench` و `#/tuner`):** موتور ۶ مرحله‌ای تست و بهینه‌سازی دوطرفه (PMTU/MSS، آف‌لودها، BBR/CAKE/FQ، بافرها، Bufferbloat و ماتریس حامل‌ها) روی پورت موقت HMAC (`:44990`) همراه با اسنپ‌شات کرنل، Watchdog بازگشت خودکار و خروجی **`rathole.netprofile.v1` / `rthprof1:`** قابل‌تحلیل توسط هوش مصنوعی. جزئیات: [`performance.md`](performance.md).
+- **`rathole-tuner` (`ratholectl|ratholenode bench` و `#/tuner`):** موتور ۶ مرحله‌ای تست و بهینه‌سازی دوطرفه (PMTU/MSS با fallback `TCP_INFO` در مسیرهای UDP-blocked، آف‌لودهای غیر-fixed، `BBR/CAKE/FQ`، بافرهای ایمن، Bufferbloat و ماتریس حامل‌ها) روی پورت موقت HMAC (`:44990`) همراه با **محافظ دوفازه‌ای Watchdog** (`bench apply --confirm-ttl 45` + `bench confirm <id>`)، وضعیت زنده `bench status`، حفظ snapshot اولیه پیش از تیونر، ترتیب صحیح `sysctl --system` و `tc qdisc del root` هنگام rollback و خروجی **`rathole.netprofile.v1` / `rthprof1:`** قابل‌تحلیل توسط هوش مصنوعی. جزئیات: [`performance.md`](performance.md).
 - **`ratholemonitor.service`:** سرویس مانیتورینگ مستقل ناوگان با هیسترزیس و ربات تلگرام چندمسیره (`direct` / `proxy` / `node_tunnel`).
 - **Managed Xray (`ratholenode xray`):** مدیریت بومی `VLESS+REALITY+Vision` و `XHTTP` روی نود به‌همراه اسکنر هم‌زمان سایت کاور TLS 1.3 + ALPN `h2`.
 

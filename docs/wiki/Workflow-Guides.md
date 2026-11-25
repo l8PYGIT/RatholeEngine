@@ -35,7 +35,7 @@ sudo ratholenode agent show
 
 ```bash
 curl -s http://<server_ip>:8089/api/ping
-# → {"ok":true,"role":"iran","version":"1.0.0","hostname":"..."}
+# → {"ok":true,"role":"iran","version":"2.0.0","hostname":"..."}
 ```
 
 ### ثبت در هاب:
@@ -54,7 +54,30 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8089/api/ping   # 200
 sudo ratholectl agent status                        # active + توکن
 ```
 
-اگر هاب `no_agent` نشان داد، پورت/فایروال و `api_url` را بررسی کنید. جزئیات خطاها: **[Troubleshooting](Troubleshooting)**.
+اگر هاب `no_agent` نشان داد (مثلاً چون IP نود یا پورت `8089` فیلتر شده است)، یا پورت/فایروال را چک کنید یا در صفحهٔ سرور روی تبدیل به **Reverse WebSocket (`reverse_ws`)** بزنید. جزئیات خطاها: **[Troubleshooting](Troubleshooting)**.
+
+---
+
+## ۱-ب. اتصال نود فیلترشده یا پشت NAT با Reverse WebSocket Agent (`v2.4.0`)
+
+**هدف:** وقتی IP نود یا پورت `8089` از سمت ایران/هاب قابل دسترس نیست (یا نود پشت NAT است)، خود نود اتصال خروجی امن به هاب روی `/hub/ws/agent` (پورت ۴۴۳ پشت Nginx) برقرار کند تا مدیریت، آپدیت (`deploy`) و تیونینگ بدون هیچ پورت ورودی انجام شود.
+
+### گام‌های اجرا:
+
+1. **آپدیت هر دو سمت به `v2.4.0`:** مطمئن شوید روی سرور هاب (`ratholectl update`) و نود خارج (`ratholenode update`) نسخهٔ `2.4.0` نصب است (تا `wsutil.py` و `ratholeagent.py` نسخه `2.0.0` روی سیستم باشند).
+2. **ثبت یا تبدیل سرور در پنل هاب:**
+   - اگر سرور جدید است: در داشبورد Add Server نوع اتصال را روی **Reverse WebSocket (`reverse_ws`)** بگذارید.
+   - اگر سرور از قبل با REST API ثبت شده ولی آفلاین (`no_agent`) است: در صفحهٔ همان سرور (`#/server/<name>`) داخل بخش راهنمای آفلاین روی دکمهٔ تبدیل به `reverse_ws` کلیک کنید.
+   - هاب توکن می‌سازد و دستور یک‌خطی آماده را در مودال نمایش می‌دهد.
+3. **اجرای دستور اتصال معکوس روی نود خارج (یا پنل ایران):**
+   ```bash
+   sudo ratholenode agent reverse "wss://<DOMAIN>/hub/ws/agent" "<NAME>" "<TOKEN>"
+   # در صورت استفاده از گواهی self-signed هاب، یا پروکسی HTTP CONNECT، یا اتصال مستقیم به پورت هاب:
+   # sudo ratholenode agent reverse "wss://<DOMAIN>/hub/ws/agent" "<NAME>" "<TOKEN>" --insecure-ssl [--proxy http://127.0.0.1:8080]
+   # یا روی سرور ایران:
+   # sudo ratholectl agent reverse "ws://127.0.0.1:8088/ws/agent" "<NAME>" "<TOKEN>"
+   ```
+4. **تأیید اتصال:** در داشبورد و صفحهٔ سرور، وضعیت از حالت در انتظار به **آنلاین (`Reverse WS`)** تغییر می‌کند و روی نود نیز `sudo ratholenode agent status` وضعیت `active` را با آدرس `--reverse` چاپ می‌کند. برای تعویض توکن در آینده از گزینهٔ `rotate_token` در ویرایش سرور داخل هاب استفاده کنید.
 
 ---
 
@@ -376,15 +399,16 @@ sudo RATHOLE_GH=owner/repo bash /tmp/install.sh --token <PAT> --release v2.0.2 -
 
 ---
 
-## ۹. بهینه‌سازی بی‌رحمانه لینک و ساخت پروفایل AI با `rathole-tuner` (`v2.3.0+`)
+## ۹. بهینه‌سازی بی‌رحمانه لینک و ساخت پروفایل AI با `rathole-tuner` (`v2.3.0+` / `v2.4.0`)
 
-**هدف:** یافتن پایدارترین و سریع‌ترین ترکیب MTU/MSS، آف‌لود NIC، کنترل ازدحام (`BBR`/`CAKE`/`FQ`)، بافرها و حامل بین سرور ایران و نود خارج، بدون ریسک قفل‌شدن SSH، همراه با پروفایل قابل اشتراک برای دیتاسنترها و تحلیل توسط هوش مصنوعی.
+**هدف:** یافتن پایدارترین و سریع‌ترین ترکیب MTU/MSS (با تشخیص پیش‌دستانهٔ انسداد UDP و `TCP_INFO`)، آف‌لود غیر-fixed NIC، کنترل ازدحام (`BBR`/`CAKE`/`FQ`)، بافرهای ایمن و حامل بین سرور ایران و نود خارج، همراه با **محافظ دوفازه‌ای Watchdog** بدون ریسک قفل‌شدن SSH یا ایجنت، وضعیت زنده کرنل و پروفایل قابل اشتراک برای دیتاسنترها.
 
 ### روش اول — از رابط وب (`#/tuner` در RatholeHub):
 
-1. از منوی کناری وارد **تستر و تیونر شبکه (`#/tuner`)** شوید و جفت **سرور ایران** و **نود خارج** را انتخاب کنید.
-2. حالت اجرا را روی **`Brutal (Watchdog + Rollback)`** و هدف (`Balanced` / `Low Latency` / `Max Throughput` / `Anti-Loss`) و برچسب دیتاسنترها (مثلاً `arvan` و `hetzner-fsn1`) را ثبت کرده و **شروع بنچمارک بی‌رحمانه** را بزنید.
-3. پس از پایان ۶ مرحله، امتیاز ۵بعدی، جدول Baseline در برابر Winner و کد **`rthprof1:`** (یا **کپی JSON برای AI**) را دریافت می‌کنید؛ دکمهٔ **ذخیره در کتابخانه** پروفایل را برای تست زنده A/B روی سایر سرورها نگه می‌دارد.
+1. از منوی کناری وارد **تستر و تیونر شبکه (`#/tuner`)** شوید؛ وضعیت زنده کرنل دو سرور (`GET /api/tuner/status`) همان بالا نمایش داده می‌شود و جاب‌های در حال اجرا با رفرش صفحه از بین نمی‌روند.
+2. جفت **سرور ایران** و **نود خارج** را انتخاب کنید، حالت اجرا را روی **`Brutal (Watchdog + Rollback)`** و هدف (`Balanced` / `Low Latency` / `Max Throughput` / `Anti-Loss`) و برچسب دیتاسنترها (مثلاً `arvan` و `hetzner-fsn1`) را ثبت کرده و **شروع بنچمارک بی‌رحمانه** را بزنید.
+3. پس از پایان ۶ مرحله، امتیاز ۵بعدی، جدول هم‌تراز Baseline در برابر Winner و کد **`rthprof1:`** (یا **کپی JSON برای AI**) را دریافت می‌کنید؛ دکمهٔ **ذخیره در کتابخانه** پروفایل را برای تست زنده A/B روی سایر سرورها نگه می‌دارد.
+4. هنگام **اعمال (Apply)** از هاب، عملیات به‌صورت دوفازه‌ای (`bench apply --confirm-ttl 45` سپس `bench confirm <id>`) انجام می‌شود؛ اگر ارتباط هر سمت قطع شود یا نود تأیید نشود، کرنل به اسنپ‌شات قبل برمی‌گردد (و سمت ایران هم خودکار Rollback می‌شود).
 
 ### روش دوم — مستقیم از CLI دو سرور:
 
@@ -397,8 +421,10 @@ sudo ratholectl bench run --peer <NODE_IP>:44990 --token MyBenchSecret99 \
   --mode brutal --goal balanced --iran-dc arvan --node-dc hetzner-fsn1 \
   --out /tmp/dc-profile.json --b64-out /tmp/dc-profile.b64
 
-# ۳) تست مقایسه زنده A/B پروفایل اشتراکی دیگران و در صورت بهبود، اعمال یا بازگشت:
+# ۳) تست مقایسه زنده A/B، اعمال دوفازه‌ای با Watchdog (--confirm-ttl 45) و تایید، وضعیت زنده یا بازگشت:
 sudo ratholectl bench test --peer <NODE_IP>:44990 --token MyBenchSecret99 --profile "rthprof1:..."
-sudo ratholectl bench apply --profile /tmp/dc-profile.json
+sudo ratholectl bench apply --profile /tmp/dc-profile.json --confirm-ttl 45
+sudo ratholectl bench confirm <CONFIRM_ID>
+sudo ratholectl bench status --json
 sudo ratholectl bench rollback
 ```

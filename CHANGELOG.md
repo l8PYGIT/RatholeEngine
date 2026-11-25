@@ -9,6 +9,21 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-25
+
+### Added
+- **ایجنت WebSocket معکوس (Reverse WS Agent) بدون نیاز به باز بودن هیچ پورت روی سرور مقصد:**
+  - پیاده‌سازی ماژول سبک WebSocket منطبق بر RFC 6455 صرفاً با کتابخانه استاندارد پایتون (`rathole-manager/wsutil.py`) با پشتیبانی از `wss://` (پورت ۴۴۳ پشت Nginx)، آدرس مستقیم IP / `ws://`، گواهی self-signed (`--insecure-ssl`)، پروکسی HTTP CONNECT، تکه-فریم، Ping/Pong خودکار و TCP Keepalive.
+  - ارتقای `ratholeagent.py` (نسخه ۲.۰.۰) به حالت دوگانه با پشتیبانی `--reverse <ws_url> --name <name>` (اتصال خروجی مداوم به هاب روی `/hub/ws/agent` یا `/ws/agent`، اجرای همزمان دستورات در صف مجاز `ALLOWED_BINARIES` و backoff نمایی اتصال مجدد).
+  - پشتیبانی کامل در هاب (`hub.py` با رجیستری نشست زنده، جایگزینی اتمیک هنگام اتصال مجدد، شناسایی خودکار IP نود برای FRP/GRE/تیونر و بروزرسانی/اعمال از طریق WS معکوس)، دستورات CLI (`ratholenode agent reverse ...`، `ratholectl agent reverse ...` و `install-agent.sh --reverse ...`) و رابط کاربری پنل (`reverse_ws` به‌همراه مودال کپی دستور اتصال یک‌خطی، نمایش وضعیت آنلاین/در انتظار، چرخش توکن و دکمه تبدیل سرورهای فعلی).
+
+### Fixed & Hardened
+- **محافظ دو-فازی ضد-قفل هنگام اعمال تنظیمات کرنل (Watchdog Dead-Man Switch):** اجرای `bench apply --confirm-ttl 45` و تأیید زنده (`bench confirm`) روی هر سرور؛ در صورت افت ارتباط یا عدم تأیید ظرف ۴۵ ثانیه، کرنل و سرویس به‌طور خودکار به Snapshot قبل بازمی‌گردند (و در هاب با شکست نود، ایران هم فوراً rollback می‌شود).
+- **حفظ آدرس مبدأ و onlink در مسیر پیش‌فرض کرنل:** تابع `_strip_route_target` دیگر پارامتر حیاتی `src` را از خط `default` حذف نمی‌کند و فقط فیلدهای گذرا (`uid`/`cache`/`expires`/`linkdown`/`initcwnd`/`initrwnd`/`advmss`) را پاک می‌کند.
+- **کاهش پیش‌فرض خطرناک بافر سوکت (rmem_default / wmem_default):** کاهش از ۲۵ مگابایت به ۲۵۶ کیلوبایت (`262144`) در `common.sh` و کاهش خودکار مقدار زنده هنگام اعمال پروفایل در `tuner/apply.py` تا از اشغال حافظه در اتصالات زیاد جلوگیری شود.
+- **پایداری Daemon و جلوگیری از Self-Kill هنگام آپدیت:** افزایش صف `request_queue_size = 64` و TCP Keepalive در `ratholeagent.py`، افزودن `StartLimitIntervalSec=0` و `LimitNOFILE=65535` در سرویس systemd، مدیریت تمیز قطع ناگهانی سوکت (`BrokenPipeError`)، و زمان‌بندی مستقل ری‌استارت ایجنت در `restart_services()` و `finish_agent_restart()` (`update.sh`).
+- **ایمن‌سازی دستکاری کارت‌شبکه و ترتیب Rollback:** نادیده‌گرفتن ویژگی‌های `[fixed]` در `ethtool -k` و صرف‌نظر از تغییرات بدون اثر (`MTU`/`txqueuelen`/`qdisc`/`offloads`)، بازگردانی صحیح `mq`/`noqueue`/`default` با `tc qdisc del root`، حفظ Snapshot اصلی پیش از تیونر در اعمال‌های پیاپی، اجرای `sysctl --system` پیش از `restore_snapshot` هنگام rollback، و جستجوی `common.sh` در مسیرهای نصبی واقعی هاب (`hub_manager_version`).
+
 ## [2.3.4] - 2026-11-24
 
 ### Fixed

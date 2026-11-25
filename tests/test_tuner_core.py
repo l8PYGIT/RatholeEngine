@@ -704,6 +704,152 @@ class TestTunerRealWorldRegressions(unittest.TestCase):
         picked_good = _select_best_candidate([baseline, starved, healthy], baseline, "balanced", min_gain=1.0)
         self.assertEqual(picked_good["id"], "healthy_winner")
 
+    def test_v24_audit_hardening_route_offloads_noop_snapshot_and_two_phase_confirm(self):
+        import tempfile
+        from unittest import mock
+        from tuner.apply import apply_persistent, confirm_persistent, rollback_persistent
+        from tuner.profile import build_profile
+        from tuner.sysstate import MockSysDriver, _parse_offloads, _strip_route_target, apply_candidate, restore_snapshot
+        from tuner.watchdog import _run_loop
+
+        # 1) _strip_route_target preserves `src <IP>` & `onlink`, strips transient attrs
+        toks = _strip_route_target(
+            "default via 192.0.2.1 dev eth0 proto static src 198.51.100.10 onlink metric 100 initcwnd 20 uid 0 expires 30 cache linkdown"
+        )
+        self.assertIn("src", toks)
+        self.assertIn("198.51.100.10", toks)
+        self.assertIn("onlink", toks)
+        for bad in ("initcwnd", "uid", "expires", "cache", "linkdown"):
+            self.assertNotIn(bad, toks)
+
+        # 2) _parse_offloads skips `[fixed]` entries & apply_candidate skips no-op mutating calls
+        class RecordingDriver(MockSysDriver):
+            def __init__(self):
+                super().__init__(ram_mb=2048)
+                self.cmds = []
+                self.qdisc_line = "qdisc mq 0: root"
+
+            def run(self, argv, timeout=10.0):
+                self.cmds.append(list(argv))
+                if argv[:2] == ["ethtool", "-k"]:
+                    return 0, (
+                        "tcp-segmentation-offload: on [fixed]\n"
+                        "generic-segmentation-offload: on\n"
+                        "generic-receive-offload: on\n"
+                        "large-receive-offload: off [fixed]\n"
+                    ), ""
+                return super().run(argv, timeout=timeout)
+
+        drv = RecordingDriver()
+        offs = _parse_offloads(drv, "eth0")
+        self.assertEqual(offs, {"gso": True, "gro": True})
+        res_noop = apply_candidate(
+            drv,
+            {"mtu": 1500, "txqueuelen": 1000, "qdisc": {"kind": "mq"}, "offloads": {"tso": True, "gso": True, "gro": True}},
+            iface="eth0",
+        )
+        self.assertEqual(res_noop["errors"], [])
+        self.assertFalse(any(c[:2] == ["ip", "link"] and "set" in c for c in drv.cmds))
+        self.assertFalse(any(c[:2] == ["ethtool", "-K"] for c in drv.cmds))
+        self.assertFalse(any(c[:3] == ["tc", "qdisc", "replace"] for c in drv.cmds))
+
+        # 3) restore_snapshot uses `tc qdisc del` when restoring `mq`
+        drv.cmds.clear()
+        snap_mq = {"iface": "eth0", "mtu": 1500, "txqueuelen": 1000, "qdisc": {"kind": "mq"}, "sysctl": {}, "route": {}, "route_line": ""}
+        drv.qdisc_line = "qdisc fq 0: root refcnt 2"
+        restore_snapshot(drv, snap_mq)
+        self.assertIn(["tc", "qdisc", "del", "dev", "eth0", "root"], drv.cmds)
+
+        # 4) Repeated apply_persistent preserves original snapshot_path, lowers live 25 MiB defaults,
+        #    rollback runs `sysctl --system` before `restore_snapshot`, and confirm disarms watchdog
+        with tempfile.TemporaryDirectory() as td:
+            tune_conf = os.path.join(td, "99-rathole-tune.conf")
+            applied_json = os.path.join(td, "applied-profile.json")
+            unit_file = os.path.join(td, "rathole-net-tune.service")
+            snap_dir = os.path.join(td, "snapshots")
+            wd_dir = os.path.join(td, "watchdog")
+            paths = {
+                "sysctl_tune_file": tune_conf,
+                "reserved_ports_file": os.path.join(td, "99-res.conf"),
+                "applied_profile_file": applied_json,
+                "systemd_unit_file": unit_file,
+                "snapshot_dir": snap_dir,
+                "watchdog_state_dir": wd_dir,
+            }
+            prof = build_profile(
+                meta={"name": "v24-safe"},
+                environment={},
+                diagnostics=[],
+                benchmarks={},
+                iran_config={
+                    "mtu": 1460,
+                    "qdisc": {"kind": "fq", "params": {}},
+                    "sysctl": {"net.core.rmem_max": 16777216, "net.core.wmem_max": 16777216},
+                },
+                node_config={"mtu": 1460, "sysctl": {}},
+            )
+            drv2 = RecordingDriver()
+            drv2.sysctls["net.core.rmem_default"] = "26214400"
+            drv2.sysctls["net.core.wmem_default"] = "26214400"
+            marker = os.path.join(td, "wd_fired.marker")
+
+            out1 = apply_persistent(drv2, prof, side="iran", paths=paths, confirm_ttl=2, _mock_restore_marker=marker)
+            self.assertTrue(out1["confirm_required"])
+            self.assertEqual(drv2.sysctls["net.core.rmem_default"], "262144")
+            self.assertEqual(drv2.sysctls["net.core.wmem_default"], "262144")
+
+            # Confirm immediately and verify watchdog exits cleanly without firing marker
+            cf = confirm_persistent(drv2, out1["confirm_id"], paths=paths)
+            self.assertTrue(cf["ok"])
+            self.assertTrue(cf["confirmed"])
+            time.sleep(0.45)
+            self.assertFalse(os.path.exists(marker))
+
+            # Second apply must preserve original pre-tuner snapshot_path
+            out2 = apply_persistent(drv2, prof, side="iran", paths=paths)
+            self.assertEqual(out2["snapshot_path"], out1["snapshot_path"])
+
+            # Verify rollback order: `sysctl --system` runs before `restore_snapshot`
+            drv2.cmds.clear()
+            with mock.patch("tuner.apply.restore_snapshot", wraps=restore_snapshot) as m_rs:
+                order = []
+                orig_run = drv2.run
+                def track_run(argv, timeout=10.0):
+                    if argv == ["sysctl", "--system"]:
+                        order.append("sysctl_system")
+                    return orig_run(argv, timeout=timeout)
+                def track_rs(*a, **kw):
+                    order.append("restore_snapshot")
+                    return restore_snapshot(*a, **kw)
+                m_rs.side_effect = track_rs
+                drv2.run = track_run
+                rb = rollback_persistent(drv2, paths=paths)
+                self.assertTrue(rb["ok"])
+                self.assertEqual(order, ["sysctl_system", "restore_snapshot"])
+
+            # Unconfirmed persistent watchdog invokes rollback_persistent upon TTL expiry
+            hb_p = os.path.join(td, "wd_p.hb")
+            dis_p = os.path.join(td, "wd_p.disarm")
+            with open(hb_p, "w", encoding="utf-8") as fh:
+                fh.write("0\n")
+            fake_args = mock.Mock(
+                rollback_persistent=True,
+                applied_file=applied_json,
+                sysctl_file=tune_conf,
+                unit_file=unit_file,
+                watchdog_dir=wd_dir,
+                heartbeat=hb_p,
+                disarm=dis_p,
+                ttl=0.05,
+                session="test_rb",
+                mock_restore_marker="",
+                snapshot="",
+            )
+            with mock.patch("tuner.apply.rollback_persistent", return_value={"ok": True}) as m_rbp:
+                rc_wd = _run_loop(fake_args)
+            self.assertEqual(rc_wd, 0)
+            m_rbp.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

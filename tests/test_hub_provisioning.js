@@ -1332,3 +1332,104 @@ test('#/tuner route, i18n FA/EN keys, and tuner API UI helpers work cleanly', as
  assert.ok(c.TUNER_STATE.lastApplyNotice.includes('Iran:2, Node:1'));
  assert.ok(c.TUNER_STATE.lastApplyNotice.includes('tuner_reconnect_hint'));
 });
+
+test('Reverse WS UI form, setup modal, cards, server page & public IP resolution work cleanly', async () => {
+ const i18nSrc = fs.readFileSync(path.join(__dirname, '../rathole-manager/ratholehub/ui/i18n.js'), 'utf8');
+ const i18nCtx = {};
+ vm.createContext(i18nCtx);
+ vm.runInContext(i18nSrc + '\nthis.DICT = DICT;', i18nCtx);
+ for (const k of ['conn_reverse_ws', 'badge_reverse_ws', 'rev_online', 'rev_waiting', 'rev_setup_btn', 'rev_setup_title', 'rev_offline_help']) {
+  assert.ok(i18nCtx.DICT.fa[k], 'missing fa.' + k);
+  assert.ok(i18nCtx.DICT.en[k], 'missing en.' + k);
+ }
+
+ const c = context();
+ const els = {};
+ const clsEls = { '.f-ssh': [{ style: {} }], '.f-api': [{ style: {} }], '.f-rev': [{ style: {} }] };
+ Object.assign(c, {
+  SERVERS: [
+   { name: 'rev-ir', role: 'iran', transport: 'reverse_ws', api_token_set: true, reverse_connected: true, reverse_public_ip: '5.202.4.40' },
+   { name: 'rev-nd', role: 'node', transport: 'reverse_ws', api_token_set: true, reverse_connected: false, public_ip: '198.51.100.9' },
+  ],
+  OVS: { 'rev-nd': { reachable: false, error: 'Reverse agent offline' } },
+  VIEW: 'grid',
+  HUBST: {},
+  ROUTE: { page: 'dashboard' },
+  DASH_FILTER: { q: '', role: 'all', status: 'all' },
+  location: { protocol: 'https:', host: 'panel.example.com', pathname: '/hub/' },
+  $: id => (els[id] || (els[id] = { value: '', innerHTML: '', classList: { toggle() {}, add() {}, remove() {} }, addEventListener() {}, focus() {}, setAttribute() {} })),
+  document: { querySelectorAll: sel => clsEls[sel] || [], querySelector: () => null },
+  requestAnimationFrame: () => {},
+  updateDashboardKpis: () => {},
+  updateHubStrip: () => {},
+  loadHubStatus: () => {},
+  updateCard: () => {},
+  loadOv: () => {},
+  fnd: name => c.SERVERS.find(s => s.name === name) || {},
+  iranSrvOptions: () => '',
+  closeAllMoreMenus: () => {},
+  renderIran: () => '<div>IRAN</div>',
+  renderNode: () => '<div>NODE</div>',
+  setDot: () => {},
+  ovDotCls: () => 'd-ok',
+  icon: name => `[${name}]`,
+  t: k => i18nCtx.DICT.fa[k] || k,
+  h: x => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+  api: async (m, url, body) => {
+   c.calls.push({ m, url, body });
+   if (m === 'POST' && url === 'api/servers') return { status: 200, j: { ok: true, api_token: 'tok-auto-1234' } };
+   return { status: 200, j: { ok: true } };
+  },
+  loadAll: async () => {},
+  toast: m => c.messages.push(m),
+  modal: html => { c.lastModal = html; },
+  closeModal: () => {},
+ });
+
+ for (const fn of ['buildReverseWsUrl', 'buildReverseSetupCmd', 'showReverseSetupModal', 'toggleConnType', 'filteredServers', 'renderDashboard', 'drawCards', 'renderServerPage', 'headBadges', 'serverPublicIp', 'requireInputs', 'addSrv']) {
+  vm.runInContext(definition(fn), c);
+ }
+
+ // 1) Add server form has reverse_ws option & toggleConnType switches visibility cleanly
+ c.renderDashboard();
+ assert.ok(els.page.innerHTML.includes('value="reverse_ws"'));
+ c.$('conn_tr').value = 'reverse_ws';
+ c.toggleConnType();
+ assert.equal(clsEls['.f-ssh'][0].style.display, 'none');
+ assert.equal(clsEls['.f-api'][0].style.display, 'none');
+ assert.equal(clsEls['.f-rev'][0].style.display, '');
+
+ // 2) drawCards renders Reverse WS badge & online/waiting state
+ c.drawCards();
+ assert.ok(els.servers.innerHTML.includes('Reverse WS'));
+ assert.ok(els.servers.innerHTML.includes('5.202.4.40'));
+
+ // 3) serverPublicIp uses reverse_public_ip
+ assert.equal(c.serverPublicIp(c.SERVERS[0], {}), '5.202.4.40');
+
+ // 4) Offline reverse_ws server shows Reverse WS help & setup button (not SSH)
+ c.renderServerPage('rev-nd');
+ assert.ok(els.page.innerHTML.includes('Reverse WebSocket'));
+ assert.ok(els.page.innerHTML.includes('showReverseSetupAction'));
+ assert.equal(els.page.innerHTML.includes('ssh-copy-id'), false);
+ assert.match(c.headBadges('rev-nd', c.OVS['rev-nd']), /در انتظار اتصال نود|rev_waiting/);
+
+ // 5) showReverseSetupModal escapes HTML payloads & formats CLI command properly
+ assert.equal(c.buildReverseWsUrl(), 'wss://panel.example.com/hub/ws/agent');
+ c.showReverseSetupModal('<bad>', 'node', 'tok"xss');
+ assert.ok(c.lastModal.includes('ratholenode agent reverse'));
+ assert.equal(c.lastModal.includes('<bad>'), false);
+
+ // 6) addSrv with reverse_ws posts correctly and opens setup modal with returned token
+ c.$('conn_tr').value = 'reverse_ws';
+ c.$('n').value = 'new-rev';
+ c.$('rl').value = 'node';
+ c.$('rev_pub').value = '203.0.113.99';
+ c.$('rev_tok').value = '';
+ await c.addSrv();
+ const postCall = c.calls.find(x => x.m === 'POST' && x.url === 'api/servers');
+ assert.ok(postCall);
+ assert.equal(postCall.body.transport, 'reverse_ws');
+ assert.equal(postCall.body.public_ip, '203.0.113.99');
+ assert.ok(c.lastModal.includes('tok-auto-1234'));
+});

@@ -410,6 +410,47 @@ cat "$AGENT_RESTART_FLAG"
                 self.assertIn('KillMode=process', text)
         agent_installer = (ROOT / 'rathole-manager/install-agent.sh').read_text(encoding='utf-8')
         self.assertIn('chmod 644 /etc/systemd/system/rathole-agent.service', agent_installer)
+        self.assertIn('StartLimitIntervalSec=0', agent_installer)
+        self.assertIn('LimitNOFILE=65535', agent_installer)
+
+    def test_cli_agent_reverse_and_installer_reverse_validation(self):
+        for filename, role in [('ratholectl', 'iran'), ('ratholenode', 'node')]:
+            with self.subTest(cli=filename):
+                source = (ROOT / 'rathole-manager' / filename).read_text(encoding='utf-8')
+                start = source.index('cmd_agent(){')
+                fn_src = source[start:source.index('\n}\n', start) + 3]
+                fn_src = fn_src.replace('/etc/', '$task_dir/etc/').replace('/usr/local/share/', '$task_dir/share/')
+                script = '''set -euo pipefail
+task_dir="$(mktemp -d)"
+trap 'command rm -rf "$task_dir"' EXIT
+mkdir -p "$task_dir/etc/systemd/system" "$task_dir/share/rathole"
+touch "$task_dir/share/rathole/ratholeagent.py" "$task_dir/share/rathole/wsutil.py"
+need_root(){ :; }
+systemctl(){ :; }
+log(){ :; }
+c_y(){ echo "$*"; }
+detect_ip(){ echo 203.0.113.10; }
+die(){ echo "$*" >&2; exit 1; }
+AGENT_SVC=rathole-agent
+''' + fn_src + '\ncmd_agent reverse wss://panel.example.com/hub/ws/agent srv1 secret_tok_9876 --insecure-ssl\ncat "$task_dir/etc/systemd/system/rathole-agent.service"\n'
+                res = run_bash(script)
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertIn(f'--reverse wss://panel.example.com/hub/ws/agent --name srv1 --role {role} --insecure-ssl', res.stdout)
+                self.assertIn('StartLimitIntervalSec=0', res.stdout)
+                self.assertIn('LimitNOFILE=65535', res.stdout)
+                self.assertNotIn('secret_tok_9876', res.stdout)
+
+                # Reject invalid scheme / shell metacharacters before mutating
+                bad_script = '''set -euo pipefail
+need_root(){ :; }
+die(){ echo "$*" >&2; exit 1; }
+log(){ :; }
+mkdir(){ echo BAD_MUTATE; exit 0; }
+AGENT_SVC=rathole-agent
+''' + fn_src + '\ncmd_agent reverse http://not-ws.example srv1 tok1234\n'
+                bad_res = run_bash(bad_script)
+                self.assertNotEqual(bad_res.returncode, 0)
+                self.assertNotIn('BAD_MUTATE', bad_res.stdout)
 
 
 if __name__ == '__main__':

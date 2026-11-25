@@ -92,7 +92,7 @@ def _valid_mtu(val):
 _INT_OK_KEYS = frozenset({
     "port", "inbound", "api_port", "remote_port", "lines",
     "interval", "failures", "recoveries", "value", "gre_key", "mtu", "count", "rev",
-    "conn", "top", "timeout", "idle_timeout", "data_port",
+    "conn", "top", "timeout", "idle_timeout", "data_port", "confirm_ttl",
 })
 _BOOL_OK_KEYS = frozenset({"probe_candidates", "allow_insecure", "tls_verify", "proxy_protocol", "tls", "deep"})
 
@@ -188,7 +188,19 @@ def _build_bench_cmd(cli_bin, default_side, action, a):
         side = a.get("side", default_side) or default_side
         if not RE_TUNER_PROFILE.match(prof) or not RE_TUNER_SIDE.match(side):
             return None
-        return [cli_bin, "bench", "apply", prof, "--side", side, "--json"]
+        cmd = [cli_bin, "bench", "apply", prof, "--side", side]
+        ttl = str(a.get("confirm_ttl", "") or "").strip()
+        if ttl:
+            if not ttl.isdigit() or not (15 <= int(ttl) <= 300):
+                return None
+            cmd += ["--confirm-ttl", ttl]
+        cmd.append("--json")
+        return cmd
+    if action == "bench_confirm":
+        cid = str(a.get("id", "") or "").strip()
+        if not RE_ID.match(cid):
+            return None
+        return [cli_bin, "bench", "confirm", cid, "--json"]
     if action == "bench_rollback":
         return [cli_bin, "bench", "rollback", "--json"]
     return None
@@ -1029,7 +1041,7 @@ WRITE_ACTIONS = {
     "endpoints_add", "endpoints_rm", "endpoints_switch",
     "xray_setup", "xray_off",
     "bench_listen_start", "bench_listen_stop", "bench_run_safe", "bench_run_brutal",
-    "bench_test_profile", "bench_apply", "bench_rollback",
+    "bench_test_profile", "bench_apply", "bench_confirm", "bench_rollback",
 
 }
 

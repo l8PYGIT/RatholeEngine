@@ -6,6 +6,21 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-25
+
+### Added
+- **Reverse WebSocket Agent for filtered/NAT nodes (zero inbound ports required):**
+  - Implemented a lightweight RFC 6455 WebSocket module in pure Python stdlib (`rathole-manager/wsutil.py`) supporting `wss://` (port 443 behind Nginx), direct IP / `ws://`, `--insecure-ssl`, HTTP `CONNECT` proxy, frame fragmentation, Ping/Pong keepalive, and Linux TCP keepalive options.
+  - Upgraded `ratholeagent.py` (`2.0.0`) to dual-mode operation (`--reverse <ws_url> --name <name>` dialing `/hub/ws/agent` or `/ws/agent` outbound with multiplexed `ThreadPoolExecutor(16)` command execution over `ALLOWED_BINARIES` and exponential reconnect backoff).
+  - Wired Reverse WS end-to-end across Hub (`hub.py` live registry, atomic reconnect superseding, automatic peer IP resolution for FRP/GRE/Tuner, and remote update over Reverse WS), CLI (`ratholenode agent reverse`, `ratholectl agent reverse`, `install-agent.sh --reverse`), and the Hub UI (`reverse_ws` transport selector, 1-line setup modal, live online/waiting status badges, token rotation, and one-click conversion from direct servers).
+
+### Fixed & Hardened
+- **Two-phase Dead-Man Watchdog confirmation for persistent kernel apply:** Hub applies profiles via `bench apply --confirm-ttl 45` followed by an independent `bench confirm <id>` round-trip on each side; unconfirmed connectivity drops automatically revert within 45s (and Hub rolls back Iran immediately if Node fails confirmation).
+- **Preserve source address and onlink flags in default kernel routes:** `_strip_route_target()` no longer strips `src <IP>` or `onlink`, removing only transient route tokens (`uid`, `cache`, `expires`, `linkdown`, `initcwnd`, `initrwnd`, `advmss`).
+- **Reduce default socket memory allocation safely:** Lowered `rmem_default`/`wmem_default` from 25 MiB (`26214400`) to 256 KiB (`262144`) in `common.sh` and actively lowered inflated live defaults in `tuner/apply.py`.
+- **Daemon stability and cgroup-safe agent restarts:** Raised HTTP `request_queue_size` to `64` and enabled TCP keepalives in `ratholeagent.py`, handled `BrokenPipeError`/`ConnectionResetError` cleanly, added `StartLimitIntervalSec=0` and `LimitNOFILE=65535` to `rathole-agent.service`, and routed rollback agent restarts through `_schedule_agent_restart()` in `update.sh`.
+- **Safe NIC mutation skipping, original snapshot preservation, and rollback ordering:** Ignored `[fixed]` features in `_parse_offloads()`, skipped no-op `mtu`/`txqueuelen`/`qdisc`/`ethtool -K` calls, restored `mq`/`noqueue`/`default` qdiscs with `tc qdisc del root`, preserved the initial pre-tuner `snapshot_path` across repeated applies, executed `sysctl --system` before `restore_snapshot()` during rollback, and added `/usr/local/share/rathole/common.sh` and `/opt/ratholehub/bundle/common.sh` to `hub_manager_version()`.
+
 ## [2.3.4] - 2026-11-24
 
 ### Fixed

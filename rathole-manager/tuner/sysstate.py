@@ -356,6 +356,9 @@ class MockSysDriver(SysDriver):
     def _mock_tc(self, args: list[str]) -> tuple[int, str, str]:
         if args[:2] == ["qdisc", "show"]:
             return 0, self.qdisc_line, ""
+        if args[:2] == ["qdisc", "del"]:
+            self.qdisc_line = "qdisc mq 0: root"
+            return 0, "", ""
         if args[:2] == ["qdisc", "replace"]:
             if "qdisc" in self.unsupported_ops:
                 return 2, "", "Error: Specified qdisc not found."
@@ -506,12 +509,31 @@ def _parse_offloads(driver: SysDriver, iface: str) -> dict:
     }
     res = {}
     for line in out.splitlines():
-        if ":" not in line:
+        if ":" not in line or "[fixed]" in line.lower():
             continue
         k, v = [p.strip() for p in line.split(":", 1)]
         if k in mapping and (v.startswith("on") or v.startswith("off")):
             res[mapping[k]] = v.startswith("on")
     return res
+
+
+def _read_link_state(driver: SysDriver, iface: str) -> tuple[int | None, int | None]:
+    mtu, txq = None, None
+    rc, link_out, _ = driver.run(["ip", "link", "show", "dev", iface])
+    if rc == 0:
+        m = re.search(r"\bmtu\s+(\d+)", link_out)
+        if m:
+            mtu = int(m.group(1))
+        m_q = re.search(r"\bqlen\s+(\d+)", link_out)
+        if m_q:
+            txq = int(m_q.group(1))
+    return mtu, txq
+
+
+def _read_qdisc_kind(driver: SysDriver, iface: str) -> tuple[str | None, str]:
+    _, qd_out, _ = driver.run(["tc", "qdisc", "show", "dev", iface])
+    m_qd = re.search(r"qdisc\s+([A-Za-z0-9_]+)\s+\S+\s+root", qd_out or "")
+    return (m_qd.group(1) if m_qd else None), (qd_out or "").strip()
 
 
 def _parse_route_params(route_line: str) -> dict:
@@ -528,22 +550,12 @@ def capture_snapshot(driver: SysDriver, iface: str = "", peer_ip: str = "", save
     det_iface, route_line = _detect_out_route(driver, peer_ip)
     target_iface = iface or det_iface
 
-    mtu = 1500
-    txq = 1000
-    rc, link_out, _ = driver.run(["ip", "link", "show", "dev", target_iface])
-    if rc == 0:
-        m = re.search(r"\bmtu\s+(\d+)", link_out)
-        if m:
-            mtu = int(m.group(1))
-        m_q = re.search(r"\bqlen\s+(\d+)", link_out)
-        if m_q:
-            txq = int(m_q.group(1))
+    mtu_val, txq_val = _read_link_state(driver, target_iface)
+    mtu = mtu_val if mtu_val is not None else 1500
+    txq = txq_val if txq_val is not None else 1000
 
-    _, qd_out, _ = driver.run(["tc", "qdisc", "show", "dev", target_iface])
-    qd_kind = "fq_codel"
-    m_qd = re.search(r"qdisc\s+([A-Za-z0-9_]+)\s+\S+\s+root", qd_out or "")
-    if m_qd:
-        qd_kind = m_qd.group(1)
+    qd_val, qd_raw = _read_qdisc_kind(driver, target_iface)
+    qd_kind = qd_val or "fq_codel"
 
     sysctls = {}
     for k in BASE_SNAPSHOT_SYSCTLS:
@@ -557,7 +569,7 @@ def capture_snapshot(driver: SysDriver, iface: str = "", peer_ip: str = "", save
         "peer_ip": peer_ip,
         "mtu": mtu,
         "txqueuelen": txq,
-        "qdisc": {"kind": qd_kind, "raw": (qd_out or "").strip()},
+        "qdisc": {"kind": qd_kind, "raw": qd_raw},
         "route": _parse_route_params(route_line),
         "route_line": route_line,
         "offloads": _parse_offloads(driver, target_iface),
@@ -584,9 +596,11 @@ def _sweep_mangle_rules(driver: SysDriver, session_id: str) -> None:
 
 
 def _strip_route_target(route_line: str) -> list[str]:
+    # Preserve `src <IP>` and `onlink` so multi-homed source IP / gateway hints are never dropped.
     cleaned = re.sub(r"\s+(?:initcwnd|initrwnd|advmss)\s+\d+", "", route_line or "").strip()
-    cleaned = re.sub(r"\s+src\s+\S+", "", cleaned)
     cleaned = re.sub(r"\s+uid\s+\d+", "", cleaned)
+    cleaned = re.sub(r"\s+expires\s+\S+", "", cleaned)
+    cleaned = re.sub(r"(?:^|\s)(?:cache|linkdown)(?=\s|$)", " ", cleaned)
     return [t for t in cleaned.split() if t]
 
 
@@ -607,49 +621,65 @@ def apply_candidate(
     unsupported = []
     errors = []
 
+    cur_mtu, cur_txq = _read_link_state(driver, iface)
     if cfg.get("mtu") is not None:
         mtu_floor = 1280 if v6 else 576
         target_mtu = max(mtu_floor, min(1500, int(cfg["mtu"])))
-        rc, _, err = driver.run(["ip", "link", "set", "dev", iface, "mtu", str(target_mtu)])
-        if rc == 0:
+        if cur_mtu == target_mtu:
             applied.append(f"mtu={target_mtu}")
         else:
-            unsupported.append(f"mtu:{err.strip()}")
+            rc, _, err = driver.run(["ip", "link", "set", "dev", iface, "mtu", str(target_mtu)])
+            if rc == 0:
+                applied.append(f"mtu={target_mtu}")
+            else:
+                unsupported.append(f"mtu:{err.strip()}")
 
     if cfg.get("txqueuelen") is not None:
         txq = max(100, min(20000, int(cfg["txqueuelen"])))
-        rc, _, err = driver.run(["ip", "link", "set", "dev", iface, "txqueuelen", str(txq)])
-        if rc == 0:
+        if cur_txq == txq:
             applied.append(f"txqueuelen={txq}")
         else:
-            unsupported.append(f"txqueuelen:{err.strip()}")
+            rc, _, err = driver.run(["ip", "link", "set", "dev", iface, "txqueuelen", str(txq)])
+            if rc == 0:
+                applied.append(f"txqueuelen={txq}")
+            else:
+                unsupported.append(f"txqueuelen:{err.strip()}")
 
     qd = cfg.get("qdisc")
     if isinstance(qd, dict) and qd.get("kind"):
         kind = qd["kind"]
-        if kind in ("default", "pfifo_fast"):
-            cmd = ["tc", "qdisc", "replace", "dev", iface, "root", "pfifo_fast"]
-        else:
-            cmd = ["tc", "qdisc", "replace", "dev", iface, "root", kind]
-            bw = (qd.get("params") or {}).get("bandwidth_mbps")
-            if kind == "cake" and bw:
-                cmd += ["bandwidth", f"{int(bw)}mbit", "besteffort"]
-        rc, _, err = driver.run(cmd)
-        if rc == 0:
+        cur_qd, _ = _read_qdisc_kind(driver, iface)
+        bw = (qd.get("params") or {}).get("bandwidth_mbps")
+        if cur_qd == kind and (kind != "cake" or not bw):
             applied.append(f"qdisc={kind}")
         else:
-            unsupported.append(f"qdisc:{kind}:{err.strip()}")
+            if kind in ("default", "pfifo_fast"):
+                cmd = ["tc", "qdisc", "replace", "dev", iface, "root", "pfifo_fast"]
+            else:
+                cmd = ["tc", "qdisc", "replace", "dev", iface, "root", kind]
+                if kind == "cake" and bw:
+                    cmd += ["bandwidth", f"{int(bw)}mbit", "besteffort"]
+            rc, _, err = driver.run(cmd)
+            if rc == 0:
+                applied.append(f"qdisc={kind}")
+            else:
+                unsupported.append(f"qdisc:{kind}:{err.strip()}")
 
     offs = cfg.get("offloads")
     if isinstance(offs, dict) and offs and driver.which("ethtool"):
-        args = ["ethtool", "-K", iface]
-        for k, v in offs.items():
-            args += [k, "on" if v else "off"]
-        rc, _, err = driver.run(args)
-        if rc == 0:
+        cur_offs = _parse_offloads(driver, iface)
+        diff = {k: bool(v) for k, v in offs.items() if k in cur_offs and bool(v) != bool(cur_offs[k])}
+        if not diff:
             applied.append("offloads")
         else:
-            unsupported.append(f"offloads:{err.strip()}")
+            args = ["ethtool", "-K", iface]
+            for k, v in diff.items():
+                args += [k, "on" if v else "off"]
+            rc, _, err = driver.run(args)
+            if rc == 0:
+                applied.append("offloads")
+            else:
+                unsupported.append(f"offloads:{err.strip()}")
 
     rt = cfg.get("route")
     if isinstance(rt, dict) and rt:
@@ -703,21 +733,34 @@ def restore_snapshot(driver: SysDriver, snapshot: dict, session_id: str = "tuner
     for k, v in sorted((snapshot.get("sysctl") or {}).items()):
         driver.write_sysctl(k, str(v))
 
-    if snapshot.get("mtu"):
+    cur_mtu, cur_txq = _read_link_state(driver, iface)
+    if snapshot.get("mtu") and cur_mtu != int(snapshot["mtu"]):
         driver.run(["ip", "link", "set", "dev", iface, "mtu", str(int(snapshot["mtu"]))])
-    if snapshot.get("txqueuelen"):
+    if snapshot.get("txqueuelen") and cur_txq != int(snapshot["txqueuelen"]):
         driver.run(["ip", "link", "set", "dev", iface, "txqueuelen", str(int(snapshot["txqueuelen"]))])
 
     qd = (snapshot.get("qdisc") or {}).get("kind")
     if qd:
-        driver.run(["tc", "qdisc", "replace", "dev", iface, "root", qd])
+        cur_qd, _ = _read_qdisc_kind(driver, iface)
+        if cur_qd != qd:
+            if qd in ("mq", "noqueue", "default", "multiq"):
+                driver.run(["tc", "qdisc", "del", "dev", iface, "root"])
+            elif qd == "pfifo_fast":
+                rc, _, _ = driver.run(["tc", "qdisc", "del", "dev", iface, "root"])
+                if rc != 0:
+                    driver.run(["tc", "qdisc", "replace", "dev", iface, "root", "pfifo_fast"])
+            else:
+                driver.run(["tc", "qdisc", "replace", "dev", iface, "root", qd])
 
     offs = snapshot.get("offloads") or {}
     if offs and driver.which("ethtool"):
-        args = ["ethtool", "-K", iface]
-        for k, v in offs.items():
-            args += [k, "on" if v else "off"]
-        driver.run(args)
+        cur_offs = _parse_offloads(driver, iface)
+        diff = {k: bool(v) for k, v in offs.items() if k in cur_offs and bool(v) != bool(cur_offs[k])}
+        if diff:
+            args = ["ethtool", "-K", iface]
+            for k, v in diff.items():
+                args += [k, "on" if v else "off"]
+            driver.run(args)
 
     base_toks = _strip_route_target(snapshot.get("route_line", ""))
     rt = snapshot.get("route") or {}

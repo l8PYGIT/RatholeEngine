@@ -1859,11 +1859,49 @@ AGENT_SVC="rathole-agent"
 cmd_agent(){
   need_root
   local action="${1:-status}" port="${2:-8089}" token="${3:-}"
-  shift 2>/dev/null || true; shift 2>/dev/null || true; shift 2>/dev/null || true
+  local rev_url="" rev_name="" insecure_ssl=0 proxy_url=""
   case "$action" in
-    on|install|start)
-      [[ "$port" =~ ^[0-9]{1,5}$ ]] && ((10#$port >= 1 && 10#$port <= 65535)) || die "port namotabar."
-      [[ -z "$token" || "$token" =~ ^[A-Za-z0-9._~-]+$ && ${#token} -le 256 ]] || die "token namotabar."
+    on|install|start|reverse)
+      if [ "$action" = "reverse" ]; then
+        shift 2>/dev/null || true
+        [ $# -ge 2 ] || die "estefade: ratholenode agent reverse <ws_url> <name> [token] [--insecure-ssl] [--proxy <url>]"
+        rev_url="$1"; rev_name="$2"; token=""
+        shift 2
+        if [ $# -gt 0 ] && [[ "${1:-}" != -* ]]; then
+          token="$1"; shift
+        fi
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --insecure-ssl) insecure_ssl=1; shift ;;
+            --proxy) [ $# -ge 2 ] || die "--proxy meghdar niaz darad."; proxy_url="$2"; shift 2 ;;
+            --token) [ $# -ge 2 ] || die "--token meghdar niaz darad."; token="$2"; shift 2 ;;
+            *) die "argument nashenakhte: $1" ;;
+          esac
+        done
+        case "$rev_url" in
+          ws://*|wss://*) ;;
+          *) die "address ws_url bayad ba ws:// ya wss:// shoro shavad." ;;
+        esac
+        if [[ "$rev_url" == *[[:space:]\"\'\`\$\\]* ]] || [ "${#rev_url}" -gt 512 ]; then
+          die "address ws_url namotabar ast."
+        fi
+        [[ -n "$rev_name" && "$rev_name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$ ]] || die "name server namotabar ast."
+        [[ -z "$token" || ( "$token" =~ ^[A-Za-z0-9._~-]+$ && ${#token} -le 256 ) ]] || die "token namotabar."
+        if [ -n "$proxy_url" ]; then
+          case "$proxy_url" in
+            http://*|https://*) ;;
+            *) die "address --proxy bayad http:// ya https:// bashad." ;;
+          esac
+          if [[ "$proxy_url" == *[[:space:]\"\'\`\$\\]* ]] || [ "${#proxy_url}" -gt 512 ]; then
+            die "address --proxy namotabar ast."
+          fi
+        fi
+      else
+        shift 2>/dev/null || true; shift 2>/dev/null || true; shift 2>/dev/null || true
+        [[ "$port" =~ ^[0-9]{1,5}$ ]] && ((10#$port >= 1 && 10#$port <= 65535)) || die "port namotabar."
+        [[ -z "$token" || ( "$token" =~ ^[A-Za-z0-9._~-]+$ && ${#token} -le 256 ) ]] || die "token namotabar."
+      fi
+
       local py_bin=""
       command -v python3 >/dev/null 2>&1 && py_bin="$(command -v python3)"
       [ -n "$py_bin" ] || die "python3 nasb nist (apt install -y python3)."
@@ -1886,45 +1924,96 @@ cmd_agent(){
       fi
       [ -f "$agent_py" ] || die "ratholeagent.py peyda nashod."
 
+      local agent_dir ws_cand
+      agent_dir="$(dirname "$agent_py")"
+      if [ ! -f "${agent_dir}/wsutil.py" ]; then
+        for ws_cand in "$(dirname "$0")/wsutil.py" "/usr/local/share/rathole/wsutil.py" "/opt/rathole-manager/wsutil.py" "/opt/ratholehub/wsutil.py"; do
+          if [ -f "$ws_cand" ]; then
+            cp -f "$ws_cand" "${agent_dir}/wsutil.py" 2>/dev/null || true
+            break
+          fi
+        done
+      fi
+      if [ "$action" = "reverse" ] && [ ! -f "${agent_dir}/wsutil.py" ]; then
+        log "download wsutil.py..."
+        local _m2
+        for _m2 in "" "https://mirror.ghproxy.com/" "https://ghproxy.net/"; do
+          curl -fsSL --connect-timeout 10 "${_m2}https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/rathole-manager/wsutil.py" -o "${agent_dir}/wsutil.py" 2>/dev/null && break || true
+        done
+        chmod 644 "${agent_dir}/wsutil.py" 2>/dev/null || true
+      fi
+      if [ "$action" = "reverse" ] && [ ! -f "${agent_dir}/wsutil.py" ]; then
+        die "wsutil.py peyda nashod."
+      fi
+
       mkdir -p /etc/rathole-agent
       if [ -z "$token" ]; then
         if [ -f "/etc/rathole-agent/token" ]; then
           token="$(cat /etc/rathole-agent/token | tr -d '[:space:]')"
         fi
-        [ -n "$token" ] || token="$(python3 -c "import secrets; print(secrets.token_hex(20))" 2>/dev/null || openssl rand -hex 20)"
+        if [ -z "$token" ]; then
+          if [ "$action" = "reverse" ]; then
+            die "dar halat reverse, token (gerefte-shode az Hub) elzami ast."
+          fi
+          token="$(python3 -c "import secrets; print(secrets.token_hex(20))" 2>/dev/null || openssl rand -hex 20)"
+        fi
       fi
       ( umask 077
         printf '%s\n' "$token" > /etc/rathole-agent/token && chmod 600 /etc/rathole-agent/token
       ) || return 1
 
+      local exec_cmd="${py_bin} ${agent_py}"
+      if [ -n "$rev_url" ]; then
+        exec_cmd="${exec_cmd} --reverse ${rev_url} --name ${rev_name} --role node"
+        [ "$insecure_ssl" -eq 1 ] && exec_cmd="${exec_cmd} --insecure-ssl"
+        [ -n "$proxy_url" ] && exec_cmd="${exec_cmd} --proxy ${proxy_url}"
+      else
+        exec_cmd="${exec_cmd} --port ${port} --role node"
+      fi
+
       cat > /etc/systemd/system/${AGENT_SVC}.service <<UNIT
 [Unit]
-Description=rathole REST Agent Daemon
-After=network.target
+Description=rathole REST & Reverse WebSocket Agent Daemon
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 KillMode=process
-ExecStart=${py_bin} ${agent_py} --port ${port} --role node
+LimitNOFILE=65535
+ExecStart=${exec_cmd}
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 UNIT
+      chmod 644 /etc/systemd/system/${AGENT_SVC}.service 2>/dev/null || true
       systemctl daemon-reload || die "agent: systemd reload shekast khord."
       systemctl enable --now ${AGENT_SVC} || die "agent: service start shekast khord."
       systemctl restart ${AGENT_SVC} || die "agent: service restart shekast khord."
       systemctl is-active --quiet ${AGENT_SVC} || die "agent: service active nist; journalctl -u ${AGENT_SVC} -n 50 ra bebinid."
 
       local my_ip; my_ip="$(detect_ip 2>/dev/null || echo '127.0.0.1')"
-      log "Agent REST API faal shod rooye port $port"
-      echo
-      echo "$(c_y '──────── tanzimat etesal be Hub (REST API) ────────')"
-      echo "  Connection: Agent REST API"
-      echo "  API URL:    http://${my_ip}:${port}"
-      echo "  Token:      ${token}"
-      echo "$(c_y '────────────────────────────────────────────────────')"
+      if [ -n "$rev_url" ]; then
+        log "Agent Reverse WebSocket faal shod → ${rev_url} (server=${rev_name})"
+        echo
+        echo "$(c_y '──────── etesal Reverse WebSocket be Hub ────────')"
+        echo "  Mode:    Reverse WebSocket (outbound)"
+        echo "  Server:  ${rev_name}"
+        echo "  Hub WS:  ${rev_url}"
+        echo "  IP:      ${my_ip}"
+        echo "$(c_y '─────────────────────────────────────────────────')"
+      else
+        log "Agent REST API faal shod rooye port $port"
+        echo
+        echo "$(c_y '──────── tanzimat etesal be Hub (REST API) ────────')"
+        echo "  Connection: Agent REST API"
+        echo "  API URL:    http://${my_ip}:${port}"
+        echo "  Token:      ${token}"
+        echo "$(c_y '────────────────────────────────────────────────────')"
+      fi
       ;;
     off|stop)
       systemctl disable --now ${AGENT_SVC} 2>/dev/null || true
@@ -1936,6 +2025,15 @@ UNIT
     status)
       if systemctl is-active --quiet ${AGENT_SVC} 2>/dev/null; then
         echo "agent: $(c_g 'active')"
+        local _ex; _ex="$(sed -n 's/^ExecStart=//p' /etc/systemd/system/${AGENT_SVC}.service 2>/dev/null | head -n1 || true)"
+        if printf '%s' "$_ex" | grep -q -- '--reverse '; then
+          local _ru _rn
+          _ru="$(printf '%s' "$_ex" | sed -nE 's/.*--reverse ([^ ]+).*/\1/p')"
+          _rn="$(printf '%s' "$_ex" | sed -nE 's/.*--name ([^ ]+).*/\1/p')"
+          echo "  mode:  reverse_ws (${_ru:-?}, name=${_rn:-?})"
+        else
+          echo "  mode:  direct HTTP/HTTPS"
+        fi
         local tok; tok="$(cat /etc/rathole-agent/token 2>/dev/null || true)"
         [ -n "$tok" ] && echo "  token: $tok"
       else
@@ -1951,7 +2049,7 @@ UNIT
       echo "API URL: http://${my_ip}:${port}"
       echo "Token:   ${tok}"
       ;;
-    *)       die "estefade: ratholenode agent <on [port] [token]|off|status|token|show>" ;;
+    *)       die "estefade: ratholenode agent <on [port] [token]|reverse <ws_url> <name> [token]|off|status|token|show>" ;;
   esac
 }
 cmd_check(){
@@ -2887,7 +2985,7 @@ ratholenode — mdirit klaint rathole (chnd service rooye yek tunnel)
   control-path set <masir>       tanzim masir-e makhfi (masalan: /_rh/abc123...) + restart + rollback-e khodkar
                                  ⚠ FAGHAT vaghti server-e Iran az ghabl `ratholectl control-path rotate` zade
   control-path clear             bargasht be '/' (pishfarz) — tunnel-haye bedoon-e patch ham kar mikonand
-  agent <start|stop|restart|status|token|install> [port] [token]  modiriat agent daemon baraye API
+  agent <start|stop|restart|status|token|install|reverse>  modiriat agent daemon (API ya Reverse WS)
   logs [n]                       log-e rathole-client
   logs all [n] [--bundle]        log-e HAME chiz (service-ha + config-ha) — token-ha redact mishavand; --bundle = file-e .txt.gz baraye scp
   show                           namayesh tanzimat (tokenha makhfi)

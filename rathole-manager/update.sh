@@ -168,6 +168,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /usr/local/bin/rathole-tuner
           echo /usr/local/share/rathole/common.sh
           echo /usr/local/share/rathole/fakeweb.py
+          echo /usr/local/share/rathole/wsutil.py
           echo /usr/local/share/rathole/ratholeagent.py
           echo /usr/local/share/rathole/install-agent.sh
           echo /usr/local/share/rathole/tuner
@@ -176,6 +177,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /etc/frp
           echo /etc/paqet
           echo /etc/rathole-agent
+          echo /opt/rathole-manager/wsutil.py
           echo /opt/rathole-manager/ratholeagent.py
           # file-e nginx az state (agar jq bashad) + config-haye sabet
           if command -v jq >/dev/null 2>&1 && [ -f /etc/rathole-manager/state.json ]; then
@@ -191,6 +193,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /usr/local/bin/rathole-tuner
           echo /usr/local/share/rathole/common.sh
           echo /usr/local/share/rathole/fakeweb.py
+          echo /usr/local/share/rathole/wsutil.py
           echo /usr/local/share/rathole/ratholeagent.py
           echo /usr/local/share/rathole/install-agent.sh
           echo /usr/local/share/rathole/tuner
@@ -199,6 +202,7 @@ snapshot_paths(){ # naghsh-ha ra migirad, masir-haye mojood ra (yekta) chap miko
           echo /etc/paqet
           echo /etc/xray
           echo /etc/rathole-agent
+          echo /opt/rathole-manager/wsutil.py
           echo /opt/rathole-manager/ratholeagent.py
           _units_glob 'rathole-client.service' 'rathole-client@*.service' 'rathole-backhaul-client.service' 'rathole-kcp-client.service' 'rathole-kcp-up-*.service' 'rathole-agent.service' 'rathole-frpc.service' 'frpc.service' 'rathole-paqet-server.service' 'rathole-xray.service' 'rathole-watchdog.*' 'rathole-adaptive.*'
           ;;
@@ -351,6 +355,19 @@ health_check(){ # $@ = naghsh-ha ; return 0 = salem, 1 = kharab
   return "$bad"
 }
 
+# ---------- restart-e agent kharej az cgroup (pishgiri az self-kill dar update az API/WS) ----------
+_schedule_agent_restart(){
+  if command -v systemd-run >/dev/null 2>&1; then
+    systemd-run --no-block --on-active=2 systemctl restart rathole-agent >/dev/null 2>&1 && return 0
+  fi
+  if command -v setsid >/dev/null 2>&1; then
+    setsid sh -c 'sleep 2; systemctl restart rathole-agent >/dev/null 2>&1 || true' >/dev/null 2>&1 < /dev/null &
+  else
+    nohup sh -c 'sleep 2; systemctl restart rathole-agent >/dev/null 2>&1 || true' >/dev/null 2>&1 < /dev/null &
+  fi
+  return 0
+}
+
 # ---------- restart-e service-haye har naghsh (baad az rollback) ----------
 restart_services(){
   local role pattern unit primary
@@ -360,14 +377,14 @@ restart_services(){
       panel) systemctl restart rathole-server 2>/dev/null || true
              systemctl list-unit-files 2>/dev/null | grep -q '^rathole-noise\.service' && systemctl restart rathole-noise 2>/dev/null || true
              systemctl list-unit-files 2>/dev/null | grep -q '^rathole-backhaul-server\.service' && systemctl restart rathole-backhaul-server 2>/dev/null || true
-             systemctl list-unit-files 2>/dev/null | grep -q '^rathole-agent\.service' && systemctl restart rathole-agent 2>/dev/null || true
+             systemctl list-unit-files 2>/dev/null | grep -q '^rathole-agent\.service' && _schedule_agent_restart || true
              command -v nginx >/dev/null 2>&1 && { nginx -t >/dev/null 2>&1 && { systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true; }; } ;;
       node) primary="$(node_primary_service)"
             systemctl restart "$primary" 2>/dev/null || true
             if [ "$primary" != rathole-backhaul-client ] && systemctl is-enabled --quiet rathole-backhaul-client 2>/dev/null; then
               systemctl restart rathole-backhaul-client 2>/dev/null || true
             fi
-            systemctl list-unit-files 2>/dev/null | grep -q '^rathole-agent\.service' && systemctl restart rathole-agent 2>/dev/null || true ;;
+            systemctl list-unit-files 2>/dev/null | grep -q '^rathole-agent\.service' && _schedule_agent_restart || true ;;
       hub)  systemctl restart ratholehub 2>/dev/null || true
             systemctl is-enabled --quiet ratholemonitor 2>/dev/null && systemctl restart ratholemonitor 2>/dev/null || true ;;
     esac
@@ -424,7 +441,16 @@ apply_update(){
     install -m 755 "$SCRIPT_DIR/fakeweb.py" /usr/local/share/rathole/fakeweb.py
   fi
 
-  # agent (ratholeagent.py va install-agent.sh) agar dar baste bashad
+  # agent (wsutil.py, ratholeagent.py va install-agent.sh) agar dar baste bashad
+  if [ -f "$SCRIPT_DIR/wsutil.py" ]; then
+    mkdir -p /usr/local/share/rathole
+    sed -i 's/\r$//' "$SCRIPT_DIR/wsutil.py"
+    install -m 644 "$SCRIPT_DIR/wsutil.py" /usr/local/share/rathole/wsutil.py
+    if [ "$SCRIPT_DIR" != "/opt/rathole-manager" ]; then
+      mkdir -p /opt/rathole-manager
+      install -m 644 "$SCRIPT_DIR/wsutil.py" /opt/rathole-manager/wsutil.py
+    fi
+  fi
   if [ -f "$SCRIPT_DIR/ratholeagent.py" ]; then
     mkdir -p /usr/local/share/rathole
     sed -i 's/\r$//' "$SCRIPT_DIR/ratholeagent.py"
@@ -565,7 +591,9 @@ UNIT
       unset _rth_migrated_tok
     fi
     sed -i '/^[[:space:]]*Environment=["\x27]*RATHOLE_AGENT_TOKEN=/d' /etc/systemd/system/rathole-agent.service
+    grep -q '^[[:space:]]*StartLimitIntervalSec=' /etc/systemd/system/rathole-agent.service || sed -i '/^\[Unit\]/a StartLimitIntervalSec=0' /etc/systemd/system/rathole-agent.service
     grep -q '^[[:space:]]*KillMode=' /etc/systemd/system/rathole-agent.service || sed -i '/^\[Service\]/a KillMode=process' /etc/systemd/system/rathole-agent.service
+    grep -q '^[[:space:]]*LimitNOFILE=' /etc/systemd/system/rathole-agent.service || sed -i '/^\[Service\]/a LimitNOFILE=65535' /etc/systemd/system/rathole-agent.service
     [ ! -f /etc/rathole-agent/token ] || chmod 600 /etc/rathole-agent/token
     systemctl daemon-reload
     # dar update az tarigh-e REST API, khode update.sh dar cgroup-e rathole-agent ast؛
@@ -589,6 +617,11 @@ UNIT
       # hubcmds.py + ui/ az v1.6.0 joda shodand — agar copy nashavand hub bala nemiayad
       # (ImportError) ya UI khali mishavad. masir-e kenar-e hub.py-e mabda ra bar midarim.
       local HUB_DIR; HUB_DIR="$(dirname "$HUB_SRC")"
+      if [ -f "$SCRIPT_DIR/wsutil.py" ]; then
+        sed -i 's/\r$//' "$SCRIPT_DIR/wsutil.py"
+        install -m 644 "$SCRIPT_DIR/wsutil.py" /opt/ratholehub/wsutil.py
+        log "beroozresani shod: /opt/ratholehub/wsutil.py"
+      fi
       if [ -f "$HUB_DIR/hubcmds.py" ]; then
         sed -i 's/\r$//' "$HUB_DIR/hubcmds.py"
         install -m 644 "$HUB_DIR/hubcmds.py" /opt/ratholehub/hubcmds.py
@@ -640,7 +673,7 @@ UNIT
       fi
       mkdir -p /opt/ratholehub/bundle
       local f
-      for f in ratholectl ratholenode common.sh update.sh kcptest-iran.sh kcptest-node.sh; do
+      for f in ratholectl ratholenode common.sh update.sh kcptest-iran.sh kcptest-node.sh wsutil.py; do
         [ -f "$SCRIPT_DIR/$f" ] && install -m 755 "$SCRIPT_DIR/$f" "/opt/ratholehub/bundle/$f"
       done
       systemctl daemon-reload 2>/dev/null || true
@@ -659,11 +692,7 @@ UNIT
 finish_agent_restart(){
   if [ -n "${AGENT_RESTART_FLAG:-}" ] && [ -s "$AGENT_RESTART_FLAG" ]; then
     rm -f "$AGENT_RESTART_FLAG"
-    if command -v systemd-run >/dev/null 2>&1; then
-      systemd-run --no-block --on-active=2 systemctl restart rathole-agent >/dev/null 2>&1 || systemctl restart rathole-agent || true
-    else
-      systemctl restart rathole-agent || true
-    fi
+    _schedule_agent_restart
   fi
 }
 

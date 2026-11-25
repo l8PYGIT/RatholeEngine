@@ -76,13 +76,20 @@ class TestTunerHubCmds(unittest.TestCase):
 
         ap = hubcmds.build_iran_cmd("bench_apply", {"profile": b64, "side": "iran"})
         self.assertEqual(ap, ["ratholectl", "bench", "apply", b64, "--side", "iran", "--json"])
+        ap_ttl = hubcmds.build_iran_cmd("bench_apply", {"profile": b64, "side": "iran", "confirm_ttl": 45})
+        self.assertEqual(ap_ttl, ["ratholectl", "bench", "apply", b64, "--side", "iran", "--confirm-ttl", "45", "--json"])
+        self.assertIsNone(hubcmds.build_iran_cmd("bench_apply", {"profile": b64, "side": "iran", "confirm_ttl": 5}))
         self.assertIsNone(hubcmds.build_iran_cmd("bench_apply", {"profile": b64 + ";rm", "side": "iran"}))
+
+        cf_cmd = hubcmds.build_node_cmd("bench_confirm", {"id": "abc123def"})
+        self.assertEqual(cf_cmd, ["ratholenode", "bench", "confirm", "abc123def", "--json"])
+        self.assertIsNone(hubcmds.build_node_cmd("bench_confirm", {"id": "bad;id"}))
 
         self.assertEqual(hubcmds.build_node_cmd("bench_rollback", {}), ["ratholenode", "bench", "rollback", "--json"])
 
         for ro in ("bench_status", "bench_job"):
             self.assertNotIn(ro, hubcmds.WRITE_ACTIONS)
-        for wr in ("bench_listen_start", "bench_listen_stop", "bench_run_safe", "bench_run_brutal", "bench_test_profile", "bench_apply", "bench_rollback"):
+        for wr in ("bench_listen_start", "bench_listen_stop", "bench_run_safe", "bench_run_brutal", "bench_test_profile", "bench_apply", "bench_confirm", "bench_rollback"):
             self.assertIn(wr, hubcmds.WRITE_ACTIONS)
 
         red = hub._redact_cmd_for_audit("bench_run_brutal", ["ratholectl", "bench", "run", "--peer", "1.2.3.4:29890", "--token", tok])
@@ -397,6 +404,70 @@ class TestTunerHubHttpApi(unittest.TestCase):
         self.assertTrue(ap_res["ok"])
         self.assertGreaterEqual(len((ap_res.get("iran_result") or {}).get("applied") or []), 1)
         self.assertGreaterEqual(len((ap_res.get("node_result") or {}).get("applied") or []), 1)
+
+    def test_tuner_apply_two_phase_confirm_fallback_and_hub_version_paths(self):
+        from unittest import mock
+
+        _, b64 = _sample_b64()
+        orig_run = hub.run_on_server
+        hub.MOCK = False
+        try:
+            # 1) Older CLI fallback when `--confirm-ttl` is rejected
+            seen_cmds = []
+
+            def run_fallback(srv, cmd, timeout=60):
+                seen_cmds.append(list(cmd))
+                if "--confirm-ttl" in cmd:
+                    return {"rc": 2, "out": "", "err": "error: unrecognized arguments: --confirm-ttl"}
+                return {"rc": 0, "out": json.dumps({"ok": True, "applied": ["mtu=1460"], "unsupported": []}), "err": ""}
+
+            hub.run_on_server = run_fallback
+            st_fb, fb_res = self._req("POST", "/api/tuner/apply", {"iran": "rp01", "node": "trk01", "profile": b64})
+            self.assertEqual(st_fb, 200, fb_res)
+            self.assertTrue(fb_res["ok"])
+            self.assertTrue(any("--confirm-ttl" in c for c in seen_cmds))
+            self.assertTrue(any(c[:3] == ["ratholectl", "bench", "apply"] and "--confirm-ttl" not in c for c in seen_cmds))
+
+            # 2) Node confirmation failure triggers immediate Iran rollback
+            node_confirm_failed_cmds = []
+
+            def run_confirm_fail(srv, cmd, timeout=60):
+                node_confirm_failed_cmds.append(list(cmd))
+                if cmd[:3] == ["ratholectl", "bench", "apply"]:
+                    return {"rc": 0, "out": json.dumps({"ok": True, "confirm_required": True, "confirm_id": "ir111"}), "err": ""}
+                if cmd[:4] == ["ratholectl", "bench", "confirm", "ir111"]:
+                    return {"rc": 0, "out": json.dumps({"ok": True, "confirmed": True}), "err": ""}
+                if cmd[:3] == ["ratholenode", "bench", "apply"]:
+                    return {"rc": 0, "out": json.dumps({"ok": True, "confirm_required": True, "confirm_id": "nd222"}), "err": ""}
+                if cmd[:4] == ["ratholenode", "bench", "confirm", "nd222"]:
+                    return {"rc": 1, "out": "", "err": "Agent connection reset"}
+                if cmd[:3] == ["ratholectl", "bench", "rollback"]:
+                    return {"rc": 0, "out": json.dumps({"ok": True}), "err": ""}
+                return {"rc": 0, "out": "{}", "err": ""}
+
+            hub.run_on_server = run_confirm_fail
+            st_cf, cf_res = self._req("POST", "/api/tuner/apply", {"iran": "rp01", "node": "trk01", "profile": b64})
+            self.assertEqual(st_cf, 200, cf_res)
+            self.assertFalse(cf_res["ok"])
+            self.assertTrue(cf_res.get("rolled_back_iran"))
+            self.assertIn("auto-rolling back", cf_res.get("error", ""))
+            self.assertTrue(any(c[:3] == ["ratholectl", "bench", "rollback"] for c in node_confirm_failed_cmds))
+        finally:
+            hub.run_on_server = orig_run
+            hub.MOCK = True
+
+        # 3) hub_manager_version() probes /usr/local/share/rathole/common.sh and /opt/ratholehub/bundle/common.sh
+        checked = []
+
+        def fake_isfile(p):
+            checked.append(p)
+            return False
+
+        with mock.patch("hub.os.path.isfile", side_effect=fake_isfile):
+            ver = hub.hub_manager_version()
+        self.assertEqual(ver, hub.HUB_FALLBACK_VERSION)
+        self.assertIn("/usr/local/share/rathole/common.sh", checked)
+        self.assertIn("/opt/ratholehub/bundle/common.sh", checked)
 
 
 if __name__ == "__main__":

@@ -417,7 +417,20 @@ service_config:"حامل و پروتکل",service_health:"تست سلامت",ser
   tuner_st_checking:'در حال خواندن وضعیت کرنل…',
   tuner_winner_cfg:'پارامترهای انتخاب‌شده برنده',
   tuner_applied_msg:'پروفایل روی کرنل هر دو سرور اعمال شد',
-  tuner_reconnect_hint:'نکته: تنظیمات جدید TCP برای اتصالات جدید فوری است؛ برای تونل‌های باز فعلی یک بار سرویس تونل را ری‌استارت کنید.'
+  tuner_reconnect_hint:'نکته: تنظیمات جدید TCP برای اتصالات جدید فوری است؛ برای تونل‌های باز فعلی یک بار سرویس تونل را ری‌استارت کنید.',
+  conn_reverse_ws:'Reverse Agent (WS معکوس · بدون پورت باز)',
+  badge_reverse_ws:'Reverse WS',
+  rev_online:'متصل',
+  rev_waiting:'در انتظار اتصال نود',
+  rev_setup_btn:'دستور اتصال / ساخت توکن',
+  rev_setup_title:'راه‌اندازی Reverse WebSocket Agent',
+  rev_setup_desc:'این دستور را روی سرور مقصد اجرا کنید تا خودش از طریق WebSocket امن به هاب وصل شود (بدون نیاز به باز کردن هیچ پورتی روی نود):',
+  rev_setup_direct_hint:'اگر پشت TLS نیستید یا گواهی self-signed دارید از --insecure-ssl یا آدرس ws://<HUB_IP>:8088/ws/agent استفاده کنید.',
+  rev_token_opt:'توکن احراز هویت (اختیاری؛ خالی = تولید خودکار)',
+  rev_rotate_token:'تغییر توکن و نمایش دستور اتصال',
+  rev_rotate_cf:'با ساخت توکن جدید، اتصال فعلی Reverse Agent قطع می‌شود تا دستور جدید را بزنید. ادامه دهید؟',
+  rev_offline_help:'اتصال Reverse WebSocket برقرار نیست. مطمئن شوید سرویس rathole-agent با دستور اتصال روی این سرور اجرا شده است (systemctl status rathole-agent).',
+  f_public_ip_opt:'IP عمومی مقصد تونل (اختیاری)'
 
  },
  en:{
@@ -838,7 +851,20 @@ service_config:"Carrier and protocol",service_health:"Health test",service_copy:
   tuner_st_checking:'Reading kernel state…',
   tuner_winner_cfg:'Winning Kernel Parameters',
   tuner_applied_msg:'Profile applied to both kernels',
-  tuner_reconnect_hint:'Note: New TCP parameters take effect immediately for new connections; restart the tunnel service if active long-lived sockets need them right away.'
+  tuner_reconnect_hint:'Note: New TCP parameters take effect immediately for new connections; restart the tunnel service if active long-lived sockets need them right away.',
+  conn_reverse_ws:'Reverse Agent (Outbound WS · No Open Port)',
+  badge_reverse_ws:'Reverse WS',
+  rev_online:'connected',
+  rev_waiting:'waiting for node',
+  rev_setup_btn:'Connect cmd / Rotate token',
+  rev_setup_title:'Reverse WebSocket Agent Setup',
+  rev_setup_desc:'Run this command on the target server so it dials the Hub over WebSocket (no open ports required on the node):',
+  rev_setup_direct_hint:'If not behind TLS or using a self-signed cert, add --insecure-ssl or use ws://<HUB_IP>:8088/ws/agent.',
+  rev_token_opt:'Auth token (optional; blank = auto-generate)',
+  rev_rotate_token:'Rotate token & show connect command',
+  rev_rotate_cf:'Generating a new token will disconnect the current Reverse Agent until you run the new command. Continue?',
+  rev_offline_help:'Reverse WebSocket session is offline. Verify rathole-agent is running with the connect command on that server (systemctl status rathole-agent).',
+  f_public_ip_opt:'Tunnel public IP (optional)'
 
  }
 };

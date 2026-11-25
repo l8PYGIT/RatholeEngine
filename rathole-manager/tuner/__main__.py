@@ -9,7 +9,7 @@ import signal
 import sys
 
 from . import DEFAULT_CTRL_PORT, DEFAULT_DATA_PORT, TUNER_VERSION
-from .apply import apply_boot, apply_persistent, rollback_persistent, tuner_status
+from .apply import apply_boot, apply_persistent, confirm_persistent, rollback_persistent, tuner_status
 from .orchestrator import TunerOrchestrator
 from .profile import build_profile, encode_profile_b64, load_profile_any, validate_profile
 from .responder import TunerResponder
@@ -155,9 +155,15 @@ def _cmd_validate(args) -> int:
 
 def _cmd_apply(args) -> int:
     prof = load_profile_any(args.profile, verify_sha=False)
-    res = apply_persistent(RealLinuxDriver(), prof, side=args.side)
+    res = apply_persistent(RealLinuxDriver(), prof, side=args.side, confirm_ttl=int(getattr(args, "confirm_ttl", 0) or 0))
     print(json.dumps(res, ensure_ascii=False, indent=None if args.json else 2))
     return 0
+
+
+def _cmd_confirm(args) -> int:
+    res = confirm_persistent(RealLinuxDriver(), args.confirm_id)
+    print(json.dumps(res, ensure_ascii=False, indent=None if args.json else 2))
+    return 0 if res.get("ok") else 1
 
 
 def _cmd_apply_boot(_args) -> int:
@@ -240,8 +246,14 @@ def main(argv=None) -> int:
     p_app = sub.add_parser("apply", help="Persistently apply a validated profile")
     p_app.add_argument("profile")
     p_app.add_argument("--side", choices=["iran", "node"], default="iran")
+    p_app.add_argument("--confirm-ttl", type=int, default=0)
     p_app.add_argument("--json", action="store_true")
     p_app.set_defaults(func=_cmd_apply)
+
+    p_cf = sub.add_parser("confirm", help="Confirm a pending persistent apply to disarm its watchdog")
+    p_cf.add_argument("confirm_id")
+    p_cf.add_argument("--json", action="store_true")
+    p_cf.set_defaults(func=_cmd_confirm)
 
     p_ab = sub.add_parser("apply-boot", help="Re-apply stored non-sysctl profile at boot")
     p_ab.set_defaults(func=_cmd_apply_boot)

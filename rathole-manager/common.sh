@@ -3,7 +3,7 @@
 
 # noskhe-ye rathole-manager (panel/node/hub). moqe-e release in adad ba tag hamahang mishavad.
 # package.sh/CI mitavanad in ra be tag-e vaghei stamp konad; agar dast taghir dadi، bedoon 'v' bezar.
-MANAGER_VERSION="2.3.4"
+MANAGER_VERSION="2.4.0"
 
 c_g(){ printf '\033[1;32m%s\033[0m' "$*"; }
 c_r(){ printf '\033[1;31m%s\033[0m' "$*"; }
@@ -424,8 +424,8 @@ net.ipv4.ip_local_port_range=32768 60999
 net.netfilter.nf_conntrack_max=1048576
 net.core.rmem_max=26214400
 net.core.wmem_max=26214400
-net.core.rmem_default=26214400
-net.core.wmem_default=26214400
+net.core.rmem_default=262144
+net.core.wmem_default=262144
 TUNE
   sysctl --system >/dev/null 2>&1 || true
   if [ $# -gt 0 ]; then
@@ -1756,7 +1756,7 @@ rth_bench_exec(){ # $1=role (iran|node) $2=subcommand $@=args
       fi
       python3 "$tbin" listen "${fwd_args[@]}"
       ;;
-    run|test-profile|compare|apply|rollback)
+    run|test-profile|compare|apply|confirm|rollback)
       need_root
       local has_side=0 a
       for a in "$@"; do
@@ -1772,7 +1772,7 @@ rth_bench_exec(){ # $1=role (iran|node) $2=subcommand $@=args
       python3 "$tbin" "$sub" "$@"
       ;;
     *)
-      die "zir-dastoor bench nashenakhte: $sub (listen|stop-listen|run|test-profile|compare|export|validate|apply|rollback|status|job)"
+      die "zir-dastoor bench nashenakhte: $sub (listen|stop-listen|run|test-profile|compare|export|validate|apply|confirm|rollback|status|job)"
       ;;
   esac
 }

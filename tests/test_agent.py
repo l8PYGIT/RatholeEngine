@@ -176,5 +176,17 @@ class TestAgent(unittest.TestCase):
         self.assertIn("403", err.getvalue())
         self.assertNotIn("200", err.getvalue())
 
+    def test_hardened_server_backlog_and_broken_pipe_handling(self):
+        self.assertGreaterEqual(ratholeagent._AgentHTTPServer.request_queue_size, 64)
+        h = object.__new__(ratholeagent.AgentHandler)
+        h.send_response = lambda _s: None
+        h.send_header = lambda _k, _v: None
+        h.end_headers = lambda: None
+        broken_wfile = Mock()
+        broken_wfile.write.side_effect = BrokenPipeError("client gone")
+        h.wfile = broken_wfile
+        # Must swallow client disconnect cleanly without raising
+        h._send_json(200, {"ok": True})
+
 if __name__ == "__main__":
     unittest.main()

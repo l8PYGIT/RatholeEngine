@@ -241,7 +241,7 @@ function cmdkEntries(query){
  const q=String(query||'').trim().toLowerCase();
  const out=[];
  SERVERS.forEach(s=>{
-  const host=s.transport==='api'?(s.api_url||''):(s.host||'');
+  const host=s.transport==='api'?(s.api_url||''):(s.transport==='reverse_ws'?(s.reverse_public_ip||s.public_ip||'Reverse WS'):(s.host||''));
   const txt=(s.name+' '+s.role+' '+host).toLowerCase();
   if(!q||txt.includes(q)){
    const ov=OVS[s.name];
@@ -427,8 +427,8 @@ function nodeTunnelStatus(n){
 }
 // ---------- badge-haye khoolase (moshtarak beyne kart va safhe-ye server) ----------
 function headBadges(n,ov){
- const role=fnd(n).role;
- if(!ov||ov.reachable===false)return `<span class="badge b-bad">${t(fnd(n).transport==='api'?'no_agent':'no_ssh')}</span>`;
+ const s=fnd(n), role=s.role;
+ if(!ov||ov.reachable===false)return `<span class="badge b-bad">${t(s.transport==='api'?'no_agent':(s.transport==='reverse_ws'?'rev_waiting':'no_ssh'))}</span>`;
  let hb='';
  if(role==='iran'){
   const hObj=ov.health||{};
@@ -536,10 +536,55 @@ async function editHubProxy(){
   }
  });
 }
+function buildReverseWsUrl(){
+ try{
+  const proto=(typeof location!=='undefined'&&location.protocol==='https:')?'wss:':'ws:';
+  const host=(typeof location!=='undefined'&&location.host)?location.host:'YOUR-DOMAIN';
+  const rawPath=(typeof location!=='undefined'&&location.pathname)?location.pathname:'/';
+  const base=rawPath.replace(/\/index\.html$/,'').replace(/\/+$/,'');
+  return proto+'//'+host+(base||'')+'/ws/agent';
+ }catch(e){
+  return 'wss://YOUR-DOMAIN/hub/ws/agent';
+ }
+}
+function buildReverseSetupCmd(name,role,token){
+ const cli=role==='iran'?'ratholectl':'ratholenode';
+ return 'sudo '+cli+' agent reverse "'+buildReverseWsUrl()+'" "'+String(name||'')+'" "'+String(token||'')+'"';
+}
+function showReverseSetupModal(name,role,token){
+ const cmd=buildReverseSetupCmd(name,role,token);
+ const wsUrl=buildReverseWsUrl();
+ modal(`<h3>${h(t('rev_setup_title'))} · ${h(name)}</h3>
+  <p style="margin:6px 0 10px">${h(t('rev_setup_desc'))}</p>
+  <pre class="mono" dir="ltr" id="rev_cmd_pre" style="white-space:pre-wrap;word-break:break-all;padding:12px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border)">${h(cmd)}</pre>
+  <p class="sub" style="margin:8px 0 0">${h(t('rev_setup_direct_hint'))}<br><code class="mono" dir="ltr">${h(wsUrl)}</code></p>
+  <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
+   <button class="g" type="button" onclick="copyText('rev_cmd_pre')">${h(t('rc_copy'))}</button>
+   <button class="gh" type="button" onclick="closeModal()">${h(t('close'))}</button>
+  </div>`);
+}
+async function showReverseSetupAction(n){
+ const s=fnd(n); if(!s.name)return;
+ if(!confirm(t('rev_rotate_cf')))return;
+ const {status,j}=await api('PUT','api/servers/'+n,{rotate_token:true});
+ if(status!==200||!j||!j.api_token){toast('error: '+((j&&j.error)||status));return;}
+ await loadAll();
+ showReverseSetupModal(n,s.role||'node',j.api_token);
+}
+async function convertServerToReverseWs(n){
+ const s=fnd(n); if(!s.name)return;
+ if(!confirm(t('rev_rotate_cf')))return;
+ const {status,j}=await api('PUT','api/servers/'+n,{transport:'reverse_ws',rotate_token:true});
+ if(status!==200||!j||!j.api_token){toast('error: '+((j&&j.error)||status));return;}
+ await loadAll();
+ showReverseSetupModal(n,s.role||'node',j.api_token);
+}
 function toggleConnType(){
- const isApi = $('conn_tr')?.value === 'api';
- document.querySelectorAll('.f-ssh').forEach(el=>el.style.display = isApi ? 'none' : '');
+ const tr = $('conn_tr')?.value || 'ssh';
+ const isSsh = tr === 'ssh', isApi = tr === 'api', isRev = tr === 'reverse_ws';
+ document.querySelectorAll('.f-ssh').forEach(el=>el.style.display = isSsh ? '' : 'none');
  document.querySelectorAll('.f-api').forEach(el=>el.style.display = isApi ? '' : 'none');
+ document.querySelectorAll('.f-rev').forEach(el=>el.style.display = isRev ? '' : 'none');
 }
 
 // ---------- safhe: dashboard (KPI + filters + grid/list kart-haye khoolase) ----------
@@ -554,7 +599,7 @@ function filteredServers(){
   if(DASH_FILTER.status==='online'&&!isOnline)return false;
   if(DASH_FILTER.status==='offline'&&!isOffline)return false;
   if(q){
-   const hay=(s.name+' '+s.role+' '+(s.host||'')+' '+(s.api_url||'')+' '+((ov&&ov.domain)||'')).toLowerCase();
+   const hay=(s.name+' '+s.role+' '+(s.host||'')+' '+(s.api_url||'')+' '+(s.public_ip||'')+' '+(s.reverse_public_ip||'')+' '+((ov&&ov.domain)||'')).toLowerCase();
    if(!hay.includes(q))return false;
   }
   return true;
@@ -637,7 +682,7 @@ function renderDashboard(){
    </summary>
    <div class="cbody" style="padding:14px 18px 18px;">
     <div class="server-form">
-     <div class="field"><label for="conn_tr">${t('conn_type')}</label><select id="conn_tr" onchange="toggleConnType()"><option value="ssh">${t('conn_ssh')}</option><option value="api">${t('conn_api')}</option></select></div>
+     <div class="field"><label for="conn_tr">${t('conn_type')}</label><select id="conn_tr" onchange="toggleConnType()"><option value="ssh">${t('conn_ssh')}</option><option value="api">${t('conn_api')}</option><option value="reverse_ws">${t('conn_reverse_ws')}</option></select></div>
      <div class="field"><label for="n">${t('f_name')}</label><input id="n" autocomplete="off"></div>
      <div class="field"><label for="rl">${t('role')}</label><select id="rl"><option value="iran">iran</option><option value="node">node</option></select></div>
      <div class="field host f-ssh"><label for="hh">${t('f_host')}</label><input id="hh" inputmode="url" autocomplete="off"></div>
@@ -646,6 +691,8 @@ function renderDashboard(){
      <div class="field password f-ssh"><label for="sw">${t('prov_pw')}</label><input id="sw" type="password" autocomplete="new-password"></div>
      <div class="field host f-api" style="display:none;"><label for="api_u">${t('f_api_url')}</label><input id="api_u" placeholder="http://1.2.3.4:8089" autocomplete="off"></div>
      <div class="field password f-api" style="display:none;"><label for="api_tok">${t('f_api_token')}</label><input id="api_tok" type="password" autocomplete="new-password"></div>
+     <div class="field host f-rev" style="display:none;"><label for="rev_pub">${t('f_public_ip_opt')}</label><input id="rev_pub" placeholder="1.2.3.4" autocomplete="off"></div>
+     <div class="field password f-rev" style="display:none;"><label for="rev_tok">${t('rev_token_opt')}</label><input id="rev_tok" type="password" autocomplete="new-password"></div>
      <div class="field"><label for="srv_px">${t('f_proxy_opt')}</label><input id="srv_px" placeholder="socks5://127.0.0.1:10808"></div>
      <div class="field"><label for="isv">${t('l_iran_srv')}</label><select id="isv"><option value="">${t('l_iran_srv')}?</option>${iranSrvOptions()}</select></div>
      <div class="server-form-actions">
@@ -690,9 +737,20 @@ function drawCards(){
  c.innerHTML=list.map(s=>{
   const isIran=s.role==='iran';
   const roleBadge=isIran?`<span class="badge b-ok" style="gap:4px">🇮🇷 Iran</span>`:`<span class="badge b-info" style="gap:4px">🌐 Node</span>`;
-  const trBadge=s.transport==='api'?`<span class="badge b-noise" style="gap:4px;font-size:10.5px">⚡ ${t('badge_agent')}</span>`:`<span class="badge b-ws" style="gap:4px;font-size:10.5px">🔑 ${t('badge_ssh')}</span>`;
+  const trBadge=s.transport==='api'
+   ?`<span class="badge b-noise" style="gap:4px;font-size:10.5px">⚡ ${t('badge_agent')}</span>`
+   :(s.transport==='reverse_ws'
+    ?`<span class="badge b-noise" style="gap:4px;font-size:10.5px">🔄 ${t('badge_reverse_ws')}</span>`
+    :`<span class="badge b-ws" style="gap:4px;font-size:10.5px">🔑 ${t('badge_ssh')}</span>`);
   const pxBadge=s.proxy?`<span class="badge b-plain" style="gap:4px;font-size:10.5px">${t('badge_proxied')}</span>`:'';
-  const hostLine=s.transport==='api'?h(s.api_url||''):`${h(s.host||'')}:${s.ssh_port||22}`;
+  const revStatus=s.transport==='reverse_ws'
+   ?(s.reverse_connected?`<span class="badge b-ok" style="font-size:10px">${h(t('rev_online'))}</span>`:`<span class="badge b-warn" style="font-size:10px">${h(t('rev_waiting'))}</span>`)
+   :'';
+  const hostLine=s.transport==='api'
+   ?h(s.api_url||'')
+   :(s.transport==='reverse_ws'
+    ?`${h(s.reverse_public_ip||s.public_ip||t('rev_waiting'))} ${revStatus}`
+    :`${h(s.host||'')}:${s.ssh_port||22}`);
   return `<article class="scard" id="srv_${h(s.name)}">
    <div class="top"><span class="dot d-un" id="dot_${h(s.name)}" aria-hidden="true"></span>
     <button class="server-link" type="button" onclick="nav('#/server/${h(s.name)}')">${h(s.name)}</button>${roleBadge}${trBadge}${pxBadge}</div>
@@ -734,15 +792,25 @@ function renderServerPage(n){
  if(!s.name){pg.innerHTML=`<div class="ptitle"><button class="back" type="button" onclick="nav('#/dashboard')">${icon('arrow')}${t('back')}</button><h2>${t('srv_notfound')}</h2></div>`;return;}
  const ov=OVS[n];
  const roleBadge=s.role==='iran'?'<span class="badge b-ok" style="gap:4px">🇮🇷 Iran</span>':'<span class="badge b-info" style="gap:4px">🌐 Node</span>';
- const trBadge=s.transport==='api'?'<span class="badge b-noise" style="gap:4px">⚡ REST API</span>':'<span class="badge b-ws" style="gap:4px">🔑 SSH</span>';
+ const trBadge=s.transport==='api'
+  ?'<span class="badge b-noise" style="gap:4px">⚡ REST API</span>'
+  :(s.transport==='reverse_ws'
+   ?`<span class="badge b-noise" style="gap:4px">🔄 ${h(t('badge_reverse_ws'))}</span>`
+   :'<span class="badge b-ws" style="gap:4px">🔑 SSH</span>');
  const pxBadge=s.proxy?`<span class="badge b-plain" style="gap:4px">${t('badge_proxied')}</span>`:'';
- const hostLine=s.transport==='api'?h(s.api_url||''):`${h(s.host||'')}:${s.ssh_port||22}`;
+ const hostLine=s.transport==='api'
+  ?h(s.api_url||'')
+  :(s.transport==='reverse_ws'
+   ?h(s.reverse_public_ip||s.public_ip||t('rev_waiting'))
+   :`${h(s.host||'')}:${s.ssh_port||22}`);
+ const revBtn=s.transport==='reverse_ws'?`<button class="gh" type="button" onclick="showReverseSetupAction('${h(n)}')">${t('rev_setup_btn')}</button>`:'';
  let head=`<div class="spage-head"><button class="back" type="button" onclick="nav('#/dashboard')">${icon('arrow')}${t('back')}</button>
    <span class="dot ${ovDotCls(n,ov)}" id="dot_${h(n)}"></span>
    <span class="name" style="font-size:18px">${h(n)}</span>${roleBadge}${trBadge}${pxBadge}
    <span class="sub mono">${hostLine}</span><span id="hd_${h(n)}">${ov?headBadges(n,ov):''}</span>
    <div class="btns">
      <button class="gh icon-btn" type="button" onclick="loadOv('${h(n)}')" title="${t('refresh')}" aria-label="${t('refresh')}">${icon('refresh')}</button>
+     ${revBtn}
      <button class="gh" onclick="showDetails('${h(n)}')">${t('details')}</button>
      <button class="s" onclick="doDeploy('${h(n)}')">${t('update')}</button>
      <button class="gh" onclick="editServer('${h(n)}')">${t('edit_server')}</button>
@@ -750,9 +818,15 @@ function renderServerPage(n){
    </div></div>`;
  let body;
  if(!ov){body=`<div class="empty">${t('loading')}</div>`;loadOv(n);}
- else if(ov.reachable===false){body=s.transport==='api'
-  ?`<div class="sec"><div class="empty">${t('agent_help')}<br><br>${h(ov.error||'')}</div></div>`
-  :`<div class="sec"><div class="empty">${t('ssh_help')}<br><code>ssh-copy-id -i /root/.ssh/id_ed25519.pub root@${h(s.host)}</code><br><br>${h(ov.error||'')}</div></div>`;}
+ else if(ov.reachable===false){
+  if(s.transport==='reverse_ws'){
+   body=`<div class="sec"><div class="empty">${t('rev_offline_help')}<br><br>${h(ov.error||'')}<br><br><button class="g" type="button" onclick="showReverseSetupAction('${h(n)}')">${t('rev_setup_btn')}</button></div></div>`;
+  }else if(s.transport==='api'){
+   body=`<div class="sec"><div class="empty">${t('agent_help')}<br><br>${h(ov.error||'')}<br><br><button class="gh" type="button" onclick="convertServerToReverseWs('${h(n)}')">${t('conn_reverse_ws')}</button></div></div>`;
+  }else{
+   body=`<div class="sec"><div class="empty">${t('ssh_help')}<br><code>ssh-copy-id -i /root/.ssh/id_ed25519.pub root@${h(s.host)}</code><br><br>${h(ov.error||'')}</div></div>`;
+  }
+ }
  else{body=(s.role==='iran'?renderIran(n,ov):renderNode(n,ov));}
  // baraye node: dot-haye vaziat az doctor-e Iran miayand — agar overview-e Iran-i nadarim, biar
  if(s.role==='node')SERVERS.filter(x=>x.role==='iran'&&!OVS[x.name]).forEach(x=>loadOv(x.name));
@@ -1392,7 +1466,7 @@ function drawConsole(){
     <span style="flex:1"></span><span class="sub" style="font-size:11px">${t('rc_legend')}</span>
     <button class="gh" onclick="nav('#/server/${h(s.name)}')">${t('details')}</button></div>`;
   if(!ov){x+=`<div class="rc-empty" style="padding:14px">${t('loading')}</div></div>`;return;}
-  if(ov.reachable===false){x+=`<div class="rc-empty" style="padding:14px"><span class="badge b-bad">${t(s.transport==='api'?'rc_agent_unreach':'rc_unreach')}</span></div></div>`;return;}
+  if(ov.reachable===false){x+=`<div class="rc-empty" style="padding:14px"><span class="badge b-bad">${t((s.transport==='api'||s.transport==='reverse_ws')?'rc_agent_unreach':'rc_unreach')}</span></div></div>`;return;}
   const lanes=ingressLanes(ov),nodes=ov.nodes||[];
   x+=`<div class="rc-body">
     <div class="rc-col"><h5>${t('rc_ingress')} <span class="cnt">${lanes.filter(l=>l.on).length}/${lanes.length}</span></h5>
@@ -1690,6 +1764,7 @@ function serverPublicIp(srv, ov) {
   const isLan = ip => /^(10\.|192\.168\.|169\.254\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(ip);
   const pub = (ov && (ov.public_ip || (ov.status && ov.status.public_ip))) || '';
   if (pub && !isLan(pub) && !/^(127\.|localhost)/i.test(pub) && /^\d{1,3}(\.\d{1,3}){3}$/.test(pub)) return pub;
+  if (srv.reverse_public_ip && !isLan(srv.reverse_public_ip) && !/^(127\.|localhost)/i.test(srv.reverse_public_ip) && /^\d{1,3}(\.\d{1,3}){3}$/.test(srv.reverse_public_ip)) return srv.reverse_public_ip;
   if (srv.host && !/^(127\.|localhost)/i.test(srv.host) && /^\d{1,3}(\.\d{1,3}){3}$/.test(srv.host)) return srv.host;
   if (srv.api_url) {
     const m = String(srv.api_url).match(/:\/\/([^\/:]+)/);
@@ -1697,6 +1772,7 @@ function serverPublicIp(srv, ov) {
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return h;
   }
   if (pub && !/^(127\.|localhost)/i.test(pub) && /^\d{1,3}(\.\d{1,3}){3}$/.test(pub)) return pub;
+  if (srv.reverse_public_ip && !/^(127\.|localhost)/i.test(srv.reverse_public_ip)) return srv.reverse_public_ip;
   return (srv.host && !/^(127\.|localhost)/i.test(srv.host)) ? srv.host : '';
 }
 
@@ -2558,6 +2634,12 @@ async function addSrv(){
   if(!/^https?:\/\//i.test(u)) u = 'http://' + u;
   b.api_url=u;
   b.api_token=$('api_tok').value.trim();
+ } else if(tr==='reverse_ws'){
+  if(!requireInputs(['n']))return;
+  const rpub=($('rev_pub')?.value||'').trim();
+  const rtok=($('rev_tok')?.value||'').trim();
+  if(rpub)b.public_ip=rpub;
+  if(rtok)b.api_token=rtok;
  } else {
   if(!requireInputs(['n','hh','uu','pp']))return;
   b.host=$('hh').value.trim();
@@ -2565,9 +2647,11 @@ async function addSrv(){
   b.ssh_port=$('pp').value.trim();
  }
  const {status,j}=await api('POST','api/servers',b);
- if(status!==200){toast('error: '+(j.error||status));return;}
- $('n').value=''; if($('hh'))$('hh').value=''; if($('api_u'))$('api_u').value=''; if($('api_tok'))$('api_tok').value=''; if($('srv_px'))$('srv_px').value='';
- loadAll();
+ if(status!==200){toast('error: '+((j&&j.error)||status));return;}
+ $('n').value=''; if($('hh'))$('hh').value=''; if($('api_u'))$('api_u').value=''; if($('api_tok'))$('api_tok').value='';
+ if($('rev_pub'))$('rev_pub').value=''; if($('rev_tok'))$('rev_tok').value=''; if($('srv_px'))$('srv_px').value='';
+ await loadAll();
+ if(tr==='reverse_ws'&&j&&j.api_token){showReverseSetupModal(b.name,b.role,j.api_token);}
 }
 async function provSrv(){if(!requireInputs(['n','hh','uu','pp','sw']))return;const b={name:$('n').value,role:$('rl').value,host:$('hh').value,ssh_user:$('uu').value,ssh_port:$('pp').value,ssh_password:$('sw').value,iran_server:($('isv')?$('isv').value:'')};
  toast(t('provisioning'));
@@ -3338,6 +3422,16 @@ function editServer(n){const s=fnd(n);
    async v=>{const body={api_url:v.api_url.trim(),public_ip:(v.public_ip||'').trim()};if(v.api_token.trim())body.api_token=v.api_token.trim();
     const {status,j}=await api('PUT','api/servers/'+n,body);
     if(status!==200){toast('error: '+(j.error||status));return;}closeModal();toast(t('saved'));loadAll();});
+  return;
+ }
+ if(s.transport==='reverse_ws'){
+  formModal(t('t_edit_srv')+' ('+n+')',[
+   {id:'public_ip',label:t('f_public_ip_opt'),val:s.public_ip||s.reverse_public_ip||''},
+   {id:'api_token',label:t('rev_token_opt'),val:'',type:'password'}],
+   async v=>{const body={public_ip:(v.public_ip||'').trim()};if((v.api_token||'').trim())body.api_token=v.api_token.trim();
+    const {status,j}=await api('PUT','api/servers/'+n,body);
+    if(status!==200){toast('error: '+((j&&j.error)||status));return;}closeModal();toast(t('saved'));await loadAll();
+    if(j&&j.api_token){showReverseSetupModal(n,s.role||'node',j.api_token);}});
   return;
  }
  formModal(t('t_edit_srv')+' ('+n+')',[

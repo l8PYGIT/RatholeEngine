@@ -1,6 +1,6 @@
 """rathole-tuner package constants and schema identifiers (stdlib only)."""
 
-TUNER_VERSION = "2.3.4"
+TUNER_VERSION = "2.4.0"
 SCHEMA_VERSION = "rathole.netprofile.v1"
 PROFILE_PREFIX = "rthprof1:"
 

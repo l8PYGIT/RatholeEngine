@@ -6,13 +6,19 @@
 #
 # tanzimat:  /etc/ratholehub/config.json   , inventory: /etc/ratholehub/inventory.json
 # mtghirhai mhiti baraye tst lvkal: RATHOLEHUB_CONF, RATHOLEHUB_INV, RATHOLEHUB_MOCK=1
-import os, sys, json, hmac, hashlib, time, subprocess, re, secrets, threading, shlex, shutil, traceback, ipaddress, tempfile
+import os, sys, json, hmac, hashlib, time, subprocess, re, secrets, threading, shlex, shutil, traceback, ipaddress, tempfile, socket
 
 
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request
+
+_HUB_DIR = os.path.dirname(os.path.abspath(__file__))
+for _ws_dir in (_HUB_DIR, os.path.dirname(_HUB_DIR), "/usr/local/share/rathole"):
+    if _ws_dir and _ws_dir not in sys.path and os.path.isdir(_ws_dir):
+        sys.path.insert(0, _ws_dir)
+import wsutil
 
 CONF_PATH = os.environ.get("RATHOLEHUB_CONF", "/etc/ratholehub/config.json")
 INV_PATH  = os.environ.get("RATHOLEHUB_INV",  "/etc/ratholehub/inventory.json")
@@ -358,10 +364,22 @@ def _redact_proxy_creds(proxy):
         pass
     return p
 
+_REVERSE_AGENTS = {}
+_reverse_lock = threading.Lock()
+
 def _public_server(s):
     out = {k: v for k, v in s.items() if k != "api_token"}
-    if s.get("transport") == "api":
+    tr = s.get("transport")
+    if tr in ("api", "reverse_ws"):
         out["api_token_set"] = bool(s.get("api_token"))
+    if tr == "reverse_ws":
+        with _reverse_lock:
+            sess = _REVERSE_AGENTS.get(s.get("name", ""))
+            alive = bool(sess is not None and not sess.closed.is_set())
+            out["reverse_connected"] = alive
+            out["reverse_last_seen"] = sess.last_seen if alive else None
+            out["reverse_public_ip"] = (sess.public_ip or sess.peer_ip) if alive else None
+            out["reverse_version"] = sess.version if alive else None
     if "proxy" in out:
         out["proxy"] = _redact_proxy_creds(out["proxy"])
     return out
@@ -404,7 +422,7 @@ _HUB_START = time.time()
 
 # noskhe-i ke hub «akharin» midanad: az MANAGER_VERSION-e common.sh (bundle ke deploy mishavad)
 # khande mishavad ta ba noskhe-ye nasb-shode rooye har server moghayese shavad. fallback: rشته-ye sabet.
-HUB_FALLBACK_VERSION = "2.3.4"
+HUB_FALLBACK_VERSION = "2.4.0"
 def hub_manager_version():
     cands = []
     try:
@@ -413,6 +431,8 @@ def hub_manager_version():
     except Exception:
         pass
     cands += ["/opt/ratholehub/bundle/rathole-manager/common.sh",
+              "/opt/ratholehub/bundle/common.sh",
+              "/usr/local/share/rathole/common.sh",
               "/usr/local/bin/common.sh", "/etc/rathole-manager/common.sh"]
     for p in cands:
         try:
@@ -652,11 +672,126 @@ def run_on_agent(server, cmd_args, timeout=120):
     except Exception as e:
         return {"rc": 1, "out": "", "err": f"Agent connection error: {e}"}
 
+def _close_reverse_session(name):
+    with _reverse_lock:
+        sess = _REVERSE_AGENTS.pop(name, None)
+    if sess is not None:
+        sess.close()
+
+
+class ReverseAgentSession:
+    """Live multiplexed WebSocket session initiated outbound from a managed server."""
+
+    def __init__(self, name, ws, peer_ip=""):
+        self.name = name
+        self.ws = ws
+        self.peer_ip = str(peer_ip or "").strip()
+        now = int(time.time())
+        self.connected_at = now
+        self.last_seen = now
+        self.role = ""
+        self.version = ""
+        self.hostname = ""
+        self.public_ip = ""
+        self._pending = {}
+        self._pending_lock = threading.Lock()
+        self.closed = threading.Event()
+
+    def exec_cmd(self, cmd_args, timeout=120):
+        if self.closed.is_set():
+            return {"rc": 1, "out": "", "err": "Reverse agent disconnected"}
+        req_id = secrets.token_hex(12)
+        t_sec = max(1, min(3600, int(timeout or 120)))
+        ev = threading.Event()
+        box = [None]
+        with self._pending_lock:
+            if self.closed.is_set():
+                return {"rc": 1, "out": "", "err": "Reverse agent disconnected"}
+            self._pending[req_id] = (ev, box)
+        try:
+            try:
+                self.ws.send_json({"type": "exec", "id": req_id, "cmd": list(cmd_args), "timeout": t_sec})
+            except Exception as exc:
+                self.close()
+                return {"rc": 1, "out": "", "err": f"Reverse agent write error: {exc}"}
+            if not ev.wait(t_sec + 5):
+                return {"rc": 124, "out": "", "err": "Reverse agent execution timed out"}
+            msg = box[0]
+            if msg is None:
+                return {"rc": 1, "out": "", "err": "Reverse agent disconnected during command execution"}
+            return {
+                "rc": int(msg.get("rc", 0)),
+                "out": _strip_ansi(msg.get("out", "")),
+                "err": _strip_ansi(msg.get("err", "")),
+            }
+        finally:
+            with self._pending_lock:
+                self._pending.pop(req_id, None)
+
+    def handle_message(self, msg):
+        if not isinstance(msg, dict):
+            return
+        self.last_seen = int(time.time())
+        mtype = msg.get("type")
+        if mtype == "hello":
+            role = str(msg.get("role", "") or "").strip()
+            if role in ("iran", "node"):
+                self.role = role
+            ver = str(msg.get("version", "") or "").strip()[:32]
+            if ver:
+                self.version = ver
+            hn = str(msg.get("hostname", "") or "").strip()[:128]
+            if hn:
+                self.hostname = hn
+            pip = str(msg.get("public_ip", "") or "").strip()
+            if (pip and RE_HOST.fullmatch(pip) and pip not in ("localhost", "::1")
+                    and not pip.startswith(("127.", "0.0.0.0"))):
+                self.public_ip = pip
+            return
+        if mtype == "result":
+            req_id = msg.get("id")
+            with self._pending_lock:
+                waiter = self._pending.pop(req_id, None)
+            if waiter is not None:
+                ev, box = waiter
+                box[0] = msg
+                ev.set()
+
+    def close(self):
+        if self.closed.is_set():
+            return
+        self.closed.set()
+        with self._pending_lock:
+            waiters = list(self._pending.values())
+            self._pending.clear()
+        for ev, _box in waiters:
+            ev.set()
+        try:
+            self.ws.send_close(1000)
+        except Exception:
+            pass
+        try:
+            self.ws.close()
+        except Exception:
+            pass
+
+
+def run_on_reverse_agent(server, cmd_args, timeout=120):
+    name = str((server or {}).get("name", "") or "")
+    with _reverse_lock:
+        sess = _REVERSE_AGENTS.get(name)
+    if sess is None or sess.closed.is_set():
+        return {"rc": 1, "out": "", "err": "Reverse agent offline (waiting for node to connect)"}
+    return sess.exec_cmd(cmd_args, timeout=timeout)
+
+
 def run_on_server(server, cmd_args, timeout=120):
     if MOCK:
         return mock_run(server, cmd_args)
     if server.get("transport") == "api":
         return run_on_agent(server, cmd_args, timeout=timeout)
+    if server.get("transport") == "reverse_ws":
+        return run_on_reverse_agent(server, cmd_args, timeout=timeout)
     cfg = get_config()
     ssh = _ssh_base(cfg, server) + [shlex.join(cmd_args)]  # hefz-e argv dar shell-e remote
     try:
@@ -742,7 +877,7 @@ def iran_public_host(server, fallback=""):
 
 
 def node_public_host(server, explicit=""):
-    """Resolve reachable host/IP for a foreign node across SSH, REST Agent api_url, or cached overview."""
+    """Resolve reachable host/IP for a foreign node across SSH, REST Agent, Reverse WS, or overview."""
     server = server if isinstance(server, dict) else {}
 
     def usable(val, allow_loopback=False):
@@ -773,6 +908,15 @@ def node_public_host(server, explicit=""):
         return api_host
 
     name = str(server.get("name") or "").strip()
+    with _reverse_lock:
+        rev_sess = _REVERSE_AGENTS.get(name) if name else None
+    rev_pub = rev_sess.public_ip if (rev_sess and not rev_sess.closed.is_set()) else ""
+    rev_peer = rev_sess.peer_ip if (rev_sess and not rev_sess.closed.is_set()) else ""
+    for cand in (rev_pub, rev_peer):
+        v = usable(cand)
+        if v:
+            return v
+
     cached = _OVERVIEW_CACHE.get(name) if name else None
     ov = cached[1] if isinstance(cached, tuple) and len(cached) == 2 and isinstance(cached[1], dict) else {}
     for key in ("public_ip", "host"):
@@ -781,7 +925,7 @@ def node_public_host(server, explicit=""):
             return v
 
     # Final fallback allowing loopback (useful for local/SSH-forwarded nodes or mock tests)
-    for cand in (server.get("host"), urlparse(_norm_agent_url(raw_url)).hostname if raw_url else "", ov.get("host")):
+    for cand in (server.get("host"), urlparse(_norm_agent_url(raw_url)).hostname if raw_url else "", rev_pub, rev_peer, ov.get("host")):
         v = usable(cand, allow_loopback=True)
         if v:
             return v
@@ -860,7 +1004,7 @@ def deploy_to_server(server, opts=None):
         return {"rc": 1, "out": "", "err": "update_proxy namotabar dar config"}
     hub_dl_proxy = uproxy or get_proxy(server)
 
-    if server.get("transport") == "api":
+    if server.get("transport") in ("api", "reverse_ws"):
         cli = "ratholectl" if server.get("role") == "iran" else "ratholenode"
         cmd = [cli, "update", chan]
         if uproxy:
@@ -1063,9 +1207,9 @@ def mock_run(server, cmd_args):
             "  --server rp01.l1t.ir:443 --name %s --token a0370655deadbeefcafe1234 --inbound-port 8444\n"
             "────────────────────────────────────────" % nm, "err": ""}
     if j == "ratholectl version":
-        return {"rc": 0, "out": "manager_version=2.3.4\nrole=panel\nrathole_version=0.5.0", "err": ""}
+        return {"rc": 0, "out": "manager_version=2.4.0\nrole=panel\nrathole_version=0.5.0", "err": ""}
     if j == "ratholenode version":
-        return {"rc": 0, "out": "manager_version=2.3.4\nrole=node\nrathole_version=0.5.0", "err": ""}
+        return {"rc": 0, "out": "manager_version=2.4.0\nrole=node\nrathole_version=0.5.0", "err": ""}
     if cmd_args[:2] == ["ratholectl", "ip-cert"]:
         return {"rc": 0, "out": "WSS-e self-signed faal shod.", "err": ""}
     if cmd_args[:2] == ["ratholectl", "ip-cert-show"]:
@@ -1148,7 +1292,7 @@ def mock_run(server, cmd_args):
         # nemune-ye kutah: sakhtar-e vaghei + neshan dadan-e inke token-ha REDACT shode-and.
         return {"rc": 0, "out":
                 "\n===== kolli =====\n"
-                "naghsh      : %s\nratholectl  : manager_version=2.3.4\n"
+                "naghsh      : %s\nratholectl  : manager_version=2.4.0\n"
                 "\n===== unit: rathole-server  (halat: active/enabled) =====\n"
                 "Jul 31 12:00:01 rp01 rathole[811]: control channel established\n"
                 "\n===== state.json (/etc/rathole-manager/state.json) =====\n"
@@ -1328,7 +1472,13 @@ def mock_run(server, cmd_args):
                 ],
             }), "err": ""}
         if sub == "apply":
-            return {"rc": 0, "out": json.dumps({"ok": True, "applied": ["net.core.default_qdisc=fq", "net.ipv4.tcp_congestion_control=bbr"], "unsupported": []}), "err": ""}
+            res_obj = {"ok": True, "applied": ["net.core.default_qdisc=fq", "net.ipv4.tcp_congestion_control=bbr"], "unsupported": []}
+            if "--confirm-ttl" in cmd_args:
+                res_obj.update({"confirm_required": True, "confirm_id": "mockconfirm123", "confirm_ttl": 45})
+            return {"rc": 0, "out": json.dumps(res_obj), "err": ""}
+        if sub == "confirm":
+            cid = cmd_args[3] if len(cmd_args) > 3 else ""
+            return {"rc": 0, "out": json.dumps({"ok": True, "confirmed": True, "confirm_id": cid}), "err": ""}
         if sub == "rollback":
             return {"rc": 0, "out": json.dumps({"ok": True, "restored_from": "/var/lib/rathole-tuner/snapshots/pre-apply-mock.json"}), "err": ""}
         if sub in ("run", "test-profile"):
@@ -1705,6 +1855,10 @@ def collect_server_overview(s):
     name = s.get("name", "")
     role = s.get("role")
     host_fallback = s.get("host") or (urlparse(s.get("api_url") or "").hostname if s.get("transport") == "api" else None)
+    if not host_fallback and s.get("transport") == "reverse_ws":
+        with _reverse_lock:
+            rs = _REVERSE_AGENTS.get(name)
+        host_fallback = s.get("public_ip") or ((rs.public_ip or rs.peer_ip) if (rs and not rs.closed.is_set()) else None)
     ov = {"server": name, "role": role, "host": host_fallback, "reachable": True}
     def R(args):
         return run_on_server(s, args)
@@ -1976,6 +2130,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         if path in ("/api/health", "/hub/api/health"):
             return self._send(200, {"ok": True, "mock": MOCK})
+        if path in ("/ws/agent", "/hub/ws/agent"):
+            return self._handle_reverse_ws()
         if path in ("/metrics", "/hub/metrics"):
             p = "/metrics"
         else:
@@ -2213,11 +2369,76 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             name = m.group(1)
             update_inventory(lambda inv: [s for s in inv if s.get("name") != name])
+            _close_reverse_session(name)
             audit_log(self._user(), name, "del_server", "delete", 0)
             return self._send(200, {"ok": True})
         return self._send(404, {"error": "not found"})
 
     # ---- helpers ----
+    def _handle_reverse_ws(self):
+        ip = self._client_ip()
+        if not login_allowed(ip):
+            return self._send(429, {"error": "too many attempts; try later"})
+        name = str(self.headers.get("X-Agent-Name", "") or "").strip()
+        auth_hdr = str(self.headers.get("Authorization", "") or "").strip()
+        parts = auth_hdr.split(" ", 1)
+        tok = parts[1].strip() if (len(parts) == 2 and parts[0].lower() == "bearer") else ""
+        if not name or not RE_NAME.match(name) or not tok:
+            login_record_fail(ip)
+            return self._send(401, {"error": "missing X-Agent-Name or Bearer token"})
+
+        srv = self._find(name)
+        srv_tok = str((srv or {}).get("api_token", "") or "")
+        if not srv or srv.get("transport") != "reverse_ws" or not srv_tok:
+            login_record_fail(ip)
+            return self._send(403, {"error": "unknown or mismatched reverse_ws agent"})
+        if not hmac.compare_digest(tok.encode("utf-8"), srv_tok.encode("utf-8")):
+            login_record_fail(ip)
+            return self._send(403, {"error": "invalid agent token"})
+
+        try:
+            ws = wsutil.ws_accept_handshake(self)
+        except wsutil.WSError as exc:
+            return self._send(400, {"error": str(exc)})
+
+        login_reset(ip)
+        sess = ReverseAgentSession(name, ws, peer_ip=ip)
+        with _reverse_lock:
+            prev = _REVERSE_AGENTS.get(name)
+            _REVERSE_AGENTS[name] = sess
+        if prev is not None and prev is not sess:
+            prev.close()
+
+        audit_log(f"agent:{name}@{ip}", name, "reverse_ws_connect", f"peer={ip}", 0)
+        ws.settimeout(30.0)
+        try:
+            while not sess.closed.is_set():
+                try:
+                    raw = ws.recv_message()
+                except socket.timeout:
+                    if time.monotonic() - ws.last_rx > 90.0:
+                        break
+                    try:
+                        ws.send_ping(b"hub-hb")
+                    except wsutil.WSError:
+                        break
+                    continue
+                except (wsutil.WSError, OSError):
+                    break
+                if raw is None:
+                    break
+                if isinstance(raw, str):
+                    try:
+                        msg = json.loads(raw)
+                    except ValueError:
+                        continue
+                    sess.handle_message(msg)
+        finally:
+            with _reverse_lock:
+                if _REVERSE_AGENTS.get(name) is sess:
+                    _REVERSE_AGENTS.pop(name, None)
+            sess.close()
+
     def _find(self, name):
         for s in get_inventory():
             if s.get("name") == name:
@@ -2241,12 +2462,13 @@ class Handler(BaseHTTPRequestHandler):
     def _add_server(self, d):
         name = str(d.get("name", "")); role = str(d.get("role", ""))
         transport = str(d.get("transport", "ssh")).lower()
-        if transport not in ("ssh", "api"):
+        if transport not in ("ssh", "api", "reverse_ws"):
             transport = "ssh"
         proxy = str(d.get("proxy", "")).strip()
         if not valid_proxy_url(proxy):
             return self._send(400, {"error": "invalid proxy"})
 
+        generated_tok = ""
         if transport == "api":
             api_url = _norm_agent_url(str(d.get("api_url", "")))
             api_token = str(d.get("api_token", "")).strip()
@@ -2254,6 +2476,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "invalid fields for api transport"})
             srv = {"name": name, "role": role, "transport": "api", "api_url": api_url, "api_token": api_token}
             if d.get("insecure_ssl"): srv["insecure_ssl"] = True
+            if proxy: srv["proxy"] = proxy
+        elif transport == "reverse_ws":
+            if not RE_NAME.match(name) or role not in ("iran", "node"):
+                return self._send(400, {"error": "invalid fields for reverse_ws transport"})
+            public_ip = str(d.get("public_ip", "") or "").strip()
+            if public_ip and not RE_HOST.fullmatch(public_ip):
+                return self._send(400, {"error": "invalid public_ip"})
+            api_token = str(d.get("api_token", "") or "").strip()
+            if api_token and (any(ch.isspace() or ord(ch) < 32 for ch in api_token) or len(api_token) > 256):
+                return self._send(400, {"error": "invalid api_token"})
+            if not api_token:
+                api_token = secrets.token_hex(24)
+            generated_tok = api_token
+            srv = {"name": name, "role": role, "transport": "reverse_ws", "api_token": api_token}
+            if public_ip: srv["public_ip"] = public_ip
             if proxy: srv["proxy"] = proxy
         else:
             host = str(d.get("host", "")); user = str(d.get("ssh_user", "root"))
@@ -2273,7 +2510,10 @@ class Handler(BaseHTTPRequestHandler):
             inv.append(srv)
             set_inventory(inv)
         audit_log(self._user(), name, "add_server", f"role={role} transport={transport}", 0)
-        return self._send(200, {"ok": True})
+        resp = {"ok": True, "server": _public_server(srv)}
+        if generated_tok:
+            resp["api_token"] = generated_tok
+        return self._send(200, resp)
 
     def _provision(self, d):
         # nصب khodkar: ba ramz SSH vasl mishavad, kelid-e hub ra nصب mikonad,
@@ -2668,15 +2908,24 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, out)
 
     def _edit_server(self, name, d):
-        # viraishe mtaditai atsal (host/user/port) bedoon hazf/afzoodan dvbarh.
+        # viraishe mtaditai atsal (host/user/port/transport) bedoon hazf/afzoodan dvbarh.
         # aval hame-ye field-ha ra etebar-sanji va jam mikonim, sps atomic emal mikonim.
         changes = {}
+        new_tr = ""
+        if "transport" in d:
+            new_tr = str(d.get("transport", "") or "").strip().lower()
+            if new_tr not in ("ssh", "api", "reverse_ws"):
+                return self._send(400, {"error": "bad transport"})
+            changes["transport"] = new_tr
         if "api_url" in d:
             api_url = _norm_agent_url(str(d["api_url"]))
             if not valid_agent_url(api_url): return self._send(400, {"error": "bad API URL"})
             changes["api_url"] = api_url
         if "api_token" in d and str(d["api_token"]).strip():
-            changes["api_token"] = str(d["api_token"]).strip()
+            tok_v = str(d["api_token"]).strip()
+            if any(ch.isspace() or ord(ch) < 32 for ch in tok_v) or len(tok_v) > 256:
+                return self._send(400, {"error": "bad token"})
+            changes["api_token"] = tok_v
         if "proxy" in d:
             px = str(d["proxy"] or "").strip()
             if not valid_proxy_url(px): return self._send(400, {"error": "bad proxy"})
@@ -2700,7 +2949,10 @@ class Handler(BaseHTTPRequestHandler):
         if "role" in d:
             if d["role"] not in ("iran", "node"): return self._send(400, {"error": "bad role"})
             changes["role"] = d["role"]
+        rotate_tok = bool(d.get("rotate_token"))
         found = {}
+        exposed_tok = ""
+        drop_rev = False
         with _lock:
             inv = get_inventory()
             target = None
@@ -2709,15 +2961,38 @@ class Handler(BaseHTTPRequestHandler):
                     target = srv; break
             if not target:
                 return self._send(404, {"error": "server not found"})
-            if target.get("transport") != "api" and ("api_url" in changes or "api_token" in changes):
+            old_tr = target.get("transport", "ssh")
+            final_tr = changes.get("transport", old_tr)
+            if final_tr != "api" and "api_url" in changes:
                 return self._send(400, {"error": "server does not use Agent API"})
+            if final_tr not in ("api", "reverse_ws") and ("api_token" in changes or rotate_tok):
+                return self._send(400, {"error": "server does not use Agent API"})
+            if final_tr == "api" and not (changes.get("api_url") or target.get("api_url")):
+                return self._send(400, {"error": "api_url required for Agent API transport"})
+            if final_tr == "ssh" and not (changes.get("host") or target.get("host")):
+                return self._send(400, {"error": "host required for SSH transport"})
+            if final_tr == "reverse_ws":
+                if rotate_tok or (old_tr != "reverse_ws" and "api_token" not in changes) or not (changes.get("api_token") or target.get("api_token")):
+                    changes["api_token"] = secrets.token_hex(24)
+                    exposed_tok = changes["api_token"]
+                elif "api_token" in changes:
+                    exposed_tok = changes["api_token"]
+            if (old_tr == "reverse_ws" and final_tr != "reverse_ws") or ("api_token" in changes and target.get("api_token") != changes["api_token"]):
+                drop_rev = True
             target.update(changes)
             if not target.get("proxy"):
                 target.pop("proxy", None)
+            if not target.get("public_ip"):
+                target.pop("public_ip", None)
             found = _public_server(target)
             set_inventory(inv)
+        if drop_rev:
+            _close_reverse_session(name)
         audit_log(self._user(), name, "edit_server", "metadata", 0)
-        return self._send(200, {"ok": True, "server": found})
+        out = {"ok": True, "server": found}
+        if exposed_tok:
+            out["api_token"] = exposed_tok
+        return self._send(200, out)
 
     def _prepare_ip_tls(self, d):
         iran_name = str(d.get("iran", "")); node_name = str(d.get("node", ""))
@@ -2726,7 +3001,7 @@ class Handler(BaseHTTPRequestHandler):
         iran = self._find(iran_name); node = self._find(node_name)
         if not iran or iran.get("role") != "iran" or not node or node.get("role") != "node":
             return self._send(400, {"error": "iran/node pair not found"})
-        if node.get("transport") == "api":
+        if node.get("transport") in ("api", "reverse_ws"):
             return self._send(400, {"error": "Public certificate upload requires SSH transport on node"})
         ip = str(iran.get("host", ""))
         try:
@@ -3428,6 +3703,34 @@ class Handler(BaseHTTPRequestHandler):
                 out[rk] = payload
         return self._send(200, out)
 
+    def _apply_tuner_side(self, srv, builder, b64, side):
+        cmd = builder("bench_apply", {"profile": b64, "side": side, "confirm_ttl": 45})
+        res = run_on_server(srv, cmd, timeout=60)
+        err_blob = ((res.get("err") or "") + " " + (res.get("out") or "")).lower()
+        if res.get("rc") != 0 and "unrecognized arguments: --confirm-ttl" in err_blob:
+            cmd = builder("bench_apply", {"profile": b64, "side": side})
+            res = run_on_server(srv, cmd, timeout=60)
+        if res.get("rc") != 0:
+            return res, {}
+        parsed = {}
+        try:
+            if res.get("out"):
+                parsed = _extract_json_obj(res["out"])
+        except Exception:
+            parsed = {}
+        if parsed.get("confirm_required") and parsed.get("confirm_id"):
+            cf_cmd = builder("bench_confirm", {"id": parsed["confirm_id"]})
+            cf_res = run_on_server(srv, cf_cmd, timeout=15)
+            if cf_res.get("rc") != 0:
+                msg = (cf_res.get("err") or cf_res.get("out") or "confirmation failed").strip()
+                return {
+                    "rc": cf_res.get("rc") or 1,
+                    "out": "",
+                    "err": f"post-apply confirmation failed; host auto-rolling back in 45s ({msg})",
+                }, parsed
+            parsed["confirmed"] = True
+        return res, parsed
+
     def _tuner_apply(self, d):
         d = d if isinstance(d, dict) else {}
         iran_name = str(d.get("iran", "") or "")
@@ -3442,31 +3745,17 @@ class Handler(BaseHTTPRequestHandler):
         if perr:
             return self._send(400, {"error": perr})
         b64 = _tuner_profile_mod().encode_profile_b64(prof_obj)
-        ir_cmd = build_iran_cmd("bench_apply", {"profile": b64, "side": "iran"})
-        nd_cmd = build_node_cmd("bench_apply", {"profile": b64, "side": "node"})
-        r_ir = run_on_server(iran_srv, ir_cmd, timeout=60)
+        r_ir, ir_parsed = self._apply_tuner_side(iran_srv, build_iran_cmd, b64, "iran")
         if r_ir.get("rc") != 0:
             audit_log(self._user(), iran_name, "tuner_apply", r_ir.get("err") or "failed", r_ir.get("rc", 1))
             return self._send(200, {"ok": False, "iran": r_ir, "error": r_ir.get("err") or r_ir.get("out")})
-        r_nd = run_on_server(node_srv, nd_cmd, timeout=60)
+        r_nd, nd_parsed = self._apply_tuner_side(node_srv, build_node_cmd, b64, "node")
         if r_nd.get("rc") != 0:
             # Rollback Iran cleanly so fleet does not stay half-applied
             rb_cmd = build_iran_cmd("bench_rollback", {})
             run_on_server(iran_srv, rb_cmd, timeout=30)
             audit_log(self._user(), node_name, "tuner_apply", "node failed; rolled back iran", r_nd.get("rc", 1))
             return self._send(200, {"ok": False, "iran": r_ir, "node": r_nd, "rolled_back_iran": True, "error": r_nd.get("err") or r_nd.get("out")})
-        ir_parsed = {}
-        nd_parsed = {}
-        try:
-            if r_ir.get("out"):
-                ir_parsed = _extract_json_obj(r_ir["out"])
-        except Exception:
-            pass
-        try:
-            if r_nd.get("out"):
-                nd_parsed = _extract_json_obj(r_nd["out"])
-        except Exception:
-            pass
         audit_log(self._user(), f"{iran_name}+{node_name}", "tuner_apply", (prof_obj.get("meta") or {}).get("name", "profile"), 0)
         return self._send(200, {"ok": True, "iran": r_ir, "node": r_nd, "iran_result": ir_parsed, "node_result": nd_parsed})
 

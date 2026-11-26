@@ -1332,8 +1332,8 @@ install_paqet(){
   [ -x "$bin" ] && return 0
   case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; *) die "memari poshtibani nemishavad baraye paqet." ;; esac
   command -v curl >/dev/null 2>&1 || die "curl lazem ast."
-  local ver_no_v="${ver#v}"
-  local url="https://github.com/hanselime/paqet/releases/download/${ver}/paqet-linux-${arch}-${ver_no_v}.tar.gz"
+  ver="v${ver#v}"
+  local url="https://github.com/hanselime/paqet/releases/download/${ver}/paqet-linux-${arch}-${ver}.tar.gz"
   log "download paqet ${ver}..."
   tmp="$(mktemp -d)"
   if [ -n "${RATHOLE_UPDATE_PROXY:-}" ] && rth_valid_proxy_url "${RATHOLE_UPDATE_PROXY}"; then
@@ -1348,9 +1348,14 @@ install_paqet(){
     done
   fi
   [ "$ok" -eq 1 ] || { rm -rf "$tmp"; die "download paqet az hame-ye mnaba shekast khord."; }
-  tar -xzf "$tmp/paqet.tgz" -C "$tmp" || { rm -rf "$tmp"; die "baz kardan arshiv paqet shekast khord."; }
-  local src
-  src="$(find "$tmp" -maxdepth 3 -type f -name 'paqet*' ! -name '*.tar.gz' ! -name '*.yaml' | head -n1)"
+  mkdir -p "$tmp/extract"
+  tar -xzf "$tmp/paqet.tgz" -C "$tmp/extract" || { rm -rf "$tmp"; die "baz kardan arshiv paqet shekast khord."; }
+  local src=""
+  if [ -f "$tmp/extract/paqet_linux_${arch}" ]; then
+    src="$tmp/extract/paqet_linux_${arch}"
+  else
+    src="$(find "$tmp/extract" -maxdepth 3 -type f -name 'paqet*' ! -name '*.tar.gz' ! -name '*.tgz' ! -name '*.yaml' ! -name '*.example' ! -name '*.md' | head -n1)"
+  fi
   [ -n "$src" ] || { rm -rf "$tmp"; die "binary-e paqet dar arshiv peyda nashod."; }
   mkdir -p "$(dirname "$bin")"
   install -m755 "$src" "$bin" || { rm -rf "$tmp"; die "nasb binary paqet shekast khord."; }

@@ -304,3 +304,69 @@ assert res["other.local"]["ok"] is False
 PY
 ) || fail "rth_xray_scan_cover live TLS 1.3 probe failed"
 ok "rth_xray_scan_cover probes TLSv1.3 + ALPN h2 + ranks passing cover sites"
+
+# ---- 5: install_paqet release URL keeps 'v' prefix and extracts binary cleanly (not paqet.tgz) ----
+(
+  set -uo pipefail
+  PQ_FIX="$D/paqet-dl"
+  PQ_CURL_BIN="$PQ_FIX/bin"
+  PQ_PAYLOAD="$PQ_FIX/payload"
+  PQ_BIN1="$PQ_FIX/out1"
+  PQ_BIN2="$PQ_FIX/out2"
+  PQ_URLS="$PQ_FIX/urls.log"
+  case "$(uname -m)" in
+    x86_64)  PQ_ARCH="amd64" ;;
+    aarch64) PQ_ARCH="arm64" ;;
+    *) echo "unsupported arch for install_paqet test" >&2; exit 0 ;;
+  esac
+  mkdir -p "$PQ_CURL_BIN" "$PQ_PAYLOAD/example" "$PQ_BIN1" "$PQ_BIN2"
+  cat > "$PQ_PAYLOAD/paqet_linux_${PQ_ARCH}" <<'SH'
+#!/usr/bin/env bash
+echo "PAQET_EXTRACTED_OK"
+SH
+  chmod +x "$PQ_PAYLOAD/paqet_linux_${PQ_ARCH}"
+  echo "# README" > "$PQ_PAYLOAD/README.md"
+  echo "role: client" > "$PQ_PAYLOAD/example/client.yaml.example"
+  tar -czf "$PQ_FIX/paqet.tar.gz" -C "$PQ_PAYLOAD" "paqet_linux_${PQ_ARCH}" "README.md" "example/client.yaml.example"
+
+  cat > "$PQ_CURL_BIN/curl" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+url=""
+for a in "\$@"; do :; done
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    -o) out="\${2:-}"; shift 2 ;;
+    -*) case "\$1" in --config|--connect-timeout|--speed-limit|--speed-time|--retry) shift 2 ;; *) shift ;; esac ;;
+    *) url="\$1"; shift ;;
+  esac
+done
+printf '%s\n' "\$url" >> "$PQ_URLS"
+cp "$PQ_FIX/paqet.tar.gz" "\$out"
+SH
+  chmod +x "$PQ_CURL_BIN/curl"
+  export PATH="$PQ_CURL_BIN:$PATH"
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/rathole-manager/common.sh"
+
+  # 1) Default version keeps leading 'v' in both tag and asset filename, and does not install .tgz
+  (
+    export RATHOLE_BIN_DIR="$PQ_BIN1"
+    unset PAQET_VER || true
+    install_paqet >/dev/null
+  ) || exit 1
+  grep -qE "/releases/download/v1\.0\.0-alpha\.14/paqet-linux-${PQ_ARCH}-v1\.0\.0-alpha\.14\.tar\.gz\$" "$PQ_URLS" || exit 2
+  [ "$( "$PQ_BIN1/paqet" 2>/dev/null || true )" = "PAQET_EXTRACTED_OK" ] || exit 3
+
+  # 2) PAQET_VER without leading 'v' normalizes to 'v<ver>' in tag & asset filename
+  : > "$PQ_URLS"
+  (
+    export RATHOLE_BIN_DIR="$PQ_BIN2"
+    export PAQET_VER="1.0.0-alpha.21"
+    install_paqet >/dev/null
+  ) || exit 4
+  grep -qE "/releases/download/v1\.0\.0-alpha\.21/paqet-linux-${PQ_ARCH}-v1\.0\.0-alpha\.21\.tar\.gz\$" "$PQ_URLS" || exit 5
+  [ "$( "$PQ_BIN2/paqet" 2>/dev/null || true )" = "PAQET_EXTRACTED_OK" ] || exit 6
+) || fail "install_paqet release URL / extraction regression test failed"
+ok "install_paqet keeps v-prefix in asset filename and installs extracted binary cleanly"

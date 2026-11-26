@@ -8,11 +8,11 @@
 | **REST Agent** | `api` | سرویس `rathole-agent.service` روی سرور + API URL/توکن | بدون SSH؛ هاب درخواست را به `POST <api_url>/api/exec` می‌فرستد. |
 | **Reverse WS Agent** | `reverse_ws` | اتصال خروجی سرور به `/hub/ws/agent` (پورت ۴۴۳ Nginx) + توکن | بدون SSH و بدون نیاز به باز بودن هیچ پورت ورودی روی نود (`v2.4.0`). |
 
-> در نسخه‌ی **v2.4.0** علاوه بر امکانات **v2.3.0** (رابط شیشه‌ای **Apple Glass**، تستر و تیونر شبکه **`#/tuner`** با پروفایل‌های `rthprof1:`، پشتیبانی **Paqet / Managed Xray**، مانیتور و ربات تلگرام چندمسیره، **TOTP 2FA** و توکن‌های **RBAC**)، پشتیبانی کامل از **Reverse WebSocket Agent (`reverse_ws`)**، تبدیل یک‌کلیکی سرورهای آفلاین REST به `reverse_ws`، وضعیت زنده کرنل (`GET /api/tuner/status`) و **محافظ دوفازه‌ای Watchdog (`--confirm-ttl 45` + `bench confirm`)** اضافه شده است. صفحه‌ی قدیمی `#/wiring` از v2.0.2 حذف شده است.
+> در نسخه‌ی **v2.5.0** علاوه بر امکانات **v2.3.0–v2.4.0** (رابط شیشه‌ای **Apple Glass**، **Reverse WebSocket Agent (`reverse_ws`)**، تستر و تیونر شبکه **`#/tuner`** با محافظ دوفازه‌ای Watchdog، پشتیبانی **Paqet / Managed Xray**، مانیتور و ربات تلگرام چندمسیره، **TOTP 2FA** و توکن‌های **RBAC**)، **تب پنجم «🔌 مدیریت پورت‌ها» (سبک Guided)** برای فوروارد مستقیم L4 روی TCP/UDP بدون نیاز به Path و SNI اضافه شده است. صفحه‌ی قدیمی `#/wiring` از v2.0.2 حذف شده است.
 
 ![معماری هاب](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/hub-architecture.svg)
 
-![داشبورد پنل هاب RatholeHub v2.4.0](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
+![داشبورد پنل هاب RatholeHub v2.5.0](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
 
 ![تستر و تیونر شبکه — امتیاز ۵بعدی و پروفایل rthprof1](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/tuner.png)
 
@@ -125,7 +125,7 @@ sudo install-agent.sh --role node --reverse "wss://<DOMAIN>/hub/ws/agent" --name
 | **فعالیت** | `#/audit` | تاریخچه‌ی عملیات با جستجوی زنده (زمان، کاربر، سرور، action، rc) — ۱۰۰ رکورد آخر |
 | **تنظیمات** | `#/settings` | انتخابگر سه‌حالتهٔ تم (**روشن / تاریک / سیستم**)، تغییر زبان، پروکسی هاب، TOTP 2FA، توکن‌های RBAC، مانیتور تلگرام و تغییر رمز مدیر |
 
-رابط شیشه‌ای **Apple Glass** (نسخه‌ی **v2.4.0**) برای موبایل/دسکتاپ ریسپانسیو است، تم **روشن / تاریک / هماهنگ با سیستم**، RTL/LTR، فونت آفلاین **`vazirmatn.woff2`** (بدون CDN)، **`⌘K / Ctrl+K` پالت فرمان**، مودال‌های `<dialog>`، بارگذاری موازی سریع‌تر سرورها، پیام شفاف همگام‌سازی دوطرفه و `prefers-reduced-motion` دارد. زبان و تم در مرورگر ذخیره می‌شوند. نوار ناوبری پنج بخش دارد: داشبورد، نقشه مسیرها، تستر و تیونر شبکه، گزارش فعالیت‌ها، تنظیمات.
+رابط شیشه‌ای **Apple Glass** (نسخه‌ی **v2.5.0**) برای موبایل/دسکتاپ ریسپانسیو است، تم **روشن / تاریک / هماهنگ با سیستم**، RTL/LTR، فونت آفلاین **`vazirmatn.woff2`** (بدون CDN)، **`⌘K / Ctrl+K` پالت فرمان**، مودال‌های `<dialog>`، بارگذاری موازی سریع‌تر سرورها، پیام شفاف همگام‌سازی دوطرفه، **تب پنجم «مدیریت پورت‌ها» (Guided)** و `prefers-reduced-motion` دارد. زبان و تم در مرورگر ذخیره می‌شوند. نوار ناوبری پنج بخش دارد: داشبورد، نقشه مسیرها، تستر و تیونر شبکه، گزارش فعالیت‌ها، تنظیمات.
 
 ---
 

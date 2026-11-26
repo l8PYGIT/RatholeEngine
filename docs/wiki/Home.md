@@ -4,7 +4,7 @@
 
 این سیستم یک راهکار **معکوس‌تونل (Reverse Tunnel)** پیشرفته و چندموقعیتی بر پایه‌ی **rathole + Nginx** برای عبور از فیلترینگ شدید است. در نسخه‌های اخیر، کنار lane رتهول چند **هسته‌ی مستقل** هم اضافه شده است: **Backhaul (SMUX)**، **FRP**، تونل لایه‌۳ **GRE**، حالت ترکیبی **FRP + GRE** و **Paqet (Direct PCK)**؛ به‌علاوه‌ی **REST Agent** و **Reverse WebSocket Agent (`reverse_ws`)** که اجازه می‌دهد هاب سرورهای پشت NAT یا دارای IP فیلترشده را هم بدون SSH و بدون هیچ پورت ورودی باز مدیریت کند.
 
-> نسخه‌ی فعلی: **v2.4.0** — اضافه شدن **Reverse WebSocket Agent (`reverse_ws`)** برای اتصال خروجی از نودهای فیلترشده به `/hub/ws/agent` (پشت پورت ۴۴۳ Nginx) به‌همراه **محافظ دوفازه‌ای Watchdog (`--confirm-ttl` + `bench confirm`)** و سخت‌سازی ایمنی کرنل/سرویس در موتور **تیونر شبکه `rathole-tuner`** (با پروفایل‌های **`rthprof1:` / JSON** و صفحه **`#/tuner`**)، در کنار حامل **Paqet**، **Managed Xray** (`VLESS+REALITY+Vision` / `XHTTP` + اسکنر سایت کاور TLS 1.3)، مانیتور و ربات تلگرام چندمسیره، توکن‌های RBAC، TOTP 2FA، `/metrics` پرومتئوس و آپدیت با امضای Ed25519.
+> نسخه‌ی فعلی: **v2.5.0** — اضافه شدن **سیستم مدیریت پورت‌ها (Port Manager L4 TCP/UDP)** بدون نیاز به Path و SNI و بدون Nginx در مسیر پیش‌فرض (به‌همراه حالت اختیاری `PROXY Protocol` و **تب Guided** در هاب)، در کنار **Reverse WebSocket Agent (`reverse_ws`)**، **محافظ دوفازه‌ای Watchdog (`--confirm-ttl` + `bench confirm`)** در موتور **تیونر شبکه `rathole-tuner`** (با پروفایل‌های **`rthprof1:` / JSON** و صفحه **`#/tuner`**)، حامل **Paqet**، **Managed Xray** (`VLESS+REALITY+Vision` / `XHTTP` + اسکنر سایت کاور TLS 1.3)، مانیتور و ربات تلگرام چندمسیره، توکن‌های RBAC، TOTP 2FA، `/metrics` پرومتئوس و آپدیت با امضای Ed25519.
 
 ![داشبورد RatholeHub — نسخهٔ نمایشی](https://raw.githubusercontent.com/l8PYGIT/RatholeEngine/main/docs/assets/screenshots/dashboard.png)
 
@@ -53,10 +53,11 @@
 
 ---
 
-## 🆕 تازه در نسخه‌های ۲.۱ تا ۲.۴.۰
+## 🆕 تازه در نسخه‌های ۲.۱ تا ۲.۵.۰
 
 | موضوع | خلاصه |
 |-------|-------|
+| **مدیریت پورت‌ها — Port Manager (`v2.5.0`)** | فوروارد مستقیم L4 روی `tcp`، `udp` و `both` (`ratholectl port add|edit|rm|ls|show|map`) بدون نیاز به Path/SNI و با حذف پیش‌فرض Nginx از مسیر دیتا (یا `PROXY Protocol` اختیاری روی استریم مجزا بدون تغییر ۴۴۳)، همراه با کنترل تداخل پروتکل‌محور، همگام‌سازی `ufw`، پشتیبانی `ratholenode add-svc` و **تب پنجم Guided «مدیریت پورت‌ها»** در هاب. |
 | **Reverse WS Agent و سخت‌سازی کرنل (`v2.4.0`)** | ایجنت WebSocket معکوس خالص stdlib (`wsutil.py` + `ratholeagent.py` v2.0.0) روی `/hub/ws/agent` بدون نیاز به پورت ورودی باز (با تبدیل یک‌کلیکی سرورهای آفلاین در هاب)، به‌همراه محافظ دوفازه‌ای Watchdog ددمن (`--confirm-ttl 45` + `bench confirm`)، حفظ `src`/`onlink` در route، بافر پیش‌فرض ایمن `262144`، پرش از offload `[fixed]` و رول‌بک صحیح `tc qdisc del root`. |
 | **تستر و تیونر بی‌رحمانه (`v2.3.0`)** | موتور ۶ مرحله‌ای `rathole-tuner` (`ratholectl|ratholenode bench` و صفحه `#/tuner` هاب): بررسی باینری PMTU/MSS، آف‌لودها، BBR/CAKE/FQ، بافرها، Bufferbloat، مقایسه حامل‌ها، ممیزی غیرکرنلی، Watchdog بازگشت خودکار و خروجی قابل‌حمل **`rthprof1:` / JSON** با تست زنده A/B/N. |
 | **حامل Paqet و Managed Xray (`v2.2.0`)** | حامل خام Direct PCK بدون هندشیک TLS، راه‌اندازی خودکار `VLESS+REALITY+Vision` و `XHTTP` روی نودها و اسکنر هم‌زمان سایت کاور TLS 1.3 + ALPN `h2`. |

@@ -6,6 +6,15 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-26
+
+### Added
+- **Port Manager (`ratholectl port` — L4 TCP/UDP forwarding without URL path or SNI):**
+  - Open single ports (`2083`), comma-separated lists (`2053,2083,8443`), or ranges (`2080-2085`, up to 20 per batch) on `tcp`, `udp`, or `both` (`tcp+udp`) with auto-naming (`p<port>`, `p<port>_udp`), optional `--node-server`/`--note` metadata, and UFW synchronization.
+  - **Two ingress datapath modes:** default Direct mode binds tunnel cores directly to `0.0.0.0:<public_port>` (**zero Nginx** in the data path); opt-in `--proxy-protocol` (TCP-only) allocates a loopback port (`21000+`) and emits an isolated Nginx `stream` block (`proxy_protocol on;`) without pushing `:443` into SNI mode when `sni_count == 0`.
+  - Protocol-aware collision detection across existing rules, carriers (including HTTP `:443` TCP and `kcp`/`frp` UDP), nodes, system ports, and live `ss` sockets; full generator support across `rathole` (`ws`/`kcp`/`plain`), `noise`, `backhaul` (TCP-only), `frp`/`frp_gre` (auto `proxyBindAddr = "0.0.0.0"`), and `paqet`, plus optional protocol argument (`tcp|udp|both`) in `ratholenode add-svc` and `frpc.toml`.
+  - Validated Hub backend actions (`port_ls`, `port_map`, `port_show`, `port_add`, `port_edit`, `port_rm` in `hubcmds.py`), `GET /api/servers/<iran>/portconnect/<rule>`, and the fifth Iran tab **"Port Manager" (`Guided` style)** with sliding-pill sub-views, live collision probe, port occupancy map, 4-hop pipeline preview, and two-sided node synchronization.
+
 ## [2.4.0] - 2026-11-25
 
 ### Added

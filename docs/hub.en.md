@@ -62,7 +62,7 @@ The UI is a static asset tree under `ratholehub/ui/` (`index.html`, `app.css`, `
 | Page | Hash | Content |
 |------|------|---------|
 | **Dashboard** | `#/dashboard` | **4 KPI cards** (servers, connectivity, nodes/services, hub health), hub status strip, role/reachability/text filter bar, server cards/table with carrier protocol, version badges, and live online/waiting `reverse_ws` badges, add-server/Provision/`reverse_ws` modal, and Update All progress. |
-| **Server page** | `#/server/<name>` | Iran server: four tabs (Nodes & Paths, Carriers & Protocols, Network & Ingress, Maintenance & System), live table filter, `paqet`, Ports, and diagnostics. Node: main tunnel, quick presets, carrier select, watchdog & adaptive, `paqet`, Managed Xray (REALITY/XHTTP + cover scanner), `reverse_ws` setup / offline-conversion controls, upstreams, and diagnostics. |
+| **Server page** | `#/server/<name>` | Iran server: five tabs (Nodes & Paths, **Port Manager [Guided — L4 TCP/UDP rules, occupancy map & system ports]**, Carriers & Protocols, Network & Ingress, Maintenance & System), live table filter, `paqet`, Ports, and diagnostics. Node: main tunnel, quick presets, carrier select, watchdog & adaptive, `paqet`, Managed Xray (REALITY/XHTTP + cover scanner), `reverse_ws` setup / offline-conversion controls, upstreams, and diagnostics. |
 | **Network Tuner** | `#/tuner` | Async 6-stage `rathole-tuner` benchmark runner (persisted across refreshes via `GET /api/tuner/jobs`), live kernel state card (`GET /api/tuner/status`), 5D score strip, Baseline/Winner table, `rthprof1:` & JSON AI profile export/import, Datacenter Profile Library, live A/B testing, and two-phase dead-man Watchdog apply/confirm/rollback (`/api/tuner/*`). |
 | **Routing map** | `#/routing` | **Read-only**: three views — a draggable SVG graph (layout persisted in the browser, with reset), a summary table, and an ingress/output console with per-node client connection recipes. |
 | **Activity log** | `#/audit` | Last 100 SHA-256 hash-chained audit records (with live text filter): time, user, server, action, and `rc`. |
@@ -70,7 +70,7 @@ The UI is a static asset tree under `ratholehub/ui/` (`index.html`, `app.css`, `
 
 ![RatholeHub Auto-Tuner UI](assets/screenshots/tuner.png)
 
-Press **`⌘K / Ctrl+K`** anywhere (or click the sidebar trigger) to open the **Command Palette** and jump straight to any server, page (including `#/tuner`), or theme/language toggle. On mobile widths (≤820px) navigation collapses into a fixed bottom bar (`v2.3.0`). **v2.4.0** adds native Reverse WebSocket (`reverse_ws`) onboarding and two-phase dead-man Watchdog kernel apply inside this UI. There is no wiring-board page; `#/wiring` falls back to `#/dashboard`.
+Press **`⌘K / Ctrl+K`** anywhere (or click the sidebar trigger) to open the **Command Palette** and jump straight to any server, page (including `#/tuner`), or theme/language toggle. On mobile widths (≤820px) navigation collapses into a fixed bottom bar (`v2.3.0`). **v2.4.0** adds native Reverse WebSocket (`reverse_ws`) onboarding and two-phase dead-man Watchdog kernel apply, and **v2.5.0** adds the fifth **Guided Port Manager** Iran tab (L4 TCP/UDP/`both` forwarding without path/SNI, live collision probe, occupancy map, and two-sided node sync). There is no wiring-board page; `#/wiring` falls back to `#/dashboard`.
 
 ### Per-node carrier selector (v2.0.4)
 

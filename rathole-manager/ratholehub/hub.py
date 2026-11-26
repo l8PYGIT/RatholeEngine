@@ -422,7 +422,7 @@ _HUB_START = time.time()
 
 # noskhe-i ke hub «akharin» midanad: az MANAGER_VERSION-e common.sh (bundle ke deploy mishavad)
 # khande mishavad ta ba noskhe-ye nasb-shode rooye har server moghayese shavad. fallback: rشته-ye sabet.
-HUB_FALLBACK_VERSION = "2.4.0"
+HUB_FALLBACK_VERSION = "2.5.0"
 def hub_manager_version():
     cands = []
     try:
@@ -1207,9 +1207,9 @@ def mock_run(server, cmd_args):
             "  --server rp01.l1t.ir:443 --name %s --token a0370655deadbeefcafe1234 --inbound-port 8444\n"
             "────────────────────────────────────────" % nm, "err": ""}
     if j == "ratholectl version":
-        return {"rc": 0, "out": "manager_version=2.4.0\nrole=panel\nrathole_version=0.5.0", "err": ""}
+        return {"rc": 0, "out": "manager_version=2.5.0\nrole=panel\nrathole_version=0.5.0", "err": ""}
     if j == "ratholenode version":
-        return {"rc": 0, "out": "manager_version=2.4.0\nrole=node\nrathole_version=0.5.0", "err": ""}
+        return {"rc": 0, "out": "manager_version=2.5.0\nrole=node\nrathole_version=0.5.0", "err": ""}
     if cmd_args[:2] == ["ratholectl", "ip-cert"]:
         return {"rc": 0, "out": "WSS-e self-signed faal shod.", "err": ""}
     if cmd_args[:2] == ["ratholectl", "ip-cert-show"]:
@@ -1316,7 +1316,7 @@ def mock_run(server, cmd_args):
         # nemune-ye kutah: sakhtar-e vaghei + neshan dadan-e inke token-ha REDACT shode-and.
         return {"rc": 0, "out":
                 "\n===== kolli =====\n"
-                "naghsh      : %s\nratholectl  : manager_version=2.4.0\n"
+                "naghsh      : %s\nratholectl  : manager_version=2.5.0\n"
                 "\n===== unit: rathole-server  (halat: active/enabled) =====\n"
                 "Jul 31 12:00:01 rp01 rathole[811]: control channel established\n"
                 "\n===== state.json (/etc/rathole-manager/state.json) =====\n"

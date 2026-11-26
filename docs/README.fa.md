@@ -94,7 +94,7 @@ ratholectl doctor                      # بررسی سلامت
 ratholectl version                     # نسخهٔ manager + rathole (manager_version=/rathole_version=)
 ratholectl update                      # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholectl update beta                 # کانال بتا: آخرین pre-release (آزمایشی)
-ratholectl update v2.4.0               # آپدیت به نسخه‌ی خاص
+ratholectl update v2.5.0               # آپدیت به نسخه‌ی خاص
 ratholectl menu                        # منوی تعاملی کامل
 ```
 
@@ -214,7 +214,7 @@ ratholenode backup [file]              # snapshot از node.env + services + ups
 ratholenode restore <file>             # بازگردانی + بازتولید config + restart
 ratholenode update                     # به‌روزرسانی کامل از GitHub (آخرین Release؛ snapshot + rollback خودکار)
 ratholenode update beta                # کانال بتا: آخرین pre-release (آزمایشی)
-ratholenode update v2.4.0              # آپدیت به نسخه‌ی خاص
+ratholenode update v2.5.0              # آپدیت به نسخه‌ی خاص
 ratholenode version                    # نسخهٔ manager + rathole
 ratholenode status [--json] | logs | apply
 ```

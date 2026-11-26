@@ -9,6 +9,8 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-26
+
 ### Added
 - **سیستم مدیریت پورت‌ها (Port Manager — L4 TCP/UDP بدون نیاز به Path و SNI):**
   - پشتیبانی از باز کردن مستقیم پورت‌های `tcp`، `udp` و `tcp+udp` (`both`) روی سرور ایران (`ratholectl port add|edit|rm|ls|show|map`) برای پروتکل‌هایی مانند `VLESS+TCP+REALITY`، `Hysteria2`، `TUIC`، `MTProto` و `WireGuard` — قابل استفاده با تکی (`2083`)، لیستی (`2053,2083,8443`) یا بازه (`2080-2085`، تا ۲۰ پورت).

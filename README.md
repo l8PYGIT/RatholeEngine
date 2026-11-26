@@ -6,7 +6,7 @@
   <img src="docs/assets/banner-dark.png" alt="RatholeEngine — Multi-Location Reverse Tunnel System" width="100%">
 </picture>
 
-**Multi-location reverse-tunnel engine built on `rathole` + `Nginx`** — _One port · one domain · 9 carriers · Auto-Tuner (`rthprof1:`) · Web Hub, Reverse WS Agent & Managed Xray_
+**Multi-location reverse-tunnel engine built on `rathole` + `Nginx`** — _One port · one domain · 9 carriers · L4 Port Manager (`TCP/UDP`) · Auto-Tuner (`rthprof1:`) · Web Hub, Reverse WS Agent & Managed Xray_
 
 [![CI](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/ci.yml)
 [![Docs](https://github.com/l8PYGIT/RatholeEngine/actions/workflows/docs.yml/badge.svg)](https://l8pygit.github.io/RatholeEngine/)
@@ -15,7 +15,7 @@
 [![Stars](https://img.shields.io/github/stars/l8PYGIT/RatholeEngine?style=flat-square&color=16a34a)](https://github.com/l8PYGIT/RatholeEngine/stargazers)
 [![Telegram](https://img.shields.io/badge/Telegram-%40l8PY4NET-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/l8PY4NET)
 
-[**Docs Site**](https://l8pygit.github.io/RatholeEngine/) · [**Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [**Quick Start**](#quick-start) · [**Transport Modes**](#transport--ingress-modes) · [**Auto-Tuner**](#network--kernel-auto-tuner-rathole-tuner) · [**RatholeHub**](#ratholehub-web-panel-v240) · [**فارسی**](docs/README.fa.md) · [**Telegram**](https://t.me/l8PY4NET)
+[**Docs Site**](https://l8pygit.github.io/RatholeEngine/) · [**Wiki**](https://l8pygit.github.io/RatholeEngine/wiki/Home/) · [**Quick Start**](#quick-start) · [**Transport Modes**](#transport--ingress-modes) · [**Auto-Tuner**](#network--kernel-auto-tuner-rathole-tuner) · [**RatholeHub**](#ratholehub-web-panel-v250) · [**فارسی**](docs/README.fa.md) · [**Telegram**](https://t.me/l8PY4NET)
 
 </div>
 
@@ -86,7 +86,7 @@ ratholectl doctor                 # end-to-end health check
 | **FRP + GRE** | FRP inside GRE `/30` | Kernel GRE + internal `:7000` | Strict DPI resistance combining L3 + mux |
 | **Paqet (Direct PCK)** | `paqet` raw TCP+KCP | Random raw-TCP (`PCAP`/iptables) | Censorship evasion without any TLS handshake |
 
-*Ingress & Edge modes:* **Managed Xray** (`VLESS+REALITY+Vision`, `VLESS+XHTTP` + concurrent **TLS 1.3 + ALPN `h2` Cover Scanner**), **Game / SNI** (L4 `:443` passthrough + PROXY protocol), **Direct-IP** (`:8081` + `X-Cdn-Id`), **Proxy** (`/<name>/` upstream), and **Fakeweb** (`:8080`). Full details: [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [فارسی](docs/transport-modes.md).
+*Ingress & Edge modes:* **Port Manager (`ratholectl port` — L4 TCP/UDP/`both` directly on `0.0.0.0:<port>` without path/SNI/Nginx, or opt-in per-rule `PROXY Protocol`)**, **Managed Xray** (`VLESS+REALITY+Vision`, `VLESS+XHTTP` + concurrent **TLS 1.3 + ALPN `h2` Cover Scanner**), **Game / SNI** (L4 `:443` passthrough + PROXY protocol), **Direct-IP** (`:8081` + `X-Cdn-Id`), **Proxy** (`/<name>/` upstream), and **Fakeweb** (`:8080`). Full details: [`docs/transport-modes.en.md`](docs/transport-modes.en.md) · [فارسی](docs/transport-modes.md).
 
 ## Network & kernel auto-tuner (`rathole-tuner`)
 
@@ -119,8 +119,9 @@ sudo ratholectl bench rollback
 
 </details>
 
-## RatholeHub web panel (`v2.4.0`)
+## RatholeHub web panel (`v2.5.0`)
 
+- **Guided Port Manager Tab (L4 TCP/UDP without Path or SNI)** — Fifth Iran server tab (`tab_ports`) for direct `0.0.0.0:<port>` TCP, UDP, and `both` port forwarding across all carriers (or opt-in per-rule `PROXY Protocol` without touching `:443`), featuring sliding-pill sub-views (`My Rules` / `Port Map` / `System & Reserved`), live collision probing, a 4-hop pipeline composer, and automatic two-sided node sync.
 - **Reverse WebSocket Agent (`reverse_ws` — zero inbound ports)** — Pure-stdlib RFC 6455 outbound agent (`ratholeagent.py` v2.0.0 + `wsutil.py`) dialing the Hub on `/hub/ws/agent` (port 443 through Nginx TLS) or `/ws/agent` with `--insecure-ssl` and HTTP `CONNECT` proxy support — ideal for filtered or NAT-bound nodes, with 1-click conversion from offline REST servers, a 1-line setup modal, live online/waiting status badges, and token rotation.
 - **Apple Glass UI (100% offline, stdlib Python)** — Light / Dark / System themes, bundled `vazirmatn.woff2`, Persian RTL / English LTR, native `<dialog>` modals, and **`⌘K / Ctrl+K` Command Palette**.
 - **Network Auto-Tuner UI (`#/tuner`)** — Run async 6-stage benchmarks across server pairs with persistent job state across refreshes, inspect live kernel state (`GET /api/tuner/status`) and winner previews before applying, compare 5D scores (`Balanced`, `Low Latency`, `Max Throughput`, `Anti-Loss`), copy/import `rthprof1:` & JSON AI profiles, and manage a saved Datacenter Profile Library with live A/B testing & two-phase Watchdog rollback.
@@ -132,7 +133,7 @@ sudo ratholectl bench rollback
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dashboard-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/screenshots/dashboard.png">
-  <img src="docs/assets/screenshots/dashboard.png" alt="RatholeHub v2.4.0 Dashboard" width="100%">
+  <img src="docs/assets/screenshots/dashboard.png" alt="RatholeHub v2.5.0 Dashboard" width="100%">
 </picture>
 </div>
 
@@ -204,7 +205,7 @@ sudo bash bootstrap.sh --uninstall   # add --purge --yes to remove binaries & hu
 | [`docs/hub.en.md`](docs/hub.en.md) · [`fa`](docs/hub.md) | RatholeHub UI, `#/tuner`, REST & Reverse WS Agent, 2FA/RBAC, `/metrics`, Monitor Bot & security |
 | [`docs/performance.md`](docs/performance.md) · [`en`](docs/performance.en.md) · [`README.fa.md`](docs/README.fa.md) | `rathole-tuner`, `rthprof1:` AI profiles, BBR/KCP tuning & full CLI reference |
 | [`tools/telegram-bot-worker/`](tools/telegram-bot-worker/README.md) | Serverless Telegram announcer & Hub fleet monitor relay |
-| [`CHANGELOG.md`](CHANGELOG.md) · [`en`](CHANGELOG.en.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Release notes (`v2.4.0`), tests, LF & code rules ([CoC](CODE_OF_CONDUCT.md)) |
+| [`CHANGELOG.md`](CHANGELOG.md) · [`en`](CHANGELOG.en.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) | Release notes (`v2.5.0`), tests, LF & code rules ([CoC](CODE_OF_CONDUCT.md)) |
 
 ## Community & Donate
 
@@ -219,4 +220,4 @@ sudo bash bootstrap.sh --uninstall   # add --purge --yes to remove binaries & hu
 
 ## خلاصه‌ی فارسی
 
-**RatholeEngine (`v2.4.0`)** یک سیستم تونل معکوس چند-موقعیتی روی **rathole + Nginx** است: یک سرور ایران (پشت یک دامنه، یک گواهی TLS و پورت `443`) جلوی چندین نود خارج قرار می‌گیرد و ترافیک بر اساس **path** هدایت می‌شود. علاوه‌بر ۹ حامل (**WebSocket/TLS**، **KCP+FEC**، **Plain**، **Noise**، **Backhaul SMUX**، **FRP**، **GRE لایه ۳**، **FRP+GRE** و **Paqet Direct PCK**) و **Managed Xray** (`REALITY+Vision` / `XHTTP` + اسکنر سایت کاور TLS 1.3)، در نسخهٔ `v2.4.0` قابلیت **Reverse WebSocket Agent (`reverse_ws`)** اضافه شده است تا نودهای پشت NAT یا با IP فیلترشده بدون هیچ پورت ورودی باز، خروجی به `/hub/ws/agent` هاب متصل شوند؛ همچنین موتور **تست و تیونر شبکه `rathole-tuner`** دارای **محافظ دوفازه‌ای Watchdog** (`--confirm-ttl 45` + `bench confirm`)، تشخیص انسداد UDP با `TCP_INFO` و ایمن‌سازی مسیر/کارت‌شبکه/بافرهای کرنل همراه با خروجی قابل‌تحلیل توسط هوش مصنوعی (**JSON + `rthprof1:`**) است. شروع سریع و مستندات کامل فارسی: [`docs/quickstart.md`](docs/quickstart.md) · [`docs/README.fa.md`](docs/README.fa.md) · [**@l8PY4NET**](https://t.me/l8PY4NET).
+**RatholeEngine (`v2.5.0`)** یک سیستم تونل معکوس چند-موقعیتی روی **rathole + Nginx** است: یک سرور ایران (پشت یک دامنه، یک گواهی TLS و پورت `443`) جلوی چندین نود خارج قرار می‌گیرد و ترافیک بر اساس **path** هدایت می‌شود. علاوه‌بر ۹ حامل (**WebSocket/TLS**، **KCP+FEC**، **Plain**، **Noise**، **Backhaul SMUX**، **FRP**، **GRE لایه ۳**، **FRP+GRE** و **Paqet Direct PCK**) و **Managed Xray** (`REALITY+Vision` / `XHTTP` + اسکنر سایت کاور TLS 1.3)، در نسخهٔ **`v2.5.0`** **سیستم مدیریت پورت‌ها (Port Manager — L4 TCP/UDP/`both`)** برای فوروارد مستقیم بدون نیاز به Path و SNI و بدون Nginx در مسیر پیش‌فرض (همراه با حالت اختیاری `PROXY Protocol` و **تب پنجم Guided** در هاب) اضافه شده است؛ همچنین قابلیت **Reverse WebSocket Agent (`reverse_ws`)** برای اتصال خروجی نودهای فیلترشده یا پشت NAT به `/hub/ws/agent` هاب بدون هیچ پورت ورودی باز، و موتور **تست و تیونر شبکه `rathole-tuner`** با **محافظ دوفازه‌ای Watchdog** (`--confirm-ttl 45` + `bench confirm`)، تشخیص انسداد UDP با `TCP_INFO` و خروجی **`JSON + rthprof1:`** در دسترس است. شروع سریع و مستندات کامل فارسی: [`docs/quickstart.md`](docs/quickstart.md) · [`docs/README.fa.md`](docs/README.fa.md) · [**@l8PY4NET**](https://t.me/l8PY4NET).

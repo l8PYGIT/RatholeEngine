@@ -303,6 +303,21 @@ ratholenode adaptive test [--json]
 
 ---
 
+## 17) Port Manager — Direct L4 TCP/UDP Forwarding (no path, no SNI, no Nginx by default)
+
+> Opens public TCP, UDP, or `both` (`tcp+udp`) ports on Iran forwarding raw L4 traffic straight to foreign node inbounds — ideal for **`VLESS+TCP+REALITY`**, **`Hysteria2`**, **`TUIC`**, **`MTProto`**, and **`WireGuard`**.
+
+- **Direct Mode (default — zero Nginx in the data path):** Tunnel cores bind `0.0.0.0:<public_port>` directly without touching Nginx or `:443`.
+- **Optional `PROXY Protocol` Mode (TCP only):** `--proxy-protocol` allocates an internal loopback port (`21000+`) and emits an isolated Nginx `stream` server (`proxy_protocol on; proxy_pass 127.0.0.1:<local_port>;`) without pushing `:443` into SNI mode when `sni_count == 0` (remember to enable `acceptProxyProtocol` on the target Xray inbound).
+- **Multi-core & Protocol-aware safety:** Works across `ws`, `kcp`, `plain`, `noise`, `backhaul` (TCP only), `frp`/`frp_gre` (auto `proxyBindAddr = "0.0.0.0"`), and `paqet`; allows `tcp` and `udp` to coexist on the same port while blocking overlapping protocols, carrier/system collisions, live `ss` listeners, and batches over 20 ports; syncs `ufw` automatically and adds `[tcp|udp|both]` support to `ratholenode add-svc`.
+
+```bash
+ratholectl port add <port|csv|range> <inbound|same> [--name N] [--proto tcp|udp|both] [--transport ws|kcp|plain|noise|backhaul|frp|frp_gre|paqet] [--proxy-protocol] [--node-server S] [--note TXT]
+ratholectl port edit|rm|ls|show|map ...
+```
+
+---
+
 ## See also
 
 - [CLI Reference (Wiki)](https://l8pygit.github.io/RatholeEngine/wiki/CLI-Reference/) — full command signatures

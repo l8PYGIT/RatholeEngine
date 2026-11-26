@@ -69,6 +69,23 @@ RE_TUNER_GOAL    = re.compile(r"^(balanced|low-latency|max-throughput|anti-loss)
 RE_TUNER_PROFILE = re.compile(r"^rthprof1:[A-Za-z0-9_-]{16,65536}\Z")
 RE_TUNER_SIDE    = re.compile(r"^(iran|node)\Z")
 RE_TAG_STR       = re.compile(r"^[A-Za-z0-9_.:/-]{1,120}\Z")
+RE_PORT_SPEC     = re.compile(r"^(?:" + _PORT + r"(?:," + _PORT + r"){0,19}|" + _PORT + r"-" + _PORT + r")\Z")
+RE_PORT_TARGET   = re.compile(r"^(?:same|" + _PORT + r")\Z")
+RE_PORT_PROTO    = re.compile(r"^(tcp|udp|both)\Z")
+RE_PORT_TR       = re.compile(r"^(ws|kcp|plain|noise|backhaul|frp|frp_gre|paqet)\Z")
+RE_NOTE          = re.compile(r"^[A-Za-z0-9\u0600-\u06FF\u200c .:_/()+-]{0,120}\Z")
+
+
+def _valid_port_spec(val):
+    if not isinstance(val, str) or not RE_PORT_SPEC.match(val):
+        return False
+    if "-" in val:
+        a, b = val.split("-", 1)
+        return 1 <= int(a) <= int(b) <= 65535 and (int(b) - int(a) + 1) <= 20
+    if "," in val:
+        parts = val.split(",")
+        return len(parts) <= 20 and len(set(parts)) == len(parts)
+    return True
 
 
 def _valid_ip(val):
@@ -90,7 +107,7 @@ def _valid_mtu(val):
 
 
 _INT_OK_KEYS = frozenset({
-    "port", "inbound", "api_port", "remote_port", "lines",
+    "port", "public_port", "inbound", "api_port", "remote_port", "lines",
     "interval", "failures", "recoveries", "value", "gre_key", "mtu", "count", "rev",
     "conn", "top", "timeout", "idle_timeout", "data_port", "confirm_ttl",
 })
@@ -484,6 +501,115 @@ def build_iran_cmd(action, a):
         name = a.get("name", "")
         if not RE_NAME.match(name): return None
         return ["ratholectl", "rotate", name]
+    # ---- Port Manager: forward L4 TCP/UDP mostaghim (bedoon path / SNI) ----
+    if action == "port_ls":
+        return ["ratholectl", "port", "ls", "--json"]
+    if action == "port_map":
+        return ["ratholectl", "port", "map", "--json"]
+    if action == "port_show":
+        target = a.get("name", "") or str(a.get("port", "") or "")
+        if not (RE_NAME.match(target) or RE_PORT.match(target)):
+            return None
+        return ["ratholectl", "port", "show", target]
+    if action == "port_add":
+        pub = str(a.get("public_port", "") or "").strip()
+        inb = str(a.get("inbound", "") or "").strip()
+        proto = str(a.get("proto", "tcp") or "tcp").strip()
+        tr = str(a.get("transport", "ws") or "ws").strip()
+        name = str(a.get("name", "") or "").strip()
+        ns = str(a.get("node_server", "") or "").strip()
+        note = str(a.get("note", "") or "").strip()
+        pp_raw = str(a.get("proxy_protocol", "") or "").strip().lower()
+        if pp_raw in ("1", "true", "yes", "on"):
+            pp = True
+        elif pp_raw in ("", "0", "false", "no", "off"):
+            pp = False
+        else:
+            return None
+        if not _valid_port_spec(pub) or not RE_PORT_TARGET.match(inb):
+            return None
+        if not RE_PORT_PROTO.match(proto) or not RE_PORT_TR.match(tr):
+            return None
+        if tr == "backhaul" and proto != "tcp":
+            return None
+        if pp and proto != "tcp":
+            return None
+        if name:
+            if not RE_NAME.match(name):
+                return None
+            if proto == "both" and len(name) > 36:
+                return None
+        if ns and not RE_NAME.match(ns):
+            return None
+        if note and not RE_NOTE.match(note):
+            return None
+        cmd = ["ratholectl", "port", "add", pub, inb, "--proto", proto, "--transport", tr]
+        if name:
+            cmd += ["--name", name]
+        if pp:
+            cmd.append("--proxy-protocol")
+        if ns:
+            cmd += ["--node-server", ns]
+        if note:
+            cmd += ["--note", note]
+        cmd.append("--json")
+        return cmd
+    if action == "port_edit":
+        name = a.get("name", "")
+        if not (RE_NAME.match(name) or RE_PORT.match(name)):
+            return None
+        cmd = ["ratholectl", "port", "edit", name]
+        inb = str(a.get("inbound", "") or "").strip()
+        if inb:
+            if not RE_PORT.match(inb):
+                return None
+            cmd += ["--inbound", inb]
+        proto = str(a.get("proto", "") or "").strip()
+        if proto:
+            if not RE_PORT_PROTO.match(proto):
+                return None
+            cmd += ["--proto", proto]
+        tr = str(a.get("transport", "") or "").strip()
+        if tr:
+            if not RE_PORT_TR.match(tr):
+                return None
+            cmd += ["--transport", tr]
+        pp_raw = str(a.get("proxy_protocol", "") or "").strip().lower()
+        pp_val = None
+        if pp_raw in ("1", "true", "yes", "on"):
+            pp_val = True
+            cmd += ["--proxy-protocol", "on"]
+        elif pp_raw in ("0", "false", "no", "off"):
+            pp_val = False
+            cmd += ["--proxy-protocol", "off"]
+        elif pp_raw:
+            return None
+        if tr == "backhaul" and proto in ("udp", "both"):
+            return None
+        if pp_val is True and proto in ("udp", "both"):
+            return None
+        if "node_server" in a:
+            raw_ns = a.get("node_server", "")
+            if raw_ns == "":
+                cmd += ["--node-server", "none"]
+            elif RE_NAME.match(raw_ns):
+                cmd += ["--node-server", raw_ns]
+            else:
+                return None
+        if "note" in a:
+            raw_note = a.get("note", "")
+            if not RE_NOTE.match(raw_note):
+                return None
+            cmd += ["--note", raw_note]
+        if len(cmd) == 4:
+            return None
+        cmd.append("--json")
+        return cmd
+    if action == "port_rm":
+        target = a.get("name", "") or str(a.get("port", "") or "")
+        if not (RE_NAME.match(target) or RE_PORT.match(target)):
+            return None
+        return ["ratholectl", "port", "rm", target, "--json"]
     if action == "set_config":
         key = a.get("key", ""); val = str(a.get("value", ""))
         if key not in ("domain", "fullchain", "key", "nginx-conf",
@@ -824,11 +950,16 @@ def build_node_cmd(action, a):
     if action == "add_svc":
         name = a.get("name", ""); token = a.get("token", ""); inbound = str(a.get("inbound", ""))
         rport = str(a.get("remote_port", "") or "")
+        proto = str(a.get("proto", "") or "").strip()
         if not RE_NAME.match(name) or not RE_KEY.match(token) or not RE_PORT.match(inbound): return None
+        if proto and not RE_PORT_PROTO.match(proto): return None
+        cmd = ["ratholenode", "add-svc", name, token, inbound]
         if rport:
             if not RE_PORT.match(rport): return None
-            return ["ratholenode", "add-svc", name, token, inbound, rport]
-        return ["ratholenode", "add-svc", name, token, inbound]
+            cmd.append(rport)
+        if proto and proto != "tcp":
+            cmd.append(proto)
+        return cmd
     if action == "rm_svc":
         name = a.get("name", "")
         if not RE_NAME.match(name): return None
@@ -1027,6 +1158,7 @@ WRITE_ACTIONS = {
     "frp_on", "frp_off", "frp_node_on", "frp_node_off", "frp_proxy_protocol",
     "gre_on", "gre_off", "gre_auto_mtu", "game_proxy_protocol",
     "paqet_on", "paqet_off", "paqet_node_on", "paqet_node_off",
+    "port_add", "port_edit", "port_rm",
 
     "backup", "state_undo", "enable", "regen_full", "regen",
     # node

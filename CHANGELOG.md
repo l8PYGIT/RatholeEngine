@@ -9,6 +9,13 @@ release.yml hamin bakhsh ra be onvan-e title/body-e GitHub Release montasher mik
 
 ## [Unreleased]
 
+### Added
+- **سیستم مدیریت پورت‌ها (Port Manager — L4 TCP/UDP بدون نیاز به Path و SNI):**
+  - پشتیبانی از باز کردن مستقیم پورت‌های `tcp`، `udp` و `tcp+udp` (`both`) روی سرور ایران (`ratholectl port add|edit|rm|ls|show|map`) برای پروتکل‌هایی مانند `VLESS+TCP+REALITY`، `Hysteria2`، `TUIC`، `MTProto` و `WireGuard` — قابل استفاده با تکی (`2083`)، لیستی (`2053,2083,8443`) یا بازه (`2080-2085`، تا ۲۰ پورت).
+  - **دو حالت مسیر ترافیک:** در حالت پیش‌فرض هستهٔ تونل مستقیماً روی `0.0.0.0:<public_port>` می‌شنود (**صفر Nginx** در مسیر دیتا)؛ در حالت اختیاری `--proxy-protocol` (TCP) هسته روی لوکال (`127.0.0.1:<local_port>`) بالا می‌آید و Nginx `stream` یک بلوک مستقل `proxy_protocol on;` روی همان `<public_port>` می‌سازد بدون آنکه پورت `443` به حالت SNI برود.
+  - پشتیبانی کامل در تمام هسته‌ها (`rathole` ws/kcp/plain، `noise`، `backhaul` TCP-only، `frp`/`frp_gre` با `proxyBindAddr = "0.0.0.0"` خودکار و `paqet` از جمله `tcp`/`udp`/`both`) و افزودن پارامتر پروتکل (`[tcp|udp|both]`) به `ratholenode add-svc` و `frpc.toml`.
+  - کنترل دقیق تداخل پورت (با پشتیبانی هم‌زیستی `tcp` و `udp` روی یک شماره پورت)، همگام‌سازی امن فایروال `ufw`، لیست‌سفید `hubcmds.py` (`port_*`، `add_svc`، `GET /api/servers/<iran>/portconnect/<rule>`) و تب پنجم **«مدیریت پورت‌ها» (سبک Guided)** در RatholeHub با ساب‌ویوهای کشویی، نقشه پورت‌های اشغال‌شده، همگام‌سازی خودکار دوطرفه و مودال هدایت‌شده همراه پیش‌نمایش مسیر ۴ مرحله‌ای.
+
 ## [2.4.0] - 2026-11-25
 
 ### Added

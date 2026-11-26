@@ -831,6 +831,7 @@ function renderServerPage(n){
  // baraye node: dot-haye vaziat az doctor-e Iran miayand — agar overview-e Iran-i nadarim, biar
  if(s.role==='node')SERVERS.filter(x=>x.role==='iran'&&!OVS[x.name]).forEach(x=>loadOv(x.name));
  pg.innerHTML=`<div class="spage">${head}<div id="body_${h(n)}">${body}</div></div>`;
+ if(s.role==='iran'&&typeof IRAN_TAB!=='undefined'&&IRAN_TAB==='ports'&&typeof requestAnimationFrame==='function'&&typeof syncPmSegPill==='function')requestAnimationFrame(()=>syncPmSegPill());
 }
 async function delSrvPage(n){if(!confirm(t('cf_delsrv')+' ('+n+')'))return;await api('DELETE','api/servers/'+n);SERVERS=[];delete OVS[n];nav('#/dashboard');}
 function tbl(cols){return '<table><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr>';}
@@ -852,6 +853,8 @@ function connSummary(ov,role){
  return bh.configured?`<div class="sub" style="margin-top:7px">${h(t('conn_transport'))}: Backhaul/${h(bh.mode||'nginx_tls')} · ${h(t('conn_crypto'))}: ${bh.encrypted?t('yes'):t('no')} · ${h(t('conn_live'))}: ${h(bh.active?'active':'inactive')}</div>`:'';
 }
 let IRAN_TAB = localStorage.getItem('rh_iran_tab') || 'nodes';
+let IRAN_PORT_SUB = localStorage.getItem('rh_iran_port_sub') || 'rules';
+let PM_FILTER = { q: '', proto: 'all' };
 function setIranTab(n, tab){
   if(typeof closeAllMoreMenus==='function')closeAllMoreMenus(null,true);
   IRAN_TAB = tab;
@@ -861,6 +864,7 @@ function setIranTab(n, tab){
     _tabAnimate = true;
     try { el.innerHTML = renderIran(n, OVS[n]); }
     finally { _tabAnimate = false; }
+    if(tab === 'ports' && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => syncPmSegPill());
   }
 }
 
@@ -874,6 +878,7 @@ function renderIran(n,ov){
   const certTag = hasCert ? `<span class="badge b-ok">🔒 ${t('ssl_valid')}</span>` : `<span class="badge b-bad">${t('ssl_missing')}</span>`;
   const nodeCount = (ov.nodes || []).length;
   const gameCount = (ov.game || []).length;
+  const portRules = ov.port_rules || st.port_rules || [];
   const nodesVal = `${nodeCount} ${t('c_name')}` + (gameCount ? ` (+${gameCount} SNI)` : '');
 
   const activeCarriers = [];
@@ -903,6 +908,7 @@ function renderIran(n,ov){
 
   const tabs = [
     { id: 'nodes', label: t('tab_nodes'), count: nodeCount + gameCount },
+    { id: 'ports', label: t('tab_ports'), count: portRules.length },
     { id: 'carriers', label: t('tab_carriers'), count: activeCarriers.length },
     { id: 'network', label: t('tab_network') },
     { id: 'maint', label: t('tab_maint') }
@@ -1191,6 +1197,8 @@ function renderIran(n,ov){
         </div>
       </div>
     </div>`;
+  } else if(IRAN_TAB === 'ports'){
+    s += renderIranPortsTab(n, ov);
   } else if(IRAN_TAB === 'maint'){
     s+=`<div class="sec"><h4>🛠️ ${t('tab_maint')}</h4>
       <div class="btns" style="margin-top:6px">
@@ -1205,6 +1213,608 @@ function renderIran(n,ov){
   }
   s+='</div>';
   return s;
+}
+
+// ---------- Guided Port Manager (L4 TCP/UDP bedoon path / SNI) ----------
+function pmParsePortSpec(raw){
+ const s=String(raw==null?'':raw).trim();
+ if(!s)return {ok:false,ports:[],error:''};
+ const isPortTok=x=>/^[1-9][0-9]{0,4}$/.test(x)&&Number(x)>=1&&Number(x)<=65535;
+ if(s.indexOf(',')>=0){
+  const parts=s.split(',');
+  if(!parts.length||parts.length>20)return {ok:false,ports:[],error:t('pm_err_range')};
+  const seen=new Set();
+  const ports=[];
+  for(let i=0;i<parts.length;i++){
+   const tok=parts[i].trim();
+   if(!isPortTok(tok))return {ok:false,ports:[],error:t('pm_err_range')};
+   const num=Number(tok);
+   if(seen.has(num))return {ok:false,ports:[],error:t('pm_err_range')};
+   seen.add(num);
+   ports.push(num);
+  }
+  return {ok:true,ports,error:''};
+ }
+ if(s.indexOf('-')>=0){
+  const m=/^([1-9][0-9]{0,4})-([1-9][0-9]{0,4})$/.exec(s);
+  if(!m)return {ok:false,ports:[],error:t('pm_err_range')};
+  const a=Number(m[1]),b=Number(m[2]);
+  if(a<1||b>65535||a>b||(b-a+1)>20)return {ok:false,ports:[],error:t('pm_err_range')};
+  const ports=[];
+  for(let p=a;p<=b;p++)ports.push(p);
+  return {ok:true,ports,error:''};
+ }
+ if(!isPortTok(s))return {ok:false,ports:[],error:t('pm_err_range')};
+ return {ok:true,ports:[Number(s)],error:''};
+}
+function pmProtosOverlap(a,b){
+ const p1=a||'tcp',p2=b||'tcp';
+ return p1==='both'||p2==='both'||p1===p2;
+}
+function pmFallbackPortMap(ov){
+ if(ov&&Array.isArray(ov.port_map)&&ov.port_map.length)return ov.port_map;
+ const st=(ov&&ov.status)||{};
+ if(Array.isArray(st.port_map)&&st.port_map.length)return st.port_map;
+ const out=[];
+ const sp=st.ports||{};
+ out.push({port:22,proto:'tcp',category:'system',owner:'ssh',bind:'0.0.0.0:22',detail:'SSH'});
+ out.push({port:80,proto:'tcp',category:'system',owner:'nginx-http',bind:'0.0.0.0:80',detail:'Nginx HTTP'});
+ out.push({port:443,proto:'tcp',category:'system',owner:'nginx-443',bind:'0.0.0.0:443',detail:'Nginx HTTPS / SNI'});
+ [['control',2333,'control_port','Rathole Control'],['fake',8080,'fake_port','Fake Web'],['sub',2096,'sub_port','Subscription'],['internal',8443,'internal_port','Nginx Internal']].forEach(item=>{
+  const val=Number(sp[item[0]]!=null?sp[item[0]]:item[1]);
+  if(val)out.push({port:val,proto:'tcp',category:'system',owner:item[2],bind:'127.0.0.1',detail:item[3]});
+ });
+ if(sp.hub)out.push({port:Number(sp.hub),proto:'tcp',category:'system',owner:'hub_port',bind:'127.0.0.1',detail:'RatholeHub'});
+ const feats=st.features||{};
+ if(ov&&ov.kcp&&ov.kcp.enabled&&ov.kcp.port)out.push({port:Number(ov.kcp.port),proto:'udp',category:'carrier',owner:'kcp',bind:'0.0.0.0',detail:'KCP'});
+ [['plain','tcp'],['direct','tcp'],['noise','tcp'],['backhaul','tcp']].forEach(pair=>{
+  const k=pair[0];
+  if(sp[k]||(feats[k]&&feats[k].configured&&feats[k].port)){
+   out.push({port:Number(sp[k]||feats[k].port),proto:pair[1],category:'carrier',owner:k,bind:'0.0.0.0',detail:k});
+  }
+ });
+ if(sp.frp||(feats.frp&&feats.frp.configured&&feats.frp.port)){
+  const ftr=String((feats.frp&&feats.frp.transport)||(ov&&ov.frp&&ov.frp.transport)||'tcp').toLowerCase();
+  out.push({port:Number(sp.frp||feats.frp.port),proto:(ftr==='kcp'||ftr==='quic')?'both':'tcp',category:'carrier',owner:'frp',bind:'0.0.0.0',detail:'FRP '+ftr});
+ }
+ ((ov&&ov.nodes)||[]).forEach(nd=>{
+  if(nd.port)out.push({port:Number(nd.port),proto:'tcp',category:'node',owner:nd.name,bind:'127.0.0.1',detail:nd.transport||'ws'});
+  if(nd.api_port)out.push({port:Number(nd.api_port),proto:'tcp',category:'node',owner:nd.name+'_api',bind:'127.0.0.1',detail:'Node API'});
+ });
+ ((ov&&ov.port_rules)||st.port_rules||[]).forEach(r=>{
+  out.push({port:Number(r.public_port),proto:r.proto||'tcp',category:'port_rule',owner:r.name,bind:(r.proxy_protocol?'0.0.0.0:'+r.public_port+' (nginx PP)':'0.0.0.0:'+r.public_port),transport:r.transport||'ws',proxy_protocol:Boolean(r.proxy_protocol),local_port:r.local_port||null,inbound_port:r.inbound_port,node_server:r.node_server||'',note:r.note||''});
+  if(r.proxy_protocol&&r.local_port)out.push({port:Number(r.local_port),proto:'tcp',category:'port_rule',owner:r.name+' (PP local)',bind:'127.0.0.1:'+r.local_port,detail:'Upstream for :'+r.public_port});
+ });
+ return out.sort((a,b)=>Number(a.port)-Number(b.port));
+}
+function pmCheckConflicts(ports,proto,portMap,excludeName){
+ const pr=proto||'tcp';
+ const out=[];
+ const seen=new Set();
+ const add=(port,owner,category,ep)=>{
+  const key=port+':'+owner;
+  if(seen.has(key))return;
+  seen.add(key);
+  out.push({port,owner,category,proto:ep});
+ };
+ (ports||[]).forEach(pt=>{
+  const p=Number(pt);
+  if(p===22)add(p,'ssh','system','both');
+  if((p===80||p===443)&&pmProtosOverlap(pr,'tcp'))add(p,'nginx-'+p,'system','tcp');
+  (portMap||[]).forEach(entry=>{
+   if(excludeName&&(entry.owner===excludeName||entry.owner===(excludeName+' (PP local)')))return;
+   if(Number(entry.port)===p&&pmProtosOverlap(pr,entry.proto||'tcp')){
+    add(p,entry.owner||String(p),entry.category||'system',entry.proto||'tcp');
+   }
+  });
+ });
+ return out;
+}
+function pmCarrierLabel(tr,ov){
+ const c=String(tr||'ws').toLowerCase();
+ if(typeof carrierLabel==='function'){
+  const base=carrierLabel(c,ov);
+  if(base&&base!==c)return base;
+ }
+ const map={ws:'WS / TLS',kcp:'KCP',plain:'Plain',noise:'Noise',backhaul:'Backhaul / SMUX',frp:'FRP',frp_gre:'FRP + GRE',paqet:'Paqet PCK'};
+ return map[c]||c;
+}
+function pmProtoBadge(proto){
+ const p=String(proto||'tcp').toLowerCase();
+ if(p==='both')return '<span class="badge b-info">TCP+UDP</span>';
+ if(p==='udp')return '<span class="badge b-kcp">UDP</span>';
+ return '<span class="badge b-ws">TCP</span>';
+}
+function pmCarrierConfigured(tr,ov){
+ const c=String(tr||'ws').toLowerCase();
+ if(c==='ws')return true;
+ const st=(ov&&ov.status)||{};
+ const f=st.features||{};
+ if(c==='frp'||c==='frp_gre')return Boolean((f.frp&&f.frp.configured)||(ov&&ov.frp&&ov.frp.enabled));
+ if(c==='kcp')return Boolean((ov&&ov.kcp&&ov.kcp.enabled)||(f.kcp&&f.kcp.configured));
+ if(c==='paqet')return Boolean((f.paqet&&f.paqet.configured)||(ov&&ov.paqet&&ov.paqet.enabled));
+ return Boolean((f[c]&&f[c].configured)||(ov&&ov[c]&&ov[c].enabled));
+}
+function setIranPortSub(n,sub){
+ IRAN_PORT_SUB=(sub==='map'||sub==='sys')?sub:'rules';
+ if(typeof localStorage!=='undefined')localStorage.setItem('rh_iran_port_sub',IRAN_PORT_SUB);
+ const el=$('body_'+n);
+ if(el&&OVS[n]){
+  el.innerHTML=renderIran(n,OVS[n]);
+  if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>syncPmSegPill());
+ }
+}
+function syncPmSegPill(){
+ const wrap=typeof document!=='undefined'?$('pm_seg'):null;
+ const pill=typeof document!=='undefined'?$('pm_seg_pill'):null;
+ if(!wrap||!pill)return;
+ const act=wrap.querySelector('.pm-seg-btn.active');
+ if(!act)return;
+ pill.style.width=act.offsetWidth+'px';
+ pill.style.transform='translateX('+act.offsetLeft+'px)';
+}
+function setPmFilter(n,patch){
+ Object.assign(PM_FILTER,patch||{});
+ const wasSearch=typeof document!=='undefined'&&document.activeElement&&document.activeElement.id==='pm_search';
+ const pos=wasSearch?document.activeElement.selectionStart:null;
+ const el=$('body_'+n);
+ if(el&&OVS[n]){
+  el.innerHTML=renderIran(n,OVS[n]);
+  if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>syncPmSegPill());
+ }
+ if(wasSearch){
+  const inp=$('pm_search');
+  if(inp){
+   inp.focus();
+   if(pos!=null&&typeof inp.setSelectionRange==='function')inp.setSelectionRange(pos,pos);
+  }
+ }
+}
+function pmCopyEndpoint(iranIp,port){
+ const txt=(iranIp?iranIp+':':'')+String(port);
+ if(typeof navigator!=='undefined'&&navigator.clipboard&&navigator.clipboard.writeText){
+  navigator.clipboard.writeText(txt).then(()=>toast(t('pm_copied_addr')+' ('+txt+')'),()=>outModal(t('pm_copy_addr'),txt));
+ }else{
+  outModal(t('pm_copy_addr'),txt);
+ }
+}
+async function pmRefreshMap(n){
+ const res=await api('POST','api/servers/'+n+'/action',{action:'port_map',args:{}});
+ if(res&&res.status===200&&res.j&&res.j.rc===0){
+  try{
+   const parsed=JSON.parse((res.j.out||'').trim()||'[]');
+   if(Array.isArray(parsed)){
+    OVS[n]=OVS[n]||{};
+    OVS[n].port_map=parsed;
+    const el=$('body_'+n);
+    if(el){
+     el.innerHTML=renderIran(n,OVS[n]);
+     if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>syncPmSegPill());
+    }
+    toast('✓');
+    return;
+   }
+  }catch(_){}
+ }
+ await loadOv(n);
+}
+function pmProbeInput(n,val){
+ const box=$('pm_probe_out');
+ if(!box)return;
+ const raw=String(val||'').trim();
+ if(!raw){box.className='pm-probe-res';box.textContent='';return;}
+ const parsed=pmParsePortSpec(raw);
+ if(!parsed.ok){box.className='pm-probe-res is-bad';box.textContent='✕ '+parsed.error;return;}
+ const map=pmFallbackPortMap(OVS[n]||{});
+ const clashes=pmCheckConflicts(parsed.ports,'both',map,null);
+ if(!clashes.length){
+  box.className='pm-probe-res is-ok';
+  box.textContent=t('pm_probe_free')+' ('+parsed.ports.join(', ')+')';
+ }else{
+  box.className='pm-probe-res is-bad';
+  box.textContent=t('pm_probe_busy')+' '+clashes.map(c=>':'+c.port+' ['+c.owner+'/'+c.proto+']').join(', ');
+ }
+}
+function renderIranPortsTab(n,ov){
+ const st=(ov&&ov.status)||{};
+ const rules=(ov&&ov.port_rules)||st.port_rules||[];
+ const portMap=pmFallbackPortMap(ov);
+ const iranIp=st.public_ip||(ov&&ov.host)||(fnd(n).host)||'';
+ const ppCount=rules.filter(r=>Boolean(r.proxy_protocol)).length;
+ const directCount=rules.length-ppCount;
+ const sub=IRAN_PORT_SUB||'rules';
+
+ let s=`<div class="pm-hero">
+   <div>
+     <h3>${h(t('pm_hero_title'))}</h3>
+     <div class="pm-hero-sub">${h(t('pm_hero_sub'))}</div>
+     <div class="pm-hero-meta">
+       <span class="badge b-ws">${h(t('pm_sub_rules'))}: <b class="pm-num">${rules.length}</b></span>
+       <span class="badge pm-badge-direct">${h(t('pm_mode_direct'))}: <b class="pm-num">${directCount}</b></span>
+       ${ppCount?`<span class="badge pm-badge-pp">${h(t('pm_mode_pp'))}: <b class="pm-num">${ppCount}</b></span>`:''}
+     </div>
+   </div>
+   <button type="button" class="g" onclick="openPortModal('${h(n)}')">${h(t('pm_add_btn'))}</button>
+ </div>`;
+
+ s+=`<div class="pm-seg" id="pm_seg" dir="ltr" role="tablist">
+   <span class="pm-seg-pill" id="pm_seg_pill" aria-hidden="true"></span>
+   <button type="button" role="tab" aria-selected="${sub==='sys'?'true':'false'}" class="pm-seg-btn ${sub==='sys'?'active':''}" onclick="setIranPortSub('${h(n)}','sys')">${h(t('pm_sub_sys'))}</button>
+   <button type="button" role="tab" aria-selected="${sub==='map'?'true':'false'}" class="pm-seg-btn ${sub==='map'?'active':''}" onclick="setIranPortSub('${h(n)}','map')">${h(t('pm_sub_map'))} <span class="pm-num">(${portMap.length})</span></button>
+   <button type="button" role="tab" aria-selected="${sub==='rules'?'true':'false'}" class="pm-seg-btn ${sub==='rules'?'active':''}" onclick="setIranPortSub('${h(n)}','rules')">${h(t('pm_sub_rules'))} <span class="pm-num">(${rules.length})</span></button>
+ </div>`;
+
+ if(sub==='rules'){
+  const q=String(PM_FILTER.q||'').trim().toLowerCase();
+  const pf=PM_FILTER.proto||'all';
+  const filtered=rules.filter(r=>{
+   if(pf!=='all'&&(r.proto||'tcp')!==pf)return false;
+   if(!q)return true;
+   const hay=[r.name,r.public_port,r.inbound_port,r.transport,r.proto,r.node_server,r.note].map(x=>x==null?'':String(x)).join(' ').toLowerCase();
+   return hay.indexOf(q)>=0;
+  });
+  const pill=(id,lbl)=>`<button type="button" class="pm-pill ${pf===id?'active':''}" onclick="setPmFilter('${h(n)}',{proto:'${id}'})">${h(lbl)}</button>`;
+  s+=`<div class="sec"><div class="pm-toolbar">
+    <div class="pm-filter-pills">${pill('all',t('pm_flt_all'))}${pill('tcp',t('pm_flt_tcp'))}${pill('udp',t('pm_flt_udp'))}${pill('both',t('pm_flt_both'))}</div>
+    <div class="search-box inline-search">${icon('search')}<input id="pm_search" type="search" value="${h(PM_FILTER.q||'')}" placeholder="${h(t('pm_search_ph'))}" aria-label="${h(t('pm_search_ph'))}" oninput="setPmFilter('${h(n)}',{q:this.value})"></div>
+  </div>`;
+  if(!filtered.length){
+   s+=`<div class="empty">${h(rules.length?t('flt_no_match'):t('pm_empty'))}</div>`;
+  }else{
+   s+=`<div class="table-wrap" tabindex="0" role="region" aria-label="${h(t('pm_rules_title'))}">`
+     +tbl([t('pm_col_rule'),t('pm_col_public'),t('pm_col_target'),t('pm_col_proto_carrier'),t('pm_col_mode'),t('pm_col_ops')]);
+   filtered.forEach(r=>{
+    const addrTxt=iranIp?(iranIp+':'+r.public_port):(':'+r.public_port);
+    const modeBadge=r.proxy_protocol
+      ?`<span class="badge pm-badge-pp">${h(t('pm_mode_pp'))} (<bdi dir="ltr" class="pm-num">:${h(r.local_port||'')}</bdi>)</span>`
+      :`<span class="badge pm-badge-direct">${h(t('pm_mode_direct'))}</span>`;
+    s+=`<tr>
+      <td><b>${esc(r.name)}</b>${r.note?`<div class="sub">${esc(r.note)}</div>`:''}</td>
+      <td><bdi dir="ltr" class="pm-num">${esc(addrTxt)}</bdi> <button type="button" class="gh" onclick="pmCopyEndpoint('${h(iranIp)}',${Number(r.public_port)})">${h(t('pm_copy_addr'))}</button></td>
+      <td><bdi dir="ltr" class="pm-num">:${esc(r.inbound_port)}</bdi>${r.node_server?`<div class="sub mono">${esc(r.node_server)}</div>`:''}</td>
+      <td>${pmProtoBadge(r.proto)} <span class="badge">${esc(pmCarrierLabel(r.transport,ov))}</span></td>
+      <td>${modeBadge}</td>
+      <td class="btns nowrap">
+        <button type="button" class="gh" onclick="run('${h(n)}','port_show',{name:'${h(r.name)}'})">${h(t('pm_show_cmd'))}</button>
+        <button type="button" class="gh" onclick="openPortModal('${h(n)}','${h(r.name)}')">${h(t('edit'))}</button>
+        <button type="button" class="r" onclick="pmDeleteRule('${h(n)}','${h(r.name)}')">${h(t('remove'))}</button>
+      </td>
+    </tr>`;
+   });
+   s+='</table></div>';
+  }
+  s+='</div>';
+ }else if(sub==='map'){
+  const cats=[
+   {key:'system',title:t('pm_cat_system')},
+   {key:'carrier',title:t('pm_cat_carrier')},
+   {key:'node',title:t('pm_cat_node')},
+   {key:'port_rule',title:t('pm_cat_port_rule')}
+  ];
+  s+=`<div class="sec"><h4>${h(t('pm_probe_title'))}</h4>
+   <div class="pm-map-probe">
+     <input id="pm_probe_in" type="text" placeholder="${h(t('pm_probe_ph'))}" oninput="pmProbeInput('${h(n)}',this.value)">
+     <button type="button" class="gh" onclick="pmRefreshMap('${h(n)}')">${h(t('pm_probe_refresh'))}</button>
+   </div>
+   <div id="pm_probe_out" class="pm-probe-res"></div>
+   <div class="pm-map-grid">`;
+  cats.forEach(c=>{
+   const items=portMap.filter(x=>x.category===c.key);
+   s+=`<div class="pm-map-card">
+     <div class="pm-map-card-head"><h5>${h(c.title)}</h5><span class="badge b-ws pm-num">${items.length}</span></div>`;
+   if(!items.length){
+    s+=`<div class="sub">${h(t('pm_cat_empty'))}</div>`;
+   }else{
+    s+=`<div class="pm-chip-grid">`+items.map(item=>`<span class="pm-port-chip" data-cat="${h(c.key)}" title="${h(item.detail||item.bind||'')}"><bdi dir="ltr" class="pm-num">${h(item.port)}/${h(item.proto||'tcp')}</bdi> <span>${esc(item.owner||'')}</span></span>`).join('')+`</div>`;
+   }
+   s+='</div>';
+  });
+  s+='</div></div>';
+ }else{
+  const ports=st.ports||{};
+  const paths=st.paths||{};
+  const ro=PORT_READONLY.filter(p=>ports[p.path]!=null).map(p=>`${h(t(p.k))}: <b class="pm-num">${h(String(ports[p.path]))}</b>`).join(' · ');
+  s+=`<div class="sec"><h4>${h(t('pm_sys_title'))}</h4>
+   <div class="sub">${h(t('pm_sys_sub'))}</div>
+   <div class="pm-sys-grid">`;
+  PORT_EDITABLE.forEach(p=>{
+   const cur=ports[p.path];
+   s+=`<div class="pm-sys-item"><label for="pm_sys_${h(p.path)}">${h(t('p_'+p.path))}</label>
+     <div class="pm-sys-row"><input id="pm_sys_${h(p.path)}" class="pm-num" value="${cur==null?'':h(String(cur))}" placeholder="${h(p.ph)}">
+     <button type="button" class="g" onclick="dtSetPort('${h(n)}','${h(p.key)}','pm_sys_${h(p.path)}')">${h(t('save'))}</button></div></div>`;
+  });
+  PATH_EDITABLE.forEach(p=>{
+   const cur=paths[p.path]||p.ph;
+   s+=`<div class="pm-sys-item"><label for="pm_pth_${h(p.path)}">${h(t('pth_'+p.path))}</label>
+     <div class="pm-sys-row"><span class="sub mono">/</span><input id="pm_pth_${h(p.path)}" value="${h(String(cur))}" placeholder="${h(p.ph)}">
+     <button type="button" class="g" onclick="dtSetPath('${h(n)}','${h(p.key)}','pm_pth_${h(p.path)}')">${h(t('save'))}</button></div></div>`;
+  });
+  s+=`</div>
+   <div class="sub" style="margin-top:12px">${ro||h(t('ports_none'))}</div>
+   <div class="btns" style="margin-top:12px"><button type="button" class="s" onclick="run('${h(n)}','regen_full')">${h(t('dt_apply'))}</button></div>
+  </div>`;
+ }
+ return s;
+}
+function pmPipelineHtml(iranIp,cfg){
+ const pubTxt=(cfg.public_port||'2083').trim()||'2083';
+ const inbTxt=(!cfg.inbound||cfg.inbound==='same')?pubTxt:cfg.inbound;
+ const protoTxt=String(cfg.proto||'tcp').toUpperCase();
+ const nodeTxt=cfg.node_server?cfg.node_server:'Node';
+ const midHtml=cfg.proxy_protocol
+  ?`<span class="pm-flow-hop is-pp">${h(t('pm_flow_nginx_pp'))}</span>`
+  :`<span class="pm-flow-hop is-direct">${h(t('pm_flow_no_nginx'))} · ${h(pmCarrierLabel(cfg.transport,null))}</span>`;
+ return `<div class="pm-flow">
+   <span class="pm-flow-hop">${h(t('pm_flow_user'))}</span>
+   <span class="pm-flow-arrow">◄──</span>
+   <span class="pm-flow-hop is-accent"><bdi dir="ltr" class="pm-num">${h(iranIp||'IRAN')}:${h(pubTxt)}</bdi> (${h(protoTxt)})</span>
+   <span class="pm-flow-arrow">◄──</span>
+   ${midHtml}
+   <span class="pm-flow-arrow">◄──</span>
+   <span class="pm-flow-hop"><bdi dir="ltr" class="pm-num">${h(nodeTxt)}:${h(inbTxt)}</bdi></span>
+ </div>`+(cfg.proxy_protocol?`<div class="sub" style="margin-top:4px">${h(t('pm_flow_443_safe'))}</div>`:'');
+}
+function openPortModal(n,editName){
+ const ov=OVS[n]||{};
+ const st=ov.status||{};
+ const iranIp=st.public_ip||ov.host||(fnd(n).host)||'';
+ const rules=ov.port_rules||st.port_rules||[];
+ const existing=editName?(rules.find(r=>r.name===editName)||null):null;
+ const nodesList=SERVERS.filter(x=>x.role==='node');
+ const defNode=existing?(existing.node_server||''):(nodesList[0]?nodesList[0].name:'');
+ const carriers=['ws','kcp','plain','noise','backhaul','frp','frp_gre','paqet'];
+ const trVal=existing?(existing.transport||'ws'):'ws';
+ const prVal=existing?(existing.proto||'tcp'):'tcp';
+ const ppVal=existing?Boolean(existing.proxy_protocol):false;
+ const inbVal=existing?String(existing.inbound_port||''):'';
+
+ modal(`<h3>${h(existing?t('pm_modal_edit')+' · '+existing.name:t('pm_modal_add'))}</h3>
+  <div class="pm-composer">
+   <div id="pm_flow_box">${pmPipelineHtml(iranIp,{public_port:existing?String(existing.public_port):'2083',inbound:inbVal||'same',proto:prVal,transport:trVal,proxy_protocol:ppVal,node_server:defNode})}</div>
+   <div class="form-error" id="pm_err" role="alert"></div>
+   <div class="pm-grid-2">
+    <div class="pm-field">
+     <label for="pm_pub">${h(t('pm_f_public'))}</label>
+     <input id="pm_pub" class="pm-num" value="${existing?h(String(existing.public_port)):''}" placeholder="2083 / 2053,2083 / 2080-2085" ${existing?'disabled':''}>
+     <div class="sub">${h(t('pm_f_public_hint'))}</div>
+     <div id="pm_pub_status" class="pm-spec-status"></div>
+    </div>
+    <div class="pm-field">
+     <label for="pm_inb">${h(t('pm_f_inbound'))}</label>
+     <input id="pm_inb" class="pm-num" value="${h(inbVal)}" placeholder="${h(t('pm_f_same_port'))}">
+     <div class="sub">${h(t('pm_f_same_port'))}</div>
+    </div>
+   </div>
+   <div class="pm-grid-2">
+    <div class="pm-field">
+     <label for="pm_proto">${h(t('pm_f_proto'))}</label>
+     <select id="pm_proto">
+      <option value="tcp" ${prVal==='tcp'?'selected':''}>TCP (VLESS / REALITY / Trojan / MTProto)</option>
+      <option value="udp" ${prVal==='udp'?'selected':''}>UDP (Hysteria2 / TUIC / WireGuard)</option>
+      <option value="both" ${prVal==='both'?'selected':''}>TCP + UDP</option>
+     </select>
+    </div>
+    <div class="pm-field">
+     <label for="pm_tr">${h(t('pm_f_carrier'))}</label>
+     <select id="pm_tr">${carriers.map(c=>`<option value="${c}" ${trVal===c?'selected':''}>${h(pmCarrierLabel(c,ov))}</option>`).join('')}</select>
+     <div id="pm_carrier_hint" class="sub" style="display:none;color:var(--warning)">${h(t('pm_carrier_off_hint'))}</div>
+    </div>
+   </div>
+   <div class="pm-grid-2">
+    <div class="pm-field">
+     <label for="pm_node">${h(t('pm_f_node'))}</label>
+     <select id="pm_node">
+      <option value="">${h(t('pm_f_node_manual'))}</option>
+      ${nodesList.map(nd=>`<option value="${h(nd.name)}" ${defNode===nd.name?'selected':''}>${h(nd.name)} (${h(nd.host||nd.public_ip||nd.reverse_public_ip||'-')})</option>`).join('')}
+     </select>
+    </div>
+    <div class="pm-field">
+     <label for="pm_name">${h(t('pm_f_name'))}</label>
+     <input id="pm_name" value="${existing?h(existing.name):''}" placeholder="p2083" ${existing?'disabled':''}>
+    </div>
+   </div>
+   <div class="pm-field">
+    <label for="pm_note">${h(t('pm_f_note'))}</label>
+    <input id="pm_note" value="${existing?h(existing.note||''):''}" placeholder="VLESS+TCP+REALITY">
+   </div>
+   <label class="pm-pp-card" for="pm_pp">
+    <input id="pm_pp" type="checkbox" ${ppVal?'checked':''}>
+    <div>
+     <div style="font-weight:700;font-size:13px">${h(t('pm_f_pp'))}</div>
+     <div class="sub">${h(t('pm_f_pp_desc'))}</div>
+    </div>
+   </label>
+   <div id="pm_pp_warn" class="pm-pp-warn" style="display:${ppVal?'block':'none'}">
+    <strong>⚠ ${h(t('pm_pp_warn_title'))}:</strong> ${h(t('pm_pp_warn_body'))}
+   </div>
+   <div class="modal-actions">
+    <button type="button" class="gh" onclick="closeModal()">${h(t('cancel'))}</button>
+    <button type="button" class="g" id="pm_submit">${h(existing?t('pm_submit_edit'):t('pm_submit_add'))}</button>
+   </div>
+  </div>`);
+
+ const portMap=pmFallbackPortMap(ov);
+ const readCfg=()=>({
+  public_port:existing?String(existing.public_port):($('pm_pub')?$('pm_pub').value.trim():''),
+  inbound:($('pm_inb')?$('pm_inb').value.trim():'')||'same',
+  proto:$('pm_proto')?$('pm_proto').value:'tcp',
+  transport:$('pm_tr')?$('pm_tr').value:'ws',
+  node_server:$('pm_node')?$('pm_node').value:'',
+  name:existing?existing.name:($('pm_name')?$('pm_name').value.trim():''),
+  note:$('pm_note')?$('pm_note').value.trim():'',
+  proxy_protocol:Boolean($('pm_pp')&&$('pm_pp').checked)
+ });
+ const refresh=()=>{
+  const cfg=readCfg();
+  const tcpOnly=(cfg.transport==='backhaul'||cfg.proxy_protocol);
+  const protoEl=$('pm_proto');
+  if(protoEl){
+   Array.from(protoEl.options).forEach(opt=>{if(opt.value!=='tcp')opt.disabled=tcpOnly;});
+   if(tcpOnly&&protoEl.value!=='tcp'){protoEl.value='tcp';cfg.proto='tcp';}
+  }
+  const fb=$('pm_flow_box');
+  if(fb)fb.innerHTML=pmPipelineHtml(iranIp,cfg);
+  const pw=$('pm_pp_warn');
+  if(pw)pw.style.display=cfg.proxy_protocol?'block':'none';
+  const ch=$('pm_carrier_hint');
+  if(ch)ch.style.display=pmCarrierConfigured(cfg.transport,ov)?'none':'block';
+  const stEl=$('pm_pub_status');
+  if(stEl&&!existing){
+   if(!cfg.public_port){stEl.className='pm-spec-status';stEl.textContent='';}
+   else{
+    const parsed=pmParsePortSpec(cfg.public_port);
+    if(!parsed.ok){stEl.className='pm-spec-status is-bad';stEl.textContent='✕ '+parsed.error;}
+    else{
+     const clashes=pmCheckConflicts(parsed.ports,cfg.proto,portMap,null);
+     if(clashes.length){
+      stEl.className='pm-spec-status is-bad';
+      stEl.textContent=t('pm_probe_busy')+' '+clashes.map(c=>':'+c.port+' ['+c.owner+'/'+c.proto+']').join(', ');
+     }else{
+      stEl.className='pm-spec-status is-ok';
+      stEl.textContent='✓ '+parsed.ports.join(', ');
+     }
+    }
+   }
+  }
+ };
+ ['pm_pub','pm_inb','pm_proto','pm_tr','pm_node','pm_name','pm_pp'].forEach(id=>{
+  const el=$(id);
+  if(el){
+   el.addEventListener('input',refresh);
+   el.addEventListener('change',refresh);
+  }
+ });
+ refresh();
+ if($('pm_submit')){
+  $('pm_submit').onclick=()=>pmSubmitRule(n,existing,readCfg());
+ }
+}
+async function pmSubmitRule(n,existingRule,cfg){
+ const ov=OVS[n]||{};
+ const portMap=pmFallbackPortMap(ov);
+ const showErr=msg=>{
+  const box=typeof $==='function'?$('pm_err'):null;
+  if(box){box.textContent=msg;box.classList.add('show');}
+  toast('✗ '+msg);
+ };
+ const clearErr=()=>{
+  const box=typeof $==='function'?$('pm_err'):null;
+  if(box){box.textContent='';box.classList.remove('show');}
+ };
+ clearErr();
+
+ const proto=cfg.proto||'tcp';
+ const tr=cfg.transport||'ws';
+ const pp=Boolean(cfg.proxy_protocol);
+ if(tr==='backhaul'&&proto!=='tcp'){showErr(t('pm_bh_tcp_only'));return false;}
+ if(pp&&proto!=='tcp'){showErr(t('pm_pp_tcp_only'));return false;}
+
+ const inbRaw=String(cfg.inbound||'').trim();
+ if(existingRule){
+  if(!/^[1-9][0-9]{0,4}$/.test(inbRaw)||Number(inbRaw)<1||Number(inbRaw)>65535){showErr(t('pm_err_inb'));return false;}
+  const clashes=pmCheckConflicts([Number(existingRule.public_port)],proto,portMap,existingRule.name);
+  if(clashes.length){showErr(t('pm_probe_busy')+' :'+clashes[0].port+' ['+clashes[0].owner+']');return false;}
+  toast(t('pm_syncing'),0);
+  const res=await api('POST','api/servers/'+n+'/action',{action:'port_edit',args:{
+   name:existingRule.name,inbound:inbRaw,proto,transport:tr,proxy_protocol:pp,
+   node_server:cfg.node_server||'',note:cfg.note||''
+  }});
+  if(!res||res.status!==200||!res.j||res.j.rc!==0){
+   showErr((res&&res.j&&(res.j.err||res.j.error||res.j.out))||'port_edit failed');
+   return false;
+  }
+  closeModal();
+  toast(t('saved'));
+  loadOv(n);
+  return true;
+ }
+
+ const parsed=pmParsePortSpec(cfg.public_port);
+ if(!parsed.ok){showErr(parsed.error||t('pm_err_range'));return false;}
+ const inb=inbRaw||'same';
+ if(inb!=='same'&&(!/^[1-9][0-9]{0,4}$/.test(inb)||Number(inb)<1||Number(inb)>65535)){showErr(t('pm_err_inb'));return false;}
+ const name=String(cfg.name||'').trim();
+ if(name){
+  if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/.test(name)||(proto==='both'&&name.length>36)){showErr(t('pm_err_name'));return false;}
+ }
+ const clashes=pmCheckConflicts(parsed.ports,proto,portMap,null);
+ if(clashes.length){showErr(t('pm_probe_busy')+' :'+clashes[0].port+' ['+clashes[0].owner+']');return false;}
+
+ toast(t('pm_syncing'),0);
+ const addRes=await api('POST','api/servers/'+n+'/action',{action:'port_add',args:{
+  public_port:String(cfg.public_port).trim(),inbound:inb,proto,transport:tr,proxy_protocol:pp,
+  name,node_server:cfg.node_server||'',note:cfg.note||''
+ }});
+ if(!addRes||addRes.status!==200||!addRes.j||addRes.j.rc!==0){
+  showErr((addRes&&addRes.j&&(addRes.j.err||addRes.j.error||addRes.j.out))||'port_add failed');
+  return false;
+ }
+
+ let created=[];
+ try{
+  const body=JSON.parse((addRes.j.out||'').trim()||'{}');
+  created=Array.isArray(body.created)?body.created:[];
+ }catch(_){}
+
+ const dstNode=String(cfg.node_server||'').trim();
+ const failures=[];
+ if(dstNode&&tr!=='paqet'&&created.length){
+  for(let i=0;i<created.length;i++){
+   const ruleName=created[i].name;
+   const pcRes=await api('GET','api/servers/'+n+'/portconnect/'+ruleName);
+   const pc=pcRes&&pcRes.j;
+   if(!pc||!pc.ok){failures.push(ruleName);continue;}
+   let nodeRes;
+   if(tr==='backhaul'){
+    nodeRes=await api('POST','api/servers/'+dstNode+'/action',{action:'add_bh_svc',args:{
+     name:pc.name,token:pc.token,inbound:String(pc.inbound_port||created[i].inbound_port)
+    }});
+   }else{
+    const svcArgs={name:pc.name,token:pc.token,inbound:String(pc.inbound_port||created[i].inbound_port)};
+    if(tr==='frp'||tr==='frp_gre'){svcArgs.remote_port=String(pc.remote_port||created[i].local_port||created[i].public_port);}
+    if(proto&&proto!=='tcp'){svcArgs.proto=proto;}
+    nodeRes=await api('POST','api/servers/'+dstNode+'/action',{action:'add_svc',args:svcArgs});
+   }
+   if(!nodeRes||nodeRes.status!==200||!nodeRes.j||nodeRes.j.rc!==0){failures.push(ruleName);}
+  }
+ }
+
+ closeModal();
+ if(dstNode&&tr!=='paqet'){
+  if(failures.length)toast(t('pm_sync_partial')+' '+failures.join(', '));
+  else toast(t('pm_synced_both'));
+  loadOv(dstNode);
+ }else{
+  toast(t('pm_synced_iran_only'));
+ }
+ loadOv(n);
+ return true;
+}
+async function pmDeleteRule(n,ruleName){
+ const ov=OVS[n]||{};
+ const rules=ov.port_rules||(ov.status&&ov.status.port_rules)||[];
+ const rule=rules.find(r=>r.name===ruleName)||null;
+ const hasNode=Boolean(rule&&rule.node_server&&rule.transport!=='paqet');
+ const msg=hasNode
+  ?t('pm_del_both_confirm').replace('%s',ruleName).replace('%n',rule.node_server)
+  :t('pm_del_confirm').replace('%s',ruleName);
+ if(!confirm(msg))return false;
+ const res=await api('POST','api/servers/'+n+'/action',{action:'port_rm',args:{name:ruleName}});
+ if(!res||res.status!==200||!res.j||res.j.rc!==0){
+  toast('✗ '+((res&&res.j&&(res.j.err||res.j.error||res.j.out))||'port_rm failed'));
+  return false;
+ }
+ if(hasNode){
+  const act=rule.transport==='backhaul'?'rm_bh_svc':'rm_svc';
+  const nres=await api('POST','api/servers/'+rule.node_server+'/action',{action:act,args:{name:ruleName}});
+  if(!nres||nres.status!==200||!nres.j||nres.j.rc!==0){
+   toast(t('pm_sync_partial')+' '+ruleName);
+  }
+  loadOv(rule.node_server);
+ }
+ toast(t('pm_del_done').replace('%s',ruleName));
+ loadOv(n);
+ return true;
 }
 
 // vaziat-e yek service-e node az doctor-e hameye Iran-ha ('ok'/'warn'/null)
@@ -4232,7 +4842,7 @@ function bindDelegatedEvents(){
  });
  if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('scroll',e=>{if(e&&e.target&&e.target.closest&&e.target.closest('.more-menu'))return;closeAllMoreMenus(null,true);},true);
-  window.addEventListener('resize',()=>closeAllMoreMenus(null,true));
+  window.addEventListener('resize',()=>{closeAllMoreMenus(null,true);if(typeof syncPmSegPill==='function')syncPmSegPill();});
   window.addEventListener('storage',e=>{
    if(e.key==='rh_theme'){THEME_PREF=(e.newValue==='light'||e.newValue==='dark')?e.newValue:'';applyStatic();}
    else if(e.key==='rh_sb_collapsed'){applyStatic();}

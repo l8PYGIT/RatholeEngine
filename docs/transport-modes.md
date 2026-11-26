@@ -214,6 +214,14 @@ lane اصلی rathole چهار حامل دارد: websocket/TLS، KCP، plain و
 
 ---
 
+## ۱۷) Port Manager (`ratholectl port` — فوروارد مستقیم L4 TCP/UDP بدون Path و SNI)
+
+- **مستقیم روی هسته (پیش‌فرض):** قوانین `.ports[]` مستقیماً روی `0.0.0.0:<public_port>` با پروتکل `tcp`، `udp` یا `both` باز می‌شوند و Nginx در مسیر دیتا قرار نمی‌گیرد (حتی اگر Nginx خاموش یا reload شود). تمام حامل‌ها (`ws`، `kcp`، `plain`، `noise`، `frp`/`frp_gre` با `proxyBindAddr = "0.0.0.0"`، `paqet` و `backhaul` فقط TCP) پشتیبانی می‌شوند.
+- **حالت اختیاری PROXY Protocol (`--proxy-protocol`، فقط TCP):** هسته به‌صورت لوکال روی `127.0.0.1:<local_port>` می‌شنود و Nginx `stream` یک بلوک مستقل `server { listen <pub>; proxy_protocol on; }` می‌سازد — **بدون آنکه پورت ۴۴۳ به حالت SNI برود**. اینباند Xray نود باید `acceptProxyProtocol: true` داشته باشد.
+- **ساخت دسته‌ای و ایمنی تداخل:** ورودی `<public_spec>` از تک پورت، لیست ویرگولی (`2053,2083`) و بازه (`2080-2085`، تا ۲۰ پورت) پشتیبانی می‌کند، تداخل با پورت‌های سیستم/حامل/نود/`ss` را مسدود می‌کند (با اجازهٔ هم‌زیستی `tcp` و `udp` روی یک شماره پورت) و قوانین `ufw` را امن مدیریت می‌نماید.
+
+---
+
 ## همچنین ببینید
 
 - [مرجع کامل دستورات CLI (ویکی)](https://l8pygit.github.io/RatholeEngine/wiki/CLI-Reference/) — syntax کامل همه دستورات

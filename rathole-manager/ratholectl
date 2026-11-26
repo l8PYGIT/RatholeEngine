@@ -383,8 +383,10 @@ next_port(){ # $1=field (port|api_local_port) $2=start
   # HAME-ye port-haye rezerv ra dar nazar begir (na faghat yek field) ta do bind_addr-e
   # yeksan (mesl data-port == api-port ya == control/fake/sub/...) sakhte nashavad.
   used="$(jq -r '
-    ([.nodes[].port // empty]
-     + [.nodes[].api_local_port // empty]
+    ([.nodes[]?.port // empty]
+     + [.nodes[]?.api_local_port // empty]
+     + [(.ports // [])[]?.public_port // empty]
+     + [(.ports // [])[]?.local_port // empty]
      + [.control_port, .fake_port, .sub_port, .internal_port, .plain_port, .hub_port, .noise_port, .direct_port, .backhaul_port, .frp_port]
     ) | map(select(. != null)) | @tsv' "$STATE")"
   p="$start"
@@ -398,6 +400,8 @@ collect_reserved_ports(){
   jq -r '
     ([.nodes[]?.port // empty]
      + [.nodes[]?.api_local_port // empty]
+     + [(.ports // [])[]?.public_port // empty]
+     + [(.ports // [])[]?.local_port // empty]
      + [.control_port, .fake_port, .sub_port, .internal_port, .plain_port, .hub_port, .noise_port, .direct_port, .backhaul_port, .frp_port, .kcp.port]
     ) | map(select(. != null and . != "")) | unique | .[]' "$STATE" 2>/dev/null || true
 }
@@ -507,7 +511,8 @@ gen_server_toml(){
     # rathole v0.5.0 field-e 'services' ra ALZAMI midanad; agar hich node/service nabashad,
     # bayad yek table-e khali [server.services] bedahim vagarna: "missing field services".
     local svc_count
-    svc_count="$(jq '[.nodes[] | select((.transport // "ws") as $t | ["noise", "backhaul", "frp", "gre", "frp_gre", "paqet"] | index($t) | not)] | length' "$STATE" 2>/dev/null)"
+    svc_count="$(jq '([.nodes[] | select((.transport // "ws") as $t | ["noise", "backhaul", "frp", "gre", "frp_gre", "paqet"] | index($t) | not)] | length)
+      + ([(.ports // [])[] | select((.transport // "ws") as $t | ["ws", "kcp", "plain"] | index($t) != null)] | length)' "$STATE" 2>/dev/null)"
     if [ "${svc_count:-0}" -eq 0 ]; then
       echo "[server.services]"
       echo
@@ -530,6 +535,46 @@ gen_server_toml(){
         echo "type = \"tcp\""
         echo
       fi
+    done
+    # port-manager: ghavanin L4 mostaghim (0.0.0.0:<pub> ya loopback baraye nginx proxy_protocol)
+    jq -r '(.ports // [])[] | select((.transport // "ws") as $t | ["ws", "kcp", "plain"] | index($t) != null) |
+      [.name, (.public_port|tostring), ((.local_port // "-")|tostring), ((.proxy_protocol // false)|tostring), (.proto // "tcp"), .token] | @tsv' "$STATE" 2>/dev/null |
+    while IFS=$'\t' read -r pname ppub ploc ppp pproto ptok; do
+      pname="${pname%$'\r'}"; ppub="${ppub%$'\r'}"; ploc="${ploc%$'\r'}"
+      ppp="${ppp%$'\r'}"; pproto="${pproto%$'\r'}"; ptok="${ptok%$'\r'}"
+      [ -n "$pname" ] && [ -n "$ppub" ] && [ -n "$ptok" ] || continue
+      local baddr="0.0.0.0:${ppub}"
+      if [ "$ppp" = "true" ] && [ -n "$ploc" ] && [ "$ploc" != "-" ]; then
+        baddr="127.0.0.1:${ploc}"
+      fi
+      case "$pproto" in
+        both)
+          echo "[server.services.${pname}]"
+          echo "token = \"${ptok}\""
+          echo "bind_addr = \"${baddr}\""
+          echo "type = \"tcp\""
+          echo
+          echo "[server.services.${pname}_udp]"
+          echo "token = \"${ptok}\""
+          echo "bind_addr = \"${baddr}\""
+          echo "type = \"udp\""
+          echo
+          ;;
+        udp)
+          echo "[server.services.${pname}]"
+          echo "token = \"${ptok}\""
+          echo "bind_addr = \"${baddr}\""
+          echo "type = \"udp\""
+          echo
+          ;;
+        *)
+          echo "[server.services.${pname}]"
+          echo "token = \"${ptok}\""
+          echo "bind_addr = \"${baddr}\""
+          echo "type = \"tcp\""
+          echo
+          ;;
+      esac
     done
   } > "$SERVER_TOML.tmp"
   rth_commit_config "$SERVER_TOML.tmp" "$SERVER_TOML"
@@ -557,7 +602,8 @@ gen_noise_server_toml(){
     echo
     # hamchon server-e asli: agar hich node-e noise nabashad, [server.services]-e khali bede.
     local nsvc_count
-    nsvc_count="$(jq '[.nodes[] | select((.transport // "") == "noise")] | length' "$STATE" 2>/dev/null)"
+    nsvc_count="$(jq '([.nodes[] | select((.transport // "") == "noise")] | length)
+      + ([(.ports // [])[] | select((.transport // "") == "noise")] | length)' "$STATE" 2>/dev/null)"
     if [ "${nsvc_count:-0}" -eq 0 ]; then
       echo "[server.services]"
       echo
@@ -581,6 +627,45 @@ gen_noise_server_toml(){
         echo "type = \"tcp\""
         echo
       fi
+    done
+    jq -r '(.ports // [])[] | select((.transport // "") == "noise") |
+      [.name, (.public_port|tostring), ((.local_port // "-")|tostring), ((.proxy_protocol // false)|tostring), (.proto // "tcp"), .token] | @tsv' "$STATE" 2>/dev/null |
+    while IFS=$'\t' read -r pname ppub ploc ppp pproto ptok; do
+      pname="${pname%$'\r'}"; ppub="${ppub%$'\r'}"; ploc="${ploc%$'\r'}"
+      ppp="${ppp%$'\r'}"; pproto="${pproto%$'\r'}"; ptok="${ptok%$'\r'}"
+      [ -n "$pname" ] && [ -n "$ppub" ] && [ -n "$ptok" ] || continue
+      local baddr="0.0.0.0:${ppub}"
+      if [ "$ppp" = "true" ] && [ -n "$ploc" ] && [ "$ploc" != "-" ]; then
+        baddr="127.0.0.1:${ploc}"
+      fi
+      case "$pproto" in
+        both)
+          echo "[server.services.${pname}]"
+          echo "token = \"${ptok}\""
+          echo "bind_addr = \"${baddr}\""
+          echo "type = \"tcp\""
+          echo
+          echo "[server.services.${pname}_udp]"
+          echo "token = \"${ptok}\""
+          echo "bind_addr = \"${baddr}\""
+          echo "type = \"udp\""
+          echo
+          ;;
+        udp)
+          echo "[server.services.${pname}]"
+          echo "token = \"${ptok}\""
+          echo "bind_addr = \"${baddr}\""
+          echo "type = \"udp\""
+          echo
+          ;;
+        *)
+          echo "[server.services.${pname}]"
+          echo "token = \"${ptok}\""
+          echo "bind_addr = \"${baddr}\""
+          echo "type = \"tcp\""
+          echo
+          ;;
+      esac
     done
   } > "$NOISE_TOML.tmp"
   rth_commit_config "$NOISE_TOML.tmp" "$NOISE_TOML"
@@ -647,6 +732,15 @@ gen_backhaul_server_toml(){
        "$STATE" 2>/dev/null | while read -r mapping; do
       # CR-e entehai ra pak kon (jq-e vindozi CRLF midahad) vagarna TOML-e namotabar tolid
       # mishavad va backhaul KOLL-e config ra rad mikonad.
+      mapping="${mapping%$'\r'}"
+      [ -n "$mapping" ] && printf '  "%s",\n' "$mapping"
+    done
+    jq -r '(.ports // [])[] | select((.transport // "") == "backhaul")
+           | if (.proxy_protocol == true and .local_port != null)
+             then "127.0.0.1:" + (.local_port|tostring) + "=" + (.inbound_port|tostring)
+             else "0.0.0.0:" + (.public_port|tostring) + "=" + (.inbound_port|tostring)
+             end' \
+       "$STATE" 2>/dev/null | while read -r mapping; do
       mapping="${mapping%$'\r'}"
       [ -n "$mapping" ] && printf '  "%s",\n' "$mapping"
     done
@@ -1141,38 +1235,61 @@ NGINX2
   fi
   [ -f "$out" ] && cp -a "$out" "$out.rathole-last.bak"
   mv "$NGINX_CONF.tmp" "$out"
-  # halat SNI/game: agar service game (sni) darim, stream rooye 443 va http rooye port dakhli
-  if [ "$sni_count" -gt 0 ]; then
+  local pp_port_count
+  pp_port_count="$(jq '[(.ports // [])[] | select(.proxy_protocol == true and .local_port != null)] | length' "$STATE" 2>/dev/null)"
+  # halat SNI/game va/ya port-manager proxy_protocol:
+  # stream.d/rathole-stream.conf dar har do halat neveshte mishavad;
+  # map/listen 443 FAGHAT vaghti sni_count > 0 bashad tolid mishavad.
+  if [ "$sni_count" -gt 0 ] || [ "${pp_port_count:-0}" -gt 0 ]; then
     ensure_stream_include
-    gen_stream_conf "$internal"
+    gen_stream_conf "$internal" "$sni_count"
   else
     rm -f "$STREAM_CONF" 2>/dev/null
   fi
 }
 
-# tvlid config stream (SNI → node passthrough; default → http dakhli)
+# tvlid config stream (SNI -> node passthrough; + listener-haye mostaghel-e port-manager)
 gen_stream_conf(){
-  local internal="$1" gpp
+  local internal="$1" sni_count="${2:-}" gpp
+  if [ -z "$sni_count" ]; then
+    sni_count="$(jq '[.nodes[]|select(.sni!=null)]|length' "$STATE" 2>/dev/null)"; sni_count="${sni_count:-0}"
+  fi
   gpp="$(jq -r '.game_proxy_protocol // false' "$STATE" 2>/dev/null)"
   mkdir -p "$(dirname "$STREAM_CONF")"
   {
-    echo "# tvlid khodkar tvst ratholectl — stream/SNI (servicehaye game)"
-    echo "map \$ssl_preread_server_name \$rh_stream_backend {"
-    echo "    default   127.0.0.1:${internal};"
-    jq -r '.nodes[] | select(.sni != null) | [.sni,(.port|tostring)] | @tsv' "$STATE" |
-    while IFS=$'\t' read -r sni p; do
-      p="${p%$'\r'}"   # jq-e Windows CRLF mideh; \r bayad ghabl az neveshtan-e config strip shavad
-      printf '    %-28s 127.0.0.1:%s;\n' "$sni" "$p"
+    echo "# tvlid khodkar tvst ratholectl — stream/SNI (va port-manager)"
+    if [ "${sni_count:-0}" -gt 0 ]; then
+      echo "map \$ssl_preread_server_name \$rh_stream_backend {"
+      echo "    default   127.0.0.1:${internal};"
+      jq -r '.nodes[] | select(.sni != null) | [.sni,(.port|tostring)] | @tsv' "$STATE" |
+      while IFS=$'\t' read -r sni p; do
+        sni="${sni%$'\r'}"; p="${p%$'\r'}"   # jq-e Windows CRLF mideh; \r bayad ghabl az neveshtan-e config strip shavad
+        printf '    %-28s 127.0.0.1:%s;\n' "$sni" "$p"
+      done
+      echo "}"
+      echo "server {"
+      echo "    listen 443;"
+      echo "    ssl_preread on;"
+      [ "$gpp" = "true" ] && echo "    proxy_protocol on;"
+      echo "    proxy_pass \$rh_stream_backend;"
+      echo "    proxy_timeout 1h;"
+      echo "    proxy_connect_timeout 3s;"
+      echo "}"
+    fi
+    jq -r '(.ports // [])[] | select(.proxy_protocol == true and .local_port != null) | [.name, (.public_port|tostring), (.local_port|tostring)] | @tsv' "$STATE" 2>/dev/null |
+    while IFS=$'\t' read -r pname ppub ploc; do
+      pname="${pname%$'\r'}"; ppub="${ppub%$'\r'}"; ploc="${ploc%$'\r'}"
+      [ -n "$pname" ] && [ -n "$ppub" ] && [ -n "$ploc" ] || continue
+      echo
+      echo "# port-manager: ${pname} (TCP :${ppub} -> 127.0.0.1:${ploc}, PROXY protocol)"
+      echo "server {"
+      echo "    listen ${ppub};"
+      echo "    proxy_protocol on;"
+      echo "    proxy_pass 127.0.0.1:${ploc};"
+      echo "    proxy_timeout 1h;"
+      echo "    proxy_connect_timeout 3s;"
+      echo "}"
     done
-    echo "}"
-    echo "server {"
-    echo "    listen 443;"
-    echo "    ssl_preread on;"
-    [ "$gpp" = "true" ] && echo "    proxy_protocol on;"
-    echo "    proxy_pass \$rh_stream_backend;"
-    echo "    proxy_timeout 1h;"
-    echo "    proxy_connect_timeout 3s;"
-    echo "}"
   } > "$STREAM_CONF"
 }
 
@@ -1276,6 +1393,23 @@ regenerate(){
     systemctl enable "$PAQET_SVC" >/dev/null 2>&1 || true
     systemctl restart "$PAQET_SVC" 2>/dev/null && log "$PAQET_SVC restart shod." || \
       err "ntvanstm $PAQET_SVC ra restart knm."
+  fi
+  # instans-e FRP (agar roshan bashad): agar proxyBindAddr baraye port-haye omomi taghir karde bashad, frps.toml ra berooz kon.
+  local fp ft ftr
+  fp="$(jq -r '.frp_port // empty' "$STATE" 2>/dev/null)"
+  if [ -n "$fp" ] && [ "$fp" != null ]; then
+    ft="$(jq -r '.frp_token // empty' "$STATE" 2>/dev/null)"
+    ftr="$(jq -r '.frp_transport // "tcp"' "$STATE" 2>/dev/null)"
+    if [ -n "$ft" ]; then
+      local pre_frp="" post_frp=""
+      [ -f "$FRP_TOML" ] && pre_frp="$(cksum "$FRP_TOML" 2>/dev/null | awk '{print $1":"$2}')"
+      gen_frp_server_toml "$fp" "$ft" "$ftr" || return 1
+      [ -f "$FRP_TOML" ] && post_frp="$(cksum "$FRP_TOML" 2>/dev/null | awk '{print $1":"$2}')"
+      if [ "$pre_frp" != "$post_frp" ] && systemctl list-unit-files 2>/dev/null | grep -q "^${FRP_SVC}.service"; then
+        systemctl restart "$FRP_SVC" 2>/dev/null && log "$FRP_SVC restart shod." || \
+          err "ntvanstm $FRP_SVC ra restart knm."
+      fi
+    fi
   fi
   local -a _rp=()
   mapfile -t _rp < <(collect_reserved_ports 2>/dev/null || true)
@@ -1946,6 +2080,8 @@ cmd_status(){
       --arg bh_transport "$(jq -r '.backhaul_transport // "wsmux"' "$STATE" 2>/dev/null)" \
       --argjson sni_count "${sni_count:-0}" --argjson node_count "${node_count:-0}" \
       --argjson nodes "$(jq '[.nodes[]|{name, port, inbound_port, api_local_port, sni, transport}]' "$STATE")" \
+      --argjson port_rules "$(jq '[(.ports // [])[] | del(.token)]' "$STATE" 2>/dev/null || echo '[]')" \
+      --argjson port_map "$(_build_port_map_json 2>/dev/null || echo '[]')" \
       '{domain:$domain, public_ip:$ip, transport:$mode,
         ports:{control:$ctrl, fake:$fake, sub:$sub, internal:$internal,
                plain:(if $plain=="" then null else ($plain|tonumber) end),
@@ -1970,7 +2106,7 @@ cmd_status(){
                   frp:{configured:($frp!=""),active:($svc_frp=="yes"),port:(if $frp=="" then null else ($frp|tonumber) end),transport:$frp_tr},
                   paqet:{configured:($pq_rem!=""),active:($svc_paqet=="yes"),remote:$pq_rem,mode:$pq_mode,block:$pq_block,nodes:[$nodes[]|select(.transport=="paqet")|.name]},
                   gre:{configured:($gre_name!=""),active:($gre_active=="yes"),name:(if $gre_name=="" then null else $gre_name end),remote_ip:$gre_rem,tunnel_ip:$gre_tip}},
-        sni_count:$sni_count, node_count:$node_count, nodes:$nodes}'
+        sni_count:$sni_count, node_count:$node_count, nodes:$nodes, port_rules:$port_rules, port_map:$port_map}'
     return
   fi
 
@@ -3368,11 +3504,16 @@ print_backhaul_connect(){
 gen_frp_server_toml(){
   local port="$1" token="$2" transport="${3:-tcp}"
   mkdir -p "$(dirname "$FRP_TOML")"
-  local tmp; tmp="$(rth_mktemp)"
+  local tmp pbind="127.0.0.1" has_direct_frp=0
+  if [ -r "${STATE:-}" ]; then
+    has_direct_frp="$(jq '[(.ports // [])[] | select(((.transport // "") == "frp" or (.transport // "") == "frp_gre") and (.proxy_protocol != true))] | length' "$STATE" 2>/dev/null || echo 0)"
+    if [ "${has_direct_frp:-0}" -gt 0 ]; then pbind="0.0.0.0"; fi
+  fi
+  tmp="$(rth_mktemp)"
   {
     echo "# tvlid khodkar tvst ratholectl — frp server"
     echo "bindPort = $port"
-    echo 'proxyBindAddr = "127.0.0.1"'
+    echo "proxyBindAddr = \"${pbind}\""
     echo "auth.token = \"$token\""
     echo "transport.tcpMux = true"
     case "$transport" in
@@ -3556,7 +3697,7 @@ gen_paqet_client_yaml(){
     echo '  level: "info"'
     echo
     local pq_cnt
-    pq_cnt="$(jq '[.nodes[] | select((.transport // "") == "paqet")] | length' "$STATE" 2>/dev/null)"
+    pq_cnt="$(jq '([.nodes[] | select((.transport // "") == "paqet")] | length) + ([(.ports // [])[] | select((.transport // "") == "paqet")] | length)' "$STATE" 2>/dev/null)"
     if [ "${pq_cnt:-0}" -eq 0 ]; then
       echo "forward: []"
     else
@@ -3568,6 +3709,35 @@ gen_paqet_client_yaml(){
         echo "  - listen: \"127.0.0.1:${dport}\""
         echo "    target: \"127.0.0.1:${inb}\""
         echo "    protocol: \"tcp\""
+      done
+      jq -r '(.ports // [])[] | select((.transport // "") == "paqet") | [(.public_port|tostring), ((.local_port // "-")|tostring), ((.proxy_protocol // false)|tostring), (.inbound_port|tostring), (.proto // "tcp")] | @tsv' "$STATE" 2>/dev/null |
+      while IFS=$'\t' read -r ppub ploc ppp pinb pproto; do
+        ppub="${ppub%$'\r'}"; ploc="${ploc%$'\r'}"; ppp="${ppp%$'\r'}"; pinb="${pinb%$'\r'}"; pproto="${pproto%$'\r'}"
+        [ -n "$ppub" ] && [ -n "$pinb" ] || continue
+        local laddr="0.0.0.0:${ppub}"
+        if [ "$ppp" = "true" ] && [ -n "$ploc" ] && [ "$ploc" != "-" ]; then
+          laddr="127.0.0.1:${ploc}"
+        fi
+        case "$pproto" in
+          both)
+            echo "  - listen: \"${laddr}\""
+            echo "    target: \"127.0.0.1:${pinb}\""
+            echo "    protocol: \"tcp\""
+            echo "  - listen: \"${laddr}\""
+            echo "    target: \"127.0.0.1:${pinb}\""
+            echo "    protocol: \"udp\""
+            ;;
+          udp)
+            echo "  - listen: \"${laddr}\""
+            echo "    target: \"127.0.0.1:${pinb}\""
+            echo "    protocol: \"udp\""
+            ;;
+          *)
+            echo "  - listen: \"${laddr}\""
+            echo "    target: \"127.0.0.1:${pinb}\""
+            echo "    protocol: \"tcp\""
+            ;;
+        esac
       done
     fi
     echo
@@ -4219,6 +4389,700 @@ cmd_update(){
   return "$rc"
 }
 
+# ---------- Port Manager: L4 TCP/UDP port forwarding (bedoon path / SNI / nginx pishfarz) ----------
+_port_protos_overlap(){
+  local p1="${1:-tcp}" p2="${2:-tcp}"
+  [ "$p1" = "$p2" ] || [ "$p1" = "both" ] || [ "$p2" = "both" ]
+}
+
+_port_expand_spec(){
+  local spec="${1:-}" seen=" " p s e i
+  [ -n "$spec" ] || die "port ya range khali ast."
+  case "$spec" in
+    *,*)
+      local -a parts=() out=()
+      IFS=',' read -ra parts <<< "$spec"
+      [ "${#parts[@]}" -le 20 ] || die "hadaksar 20 port dar har dastoor mojaz ast."
+      for p in "${parts[@]}"; do
+        rth_valid_port "$p" || die "port namotabar dar list: '$p' (bayad 1..65535 bashad)."
+        p=$((10#$p))
+        case "$seen" in
+          *" $p "*) die "port-e tekrari dar list: $p" ;;
+        esac
+        seen="${seen}${p} "
+        out+=("$p")
+      done
+      printf '%s\n' "${out[@]}"
+      ;;
+    *-*)
+      [[ "$spec" =~ ^([0-9]{1,5})-([0-9]{1,5})$ ]] || die "format range namotabar: '$spec' (mesal: 2080-2085)."
+      s="${BASH_REMATCH[1]}"
+      e="${BASH_REMATCH[2]}"
+      rth_valid_port "$s" || die "shorooe range namotabar: $s"
+      rth_valid_port "$e" || die "payan range namotabar: $e"
+      s=$((10#$s))
+      e=$((10#$e))
+      [ "$s" -le "$e" ] || die "shorooe range ($s) nabayad bozorgtar az payan ($e) bashad."
+      [ $((e - s + 1)) -le 20 ] || die "hadaksar 20 port dar har range mojaz ast ($s-$e = $((e - s + 1)))."
+      for ((i=s; i<=e; i++)); do
+        echo "$i"
+      done
+      ;;
+    *)
+      rth_valid_port "$spec" || die "port namotabar: '$spec' (bayad 1..65535 bashad)."
+      echo $((10#$spec))
+      ;;
+  esac
+}
+
+_build_port_map_json(){
+  [ -f "$STATE" ] && command -v jq >/dev/null 2>&1 || { echo '[]'; return 0; }
+  jq -c '
+    (
+      [
+        {port:22, proto:"tcp", category:"system", owner:"ssh", bind:"0.0.0.0:22", detail:"SSH"},
+        {port:80, proto:"tcp", category:"system", owner:"nginx-http", bind:"0.0.0.0:80", detail:"Nginx HTTP / ACME"},
+        {port:443, proto:"tcp", category:"system", owner:"nginx-443", bind:"0.0.0.0:443", detail:(if ([.nodes[]?|select(.sni!=null)]|length)>0 then "Nginx Stream SNI" else "Nginx HTTPS / WSS" end)},
+        {port:((.control_port // 2333)|tonumber), proto:"tcp", category:"system", owner:"control_port", bind:"127.0.0.1", detail:"Rathole Control"},
+        {port:((.fake_port // 8080)|tonumber), proto:"tcp", category:"system", owner:"fake_port", bind:"127.0.0.1", detail:"Fake Web / Panel"},
+        {port:((.sub_port // 2096)|tonumber), proto:"tcp", category:"system", owner:"sub_port", bind:"127.0.0.1", detail:"Subscription"},
+        {port:((.internal_port // 8443)|tonumber), proto:"tcp", category:"system", owner:"internal_port", bind:"127.0.0.1", detail:"Nginx Internal HTTP"}
+      ]
+      + (if .hub_port != null and .hub_port != "" then [{port:(.hub_port|tonumber), proto:"tcp", category:"system", owner:"hub_port", bind:"127.0.0.1", detail:"RatholeHub"}] else [] end)
+      + (if (.kcp.port // null) != null and (.kcp.port // "") != "" then [{port:(.kcp.port|tonumber), proto:"udp", category:"carrier", owner:"kcp", bind:"0.0.0.0", detail:("KCP " + (.kcp.profile // "balanced"))}] else [] end)
+      + (if .plain_port != null and .plain_port != "" then [{port:(.plain_port|tonumber), proto:"tcp", category:"carrier", owner:"plain", bind:"0.0.0.0", detail:"Plain WS"}] else [] end)
+      + (if .direct_port != null and .direct_port != "" then [{port:(.direct_port|tonumber), proto:"tcp", category:"carrier", owner:"direct", bind:"0.0.0.0", detail:("Direct (" + (.direct_header // "X-Cdn-Id") + ")")}] else [] end)
+      + (if .noise_port != null and .noise_port != "" then [{port:(.noise_port|tonumber), proto:"tcp", category:"carrier", owner:"noise", bind:"0.0.0.0", detail:"Noise Server"}] else [] end)
+      + (if .backhaul_port != null and .backhaul_port != "" then [{port:(.backhaul_port|tonumber), proto:"tcp", category:"carrier", owner:"backhaul", bind:(if (.backhaul_exposure // "nginx_tls")=="direct_ip" then "0.0.0.0" else "127.0.0.1" end), detail:("Backhaul " + (.backhaul_transport // "wsmux"))}] else [] end)
+      + (if .frp_port != null and .frp_port != "" then [{port:(.frp_port|tonumber), proto:(if ((.frp_transport // "tcp")=="kcp" or (.frp_transport // "tcp")=="quic") then "both" else "tcp" end), category:"carrier", owner:"frp", bind:"0.0.0.0", detail:("FRP " + (.frp_transport // "tcp"))}] else [] end)
+      + [(.nodes // [])[]? | select(.port != null) | {port:(.port|tonumber), proto:"tcp", category:"node", owner:.name, bind:"127.0.0.1", detail:((.transport // "ws") + (if .sni then " (SNI: " + .sni + ")" else "" end))}]
+      + [(.nodes // [])[]? | select(.api_local_port != null) | {port:(.api_local_port|tonumber), proto:"tcp", category:"node", owner:(.name + "_api"), bind:"127.0.0.1", detail:"Node API"}]
+      + [(.ports // [])[]? | select(.public_port != null) | {port:(.public_port|tonumber), proto:(.proto // "tcp"), category:"port_rule", owner:.name, bind:(if .proxy_protocol == true then ("0.0.0.0:" + (.public_port|tostring) + " (nginx PP)") else ("0.0.0.0:" + (.public_port|tostring)) end), transport:(.transport // "ws"), proxy_protocol:(.proxy_protocol // false), local_port:(.local_port // null), inbound_port:.inbound_port, node_server:(.node_server // ""), note:(.note // "")}]
+      + [(.ports // [])[]? | select(.proxy_protocol == true and .local_port != null) | {port:(.local_port|tonumber), proto:"tcp", category:"port_rule", owner:(.name + " (PP local)"), bind:("127.0.0.1:" + (.local_port|tostring)), detail:("Upstream for :" + (.public_port|tostring))}]
+    ) | sort_by(.port)
+  ' "$STATE" 2>/dev/null || echo '[]'
+}
+
+check_public_port_free(){
+  local port="$1" proto="${2:-tcp}" exclude_name="${3:-}"
+  rth_valid_port "$port" || die "port namotabar: '$port'"
+  port=$((10#$port))
+  case "$proto" in tcp|udp|both) ;; *) die "protocol namotabar: '$proto' (tcp|udp|both)" ;; esac
+
+  if [ "$port" -eq 22 ]; then die "port 22 baraye SSH rezerv ast."; fi
+  if [ "$port" -eq 80 ] || [ "$port" -eq 443 ]; then
+    if _port_protos_overlap "$proto" "tcp"; then
+      die "port TCP :$port baraye nginx rezerv ast (UDP :443 faghat dar nabood-e KCP mojaz ast)."
+    fi
+  fi
+
+  local entries row ep eproto ecat eowner
+  entries="$(jq -r --arg ex "$exclude_name" '
+    (
+      [
+        [(.control_port // 2333), "tcp", "system", "control_port"],
+        [(.fake_port // 8080), "tcp", "system", "fake_port"],
+        [(.sub_port // 2096), "tcp", "system", "sub_port"],
+        [(.internal_port // 8443), "tcp", "system", "internal_port"]
+      ]
+      + (if .hub_port != null and .hub_port != "" then [[.hub_port, "tcp", "system", "hub_port"]] else [] end)
+      + (if (.kcp.port // null) != null and (.kcp.port // "") != "" then [[.kcp.port, "udp", "carrier", "kcp"]] else [] end)
+      + (if .plain_port != null and .plain_port != "" then [[.plain_port, "tcp", "carrier", "plain"]] else [] end)
+      + (if .direct_port != null and .direct_port != "" then [[.direct_port, "tcp", "carrier", "direct"]] else [] end)
+      + (if .noise_port != null and .noise_port != "" then [[.noise_port, "tcp", "carrier", "noise"]] else [] end)
+      + (if .backhaul_port != null and .backhaul_port != "" then [[.backhaul_port, "tcp", "carrier", "backhaul"]] else [] end)
+      + (if .frp_port != null and .frp_port != "" then [[.frp_port, (if ((.frp_transport // "tcp")=="kcp" or (.frp_transport // "tcp")=="quic") then "both" else "tcp" end), "carrier", "frp"]] else [] end)
+      + [(.nodes // [])[]? | select(.port != null) | [.port, "tcp", "node", .name]]
+      + [(.nodes // [])[]? | select(.api_local_port != null) | [.api_local_port, "tcp", "node", (.name + "_api")]]
+      + [(.ports // [])[]? | select(.name != $ex and .public_port != null) | [.public_port, (.proto // "tcp"), "port_rule", .name]]
+      + [(.ports // [])[]? | select(.name != $ex and .proxy_protocol == true and .local_port != null) | [.local_port, "tcp", "port_rule", (.name + " (PP local)")]]
+    )[] | @tsv
+  ' "$STATE" 2>/dev/null || true)"
+
+  while IFS=$'\t' read -r ep eproto ecat eowner; do
+    ep="${ep%$'\r'}"; eproto="${eproto%$'\r'}"; ecat="${ecat%$'\r'}"; eowner="${eowner%$'\r'}"
+    [ -n "$ep" ] || continue
+    if [ "$ep" = "$port" ] && _port_protos_overlap "$proto" "$eproto"; then
+      die "port $port ($proto) ba $ecat '$eowner' ($eproto) tadakhol darad."
+    fi
+  done <<< "$entries"
+
+  if [ "${RATHOLE_SKIP_LIVE_PORT_CHECK:-0}" != "1" ] && command -v ss >/dev/null 2>&1; then
+    local old_pub="" old_proto=""
+    if [ -n "$exclude_name" ]; then
+      old_pub="$(jq -r --arg n "$exclude_name" '(.ports // [])[] | select(.name==$n) | .public_port // empty' "$STATE" 2>/dev/null)"
+      old_proto="$(jq -r --arg n "$exclude_name" '(.ports // [])[] | select(.name==$n) | .proto // empty' "$STATE" 2>/dev/null)"
+      old_pub="${old_pub%$'\r'}"; old_proto="${old_proto%$'\r'}"
+    fi
+    if _port_protos_overlap "$proto" "tcp"; then
+      if [ -z "$exclude_name" ] || [ "$old_pub" != "$port" ] || ! _port_protos_overlap "${old_proto:-}" "tcp"; then
+        if ss -ltnH "sport = :$port" 2>/dev/null | grep -q .; then
+          die "port TCP :$port dar hal-e hazer rooye system dar hal-e listen ast."
+        fi
+      fi
+    fi
+    if _port_protos_overlap "$proto" "udp"; then
+      if [ -z "$exclude_name" ] || [ "$old_pub" != "$port" ] || ! _port_protos_overlap "${old_proto:-}" "udp"; then
+        if ss -lunH "sport = :$port" 2>/dev/null | grep -q .; then
+          die "port UDP :$port dar hal-e hazer rooye system dar hal-e listen ast."
+        fi
+      fi
+    fi
+  fi
+}
+
+_port_ufw_sync(){
+  local act="${1:-allow}" port="${2:-}" proto="${3:-tcp}"
+  [ "${RATHOLE_SKIP_UFW:-0}" != "1" ] && command -v ufw >/dev/null 2>&1 || return 0
+  rth_valid_port "$port" || return 0
+  port=$((10#$port))
+  if [ "$act" = "allow" ]; then
+    if _port_protos_overlap "$proto" "tcp"; then ufw allow "${port}/tcp" >/dev/null 2>&1 || true; fi
+    if _port_protos_overlap "$proto" "udp"; then ufw allow "${port}/udp" >/dev/null 2>&1 || true; fi
+  elif [ "$act" = "delete" ]; then
+    local still_tcp=0 still_udp=0
+    still_tcp="$(jq --argjson p "$port" '[(.ports // [])[] | select(.public_port==$p and ((.proto // "tcp")=="tcp" or (.proto // "tcp")=="both"))] | length' "$STATE" 2>/dev/null)"
+    still_udp="$(jq --argjson p "$port" '[(.ports // [])[] | select(.public_port==$p and ((.proto // "tcp")=="udp" or (.proto // "tcp")=="both"))] | length' "$STATE" 2>/dev/null)"
+    if _port_protos_overlap "$proto" "tcp" && [ "${still_tcp:-0}" -eq 0 ]; then
+      ufw delete allow "${port}/tcp" >/dev/null 2>&1 || true
+    fi
+    if _port_protos_overlap "$proto" "udp" && [ "${still_udp:-0}" -eq 0 ]; then
+      ufw delete allow "${port}/udp" >/dev/null 2>&1 || true
+    fi
+  fi
+  return 0
+}
+
+_port_rule_name_taken(){
+  local n="$1"
+  jq -e --arg n "$n" '
+    any(.nodes[]?; .name == $n)
+    or any((.ports // [])[]?; .name == $n or ((.proto // "tcp") == "both" and (.name + "_udp") == $n))
+  ' "$STATE" >/dev/null 2>&1
+}
+
+_port_resolve_rule(){
+  local q="${1:-}" name="" cnt=0
+  [ -n "$q" ] || die "name ya shomare-ye port ra bede."
+  name="$(jq -r --arg n "$q" '(.ports // [])[] | select(.name == $n) | .name' "$STATE" 2>/dev/null | head -n1)"
+  name="${name%$'\r'}"
+  if [ -n "$name" ]; then
+    echo "$name"
+    return 0
+  fi
+  if rth_valid_port "$q"; then
+    local qp=$((10#$q))
+    cnt="$(jq --argjson p "$qp" '[(.ports // [])[] | select(.public_port == $p)] | length' "$STATE" 2>/dev/null)"
+    if [ "${cnt:-0}" -eq 1 ]; then
+      name="$(jq -r --argjson p "$qp" '(.ports // [])[] | select(.public_port == $p) | .name' "$STATE" 2>/dev/null | head -n1)"
+      name="${name%$'\r'}"
+      echo "$name"
+      return 0
+    elif [ "${cnt:-0}" -gt 1 ]; then
+      local names
+      names="$(jq -r --argjson p "$qp" '(.ports // [])[] | select(.public_port == $p) | .name' "$STATE" 2>/dev/null | tr '\n' ' ')"
+      die "chand ghanun rooye port $qp vojood darad (${names% }); name-e daghigh ra bede."
+    fi
+  fi
+  die "ghanun-e port '$q' peyda nashod."
+}
+
+_port_validate_combo(){
+  local proto="$1" transport="$2" pp="$3"
+  case "$proto" in tcp|udp|both) ;; *) die "protocol namotabar: '$proto' (tcp|udp|both)." ;; esac
+  case "$transport" in ws|kcp|plain|noise|backhaul|frp|frp_gre|paqet) ;; *) die "transport namotabar: '$transport' (ws|kcp|plain|noise|backhaul|frp|frp_gre|paqet)." ;; esac
+  if [ "$transport" = "backhaul" ] && [ "$proto" != "tcp" ]; then
+    die "carrier Backhaul faghat az TCP poshtibani mikonad (udp/both mojaz nist)."
+  fi
+  if [ "$pp" = "true" ] && [ "$proto" != "tcp" ]; then
+    die "PROXY Protocol faghat baraye TCP mojaz ast (udp/both mojaz nist)."
+  fi
+}
+
+_port_warn_carrier_inactive(){
+  local tr="$1" ok=1
+  case "$tr" in
+    ws) ok=1 ;;
+    kcp) [ "$(jq -r '.kcp.enabled // false' "$STATE" 2>/dev/null)" = "true" ] || ok=0 ;;
+    plain) [ -n "$(jq -r '.plain_port // empty' "$STATE" 2>/dev/null)" ] || ok=0 ;;
+    noise) [ -n "$(jq -r '.noise_port // empty' "$STATE" 2>/dev/null)" ] || ok=0 ;;
+    backhaul) [ -n "$(jq -r '.backhaul_port // empty' "$STATE" 2>/dev/null)" ] && [ -n "$(jq -r '.backhaul_token // empty' "$STATE" 2>/dev/null)" ] || ok=0 ;;
+    frp|frp_gre) [ -n "$(jq -r '.frp_port // empty' "$STATE" 2>/dev/null)" ] || ok=0 ;;
+    paqet) [ -n "$(jq -r '.paqet.remote // empty' "$STATE" 2>/dev/null)" ] || ok=0 ;;
+  esac
+  if [ "$ok" -eq 0 ]; then
+    warn "carrier '${tr}' hanooz rooye in server faal nashode — ghanun sabt mishavad vali ta faal-sazi-e '${tr}' traffic nemigozarad."
+  fi
+}
+
+cmd_port(){
+  local sub="${1:-ls}"; shift || true
+  case "$sub" in
+    add)  cmd_port_add "$@" ;;
+    edit) cmd_port_edit "$@" ;;
+    rm)   cmd_port_rm "$@" ;;
+    ls)   cmd_port_ls "$@" ;;
+    show) cmd_port_show "$@" ;;
+    map)  cmd_port_map "$@" ;;
+    *) die "estefade: ratholectl port <add|edit|rm|ls|show|map> ..." ;;
+  esac
+}
+
+cmd_port_add(){
+  need_root; need_bin jq; ensure_state
+  local name="" proto="tcp" transport="ws" pp="false" node_server="" note="" as_json=0
+  local -a pos=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --name) name="${2:-}"; shift 2 || shift ;;
+      --proto) proto="${2:-tcp}"; shift 2 || shift ;;
+      --transport) transport="${2:-ws}"; shift 2 || shift ;;
+      --proxy-protocol)
+        case "${2:-}" in
+          on|true|1) pp="true"; shift 2 ;;
+          off|false|0) pp="false"; shift 2 ;;
+          *) pp="true"; shift ;;
+        esac
+        ;;
+      --no-proxy-protocol) pp="false"; shift ;;
+      --node-server) node_server="${2:-}"; shift 2 || shift ;;
+      --note) note="${2:-}"; shift 2 || shift ;;
+      --json) as_json=1; shift ;;
+      --) shift; while [ $# -gt 0 ]; do pos+=("$1"); shift; done ;;
+      -*) die "flag nashenakhte: $1" ;;
+      *) pos+=("$1"); shift ;;
+    esac
+  done
+  local spec="${pos[0]:-}" inb_spec="${pos[1]:-}"
+  [ -n "$spec" ] && [ -n "$inb_spec" ] || die "estefade: ratholectl port add <public_port|csv|range> <inbound_port|same> [--name N] [--proto tcp|udp|both] [--transport ws|kcp|plain|noise|backhaul|frp|frp_gre|paqet] [--proxy-protocol] [--node-server S] [--note TXT] [--json]"
+  if [ "$inb_spec" != "same" ]; then
+    rth_valid_port "$inb_spec" || die "inbound bayad adad 1..65535 ya 'same' bashad."
+    inb_spec=$((10#$inb_spec))
+  fi
+  if [ -n "$name" ]; then
+    echo "$name" | grep -qE '^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$' || die "name ghanun namotabar ast (A-Za-z0-9_-)."
+  fi
+  if [ -n "$node_server" ]; then
+    echo "$node_server" | grep -qE '^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$' || die "name node-server namotabar ast."
+  fi
+  if [ -n "$note" ]; then
+    note="$(printf '%s' "$note" | tr -d '\r\n\t' | cut -c1-120)"
+  fi
+  _port_validate_combo "$proto" "$transport" "$pp"
+
+  local expanded
+  expanded="$(_port_expand_spec "$spec")" || return 1
+  local -a ports=()
+  mapfile -t ports <<< "$expanded"
+  [ "${#ports[@]}" -gt 0 ] || die "hich port-i moshakhas nashod."
+  local batch_count="${#ports[@]}"
+
+  local p inb rname tok lp next_lp_start=21000 next_lp_used=""
+  local batch_ports_seen=" " batch_names_seen=" "
+  local -a pending_objs=()
+
+  for p in "${ports[@]}"; do
+    check_public_port_free "$p" "$proto"
+    batch_ports_seen="${batch_ports_seen}${p} "
+
+    if [ "$inb_spec" = "same" ]; then
+      inb="$p"
+    else
+      inb="$inb_spec"
+    fi
+
+    if [ -n "$name" ]; then
+      if [ "$batch_count" -eq 1 ]; then
+        rname="$name"
+      else
+        rname="${name}_${p}"
+      fi
+    else
+      rname="p${p}"
+      if _port_rule_name_taken "$rname" || [[ "$batch_names_seen" == *" $rname "* ]]; then
+        if [ "$proto" = "udp" ] && ! _port_rule_name_taken "p${p}_udp" && [[ "$batch_names_seen" != *" p${p}_udp "* ]]; then
+          rname="p${p}_udp"
+        else
+          rname="p${p}_${proto}"
+        fi
+      fi
+    fi
+
+    echo "$rname" | grep -qE '^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$' || die "name sakhte-shode '$rname' bishtar az 40 karaktr ya namotabar ast."
+    if [ "$proto" = "both" ] && [ "${#rname}" -gt 36 ]; then
+      die "baraye proto=both tool name '$rname' hadaksar 36 karaktr ast."
+    fi
+    if _port_rule_name_taken "$rname"; then die "name '$rname' ghablan dar node/ports estefade shode."; fi
+    if [[ "$batch_names_seen" == *" $rname "* ]]; then die "name '$rname' dar batch tekrari ast."; fi
+    if [ "$proto" = "both" ]; then
+      if _port_rule_name_taken "${rname}_udp"; then die "name '${rname}_udp' ghablan estefade shode."; fi
+      if [[ "$batch_names_seen" == *" ${rname}_udp "* ]]; then die "name '${rname}_udp' dar batch tekrari ast."; fi
+      batch_names_seen="${batch_names_seen}${rname} ${rname}_udp "
+    else
+      batch_names_seen="${batch_names_seen}${rname} "
+    fi
+
+    if [ "$pp" = "true" ]; then
+      lp="$(next_port port "$next_lp_start")"
+      while [[ " $batch_ports_seen $next_lp_used " == *" $lp "* ]]; do
+        lp="$(next_port port "$((lp + 1))")"
+      done
+      next_lp_used="${next_lp_used} ${lp}"
+      next_lp_start=$((lp + 1))
+    else
+      lp=""
+    fi
+
+    tok="$(gen_token)"
+    local obj
+    if [ -n "$lp" ]; then
+      obj="$(jq -n \
+        --arg n "$rname" --argjson pub "$p" --argjson inb "$inb" \
+        --arg pr "$proto" --arg tr "$transport" --argjson pp true --argjson lp "$lp" \
+        --arg tok "$tok" --arg ns "$node_server" --arg nt "$note" \
+        '{name:$n, public_port:$pub, inbound_port:$inb, proto:$pr, transport:$tr, proxy_protocol:$pp, local_port:$lp, token:$tok, node_server:$ns, note:$nt}')"
+    else
+      obj="$(jq -n \
+        --arg n "$rname" --argjson pub "$p" --argjson inb "$inb" \
+        --arg pr "$proto" --arg tr "$transport" --argjson pp false \
+        --arg tok "$tok" --arg ns "$node_server" --arg nt "$note" \
+        '{name:$n, public_port:$pub, inbound_port:$inb, proto:$pr, transport:$tr, proxy_protocol:$pp, local_port:null, token:$tok, node_server:$ns, note:$nt}')"
+    fi
+    pending_objs+=("$obj")
+  done
+
+  if [ "$as_json" -eq 1 ]; then
+    _port_warn_carrier_inactive "$transport" >&2
+  else
+    _port_warn_carrier_inactive "$transport"
+  fi
+
+  local arr_json
+  arr_json="$(printf '%s\n' "${pending_objs[@]}" | jq -s '.')"
+  state_jq --argjson added "$arr_json" '.ports = ((.ports // []) + $added)'
+
+  for p in "${ports[@]}"; do
+    _port_ufw_sync allow "$p" "$proto"
+  done
+
+  if [ "$as_json" -eq 1 ]; then
+    regenerate >&2 || return 1
+    jq -n --argjson created "$arr_json" '{ok:true, created:[$created[] | del(.token)]}'
+    return 0
+  fi
+  regenerate || return 1
+  for p in "${ports[@]}"; do
+    log "port omomi :${p} ($proto, transport=${transport}, pp=${pp}) ezafe shod."
+  done
+  if [ "$batch_count" -eq 1 ]; then
+    local created_name
+    created_name="$(printf '%s\n' "$arr_json" | jq -r '.[0].name')"
+    created_name="${created_name%$'\r'}"
+    if [ "$transport" = "paqet" ]; then
+      log "paqet rooye Iran tanzim shod؛ motmaen sho backend rooye node rooye port ${inb} gosh midahad."
+    else
+      log "baraye hamahangi-ye node: ratholectl port show ${created_name}"
+    fi
+  fi
+}
+
+cmd_port_edit(){
+  need_root; need_bin jq; ensure_state
+  local target="${1:-}"; shift || true
+  [ -n "$target" ] || die "estefade: ratholectl port edit <name|port> [--inbound N] [--proto tcp|udp|both] [--transport ...] [--proxy-protocol on|off] [--node-server S|none] [--note TXT] [--json]"
+  local name
+  name="$(_port_resolve_rule "$target")"
+
+  local new_inb="" new_proto="" new_tr="" new_pp="" new_ns="" set_ns=0 new_note="" set_note=0 as_json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --inbound) new_inb="${2:-}"; shift 2 || shift ;;
+      --proto) new_proto="${2:-}"; shift 2 || shift ;;
+      --transport) new_tr="${2:-}"; shift 2 || shift ;;
+      --proxy-protocol)
+        case "${2:-}" in
+          on|true|1) new_pp="true"; shift 2 ;;
+          off|false|0) new_pp="false"; shift 2 ;;
+          *) new_pp="true"; shift ;;
+        esac
+        ;;
+      --no-proxy-protocol) new_pp="false"; shift ;;
+      --node-server) new_ns="${2:-}"; set_ns=1; shift 2 || shift ;;
+      --note) new_note="${2:-}"; set_note=1; shift 2 || shift ;;
+      --json) as_json=1; shift ;;
+      -*) die "flag nashenakhte: $1" ;;
+      *) shift ;;
+    esac
+  done
+
+  if [ -z "$new_inb" ] && [ -z "$new_proto" ] && [ -z "$new_tr" ] && [ -z "$new_pp" ] && [ "$set_ns" -eq 0 ] && [ "$set_note" -eq 0 ]; then
+    die "hich taghiri moshakhas nashode."
+  fi
+
+  local cur_row cur_pub cur_inb cur_proto cur_tr cur_pp cur_lp cur_ns cur_note
+  cur_row="$(jq -c --arg n "$name" '(.ports // [])[] | select(.name == $n)' "$STATE")"
+  cur_pub="$(printf '%s' "$cur_row" | jq -r '.public_port')"
+  cur_inb="$(printf '%s' "$cur_row" | jq -r '.inbound_port')"
+  cur_proto="$(printf '%s' "$cur_row" | jq -r '.proto // "tcp"')"
+  cur_tr="$(printf '%s' "$cur_row" | jq -r '.transport // "ws"')"
+  cur_pp="$(printf '%s' "$cur_row" | jq -r '.proxy_protocol // false')"
+  cur_lp="$(printf '%s' "$cur_row" | jq -r '.local_port // empty')"
+  cur_ns="$(printf '%s' "$cur_row" | jq -r '.node_server // ""')"
+  cur_note="$(printf '%s' "$cur_row" | jq -r '.note // ""')"
+  cur_pub="${cur_pub%$'\r'}"; cur_inb="${cur_inb%$'\r'}"; cur_proto="${cur_proto%$'\r'}"
+  cur_tr="${cur_tr%$'\r'}"; cur_pp="${cur_pp%$'\r'}"; cur_lp="${cur_lp%$'\r'}"
+  cur_ns="${cur_ns%$'\r'}"; cur_note="${cur_note%$'\r'}"
+
+  local f_inb="${new_inb:-$cur_inb}"
+  local f_proto="${new_proto:-$cur_proto}"
+  local f_tr="${new_tr:-$cur_tr}"
+  local f_pp="${new_pp:-$cur_pp}"
+  local f_ns="$cur_ns"
+  local f_note="$cur_note"
+  local f_lp="$cur_lp"
+
+  if [ -n "$new_inb" ]; then
+    rth_valid_port "$f_inb" || die "inbound bayad adad 1..65535 bashad."
+    f_inb=$((10#$f_inb))
+  fi
+  if [ "$set_ns" -eq 1 ]; then
+    if [ "$new_ns" = "none" ] || [ -z "$new_ns" ]; then
+      f_ns=""
+    else
+      echo "$new_ns" | grep -qE '^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$' || die "name node-server namotabar ast."
+      f_ns="$new_ns"
+    fi
+  fi
+  if [ "$set_note" -eq 1 ]; then
+    f_note="$(printf '%s' "$new_note" | tr -d '\r\n\t' | cut -c1-120)"
+  fi
+
+  _port_validate_combo "$f_proto" "$f_tr" "$f_pp"
+
+  if [ "$f_proto" != "$cur_proto" ]; then
+    check_public_port_free "$cur_pub" "$f_proto" "$name"
+    if [ "$cur_proto" != "both" ] && [ "$f_proto" = "both" ]; then
+      [ "${#name}" -le 36 ] || die "baraye proto=both tool name '$name' hadaksar 36 karaktr ast."
+      if _port_rule_name_taken "${name}_udp"; then
+        die "name '${name}_udp' ghablan estefade shode."
+      fi
+    fi
+  fi
+
+  if [ "$f_pp" = "true" ]; then
+    if [ -z "$f_lp" ] || [ "$f_lp" = "null" ]; then
+      f_lp="$(next_port port 21000)"
+    fi
+  else
+    f_lp=""
+  fi
+
+  if [ -n "$new_tr" ] && [ "$new_tr" != "$cur_tr" ]; then
+    if [ "$as_json" -eq 1 ]; then
+      _port_warn_carrier_inactive "$f_tr" >&2
+    else
+      _port_warn_carrier_inactive "$f_tr"
+    fi
+  fi
+
+  if [ -n "$f_lp" ]; then
+    state_jq --arg n "$name" --argjson inb "$f_inb" --arg pr "$f_proto" --arg tr "$f_tr" \
+      --argjson pp true --argjson lp "$f_lp" --arg ns "$f_ns" --arg nt "$f_note" \
+      '(.ports[] | select(.name == $n)) |= (. + {inbound_port:$inb, proto:$pr, transport:$tr, proxy_protocol:$pp, local_port:$lp, node_server:$ns, note:$nt})'
+  else
+    state_jq --arg n "$name" --argjson inb "$f_inb" --arg pr "$f_proto" --arg tr "$f_tr" \
+      --argjson pp false --arg ns "$f_ns" --arg nt "$f_note" \
+      '(.ports[] | select(.name == $n)) |= (. + {inbound_port:$inb, proto:$pr, transport:$tr, proxy_protocol:$pp, local_port:null, node_server:$ns, note:$nt})'
+  fi
+
+  if [ "$f_proto" != "$cur_proto" ]; then
+    _port_ufw_sync delete "$cur_pub" "$cur_proto"
+    _port_ufw_sync allow "$cur_pub" "$f_proto"
+  fi
+
+  if [ "$as_json" -eq 1 ]; then
+    regenerate >&2 || return 1
+    jq -c --arg n "$name" '(.ports // [])[] | select(.name == $n) | del(.token) | {ok:true, rule:.}' "$STATE"
+    return 0
+  fi
+  regenerate || return 1
+  log "ghanun '$name' (:${cur_pub} -> :${f_inb}, proto=${f_proto}, transport=${f_tr}, pp=${f_pp}) virayesh shod."
+}
+
+cmd_port_rm(){
+  need_root; need_bin jq; ensure_state
+  local target="" as_json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) as_json=1; shift ;;
+      -*) die "flag nashenakhte: $1" ;;
+      *) if [ -z "$target" ]; then target="$1"; fi; shift ;;
+    esac
+  done
+  local name pub proto
+  name="$(_port_resolve_rule "$target")"
+  pub="$(jq -r --arg n "$name" '(.ports // [])[] | select(.name == $n) | .public_port' "$STATE")"
+  proto="$(jq -r --arg n "$name" '(.ports // [])[] | select(.name == $n) | .proto // "tcp"' "$STATE")"
+  pub="${pub%$'\r'}"; proto="${proto%$'\r'}"
+
+  state_jq --arg n "$name" '.ports = ((.ports // []) | map(select(.name != $n)))'
+  _port_ufw_sync delete "$pub" "$proto"
+
+  if [ "$as_json" -eq 1 ]; then
+    regenerate >&2 || return 1
+    jq -n --arg n "$name" --argjson pub "$pub" '{ok:true, removed:$n, public_port:$pub}'
+    return 0
+  fi
+  regenerate || return 1
+  log "ghanun '$name' (port :${pub}) hazf shod."
+}
+
+cmd_port_ls(){
+  need_bin jq; ensure_state
+  local as_json=0
+  [ "${1:-}" = "--json" ] && as_json=1
+  if [ "$as_json" -eq 1 ]; then
+    jq '[(.ports // [])[] | del(.token)]' "$STATE"
+    return 0
+  fi
+  local cnt
+  cnt="$(jq '(.ports // []) | length' "$STATE" 2>/dev/null)"
+  if [ "${cnt:-0}" -eq 0 ]; then
+    warn "hich ghanun-e port-manager sabt nashode (ratholectl port add ...)."
+    return 0
+  fi
+  printf '%-14s %-8s %-7s %-8s %-10s %-14s %-12s %s\n' "NAME" "PUBLIC" "PROTO" "INBOUND" "CARRIER" "MODE" "NODE" "NOTE"
+  printf '%s\n' "----------------------------------------------------------------------------------------"
+  jq -r '(.ports // [])[] | [.name, (.public_port|tostring), (.proto // "tcp"), (.inbound_port|tostring), (.transport // "ws"), (if .proxy_protocol == true then ("PP:" + (.local_port|tostring)) else "Direct" end), (if (.node_server // "") == "" then "-" else .node_server end), (.note // "")] | @tsv' "$STATE" |
+  while IFS=$'\t' read -r n pub pr inb tr mode ns nt; do
+    n="${n%$'\r'}"; pub="${pub%$'\r'}"; pr="${pr%$'\r'}"; inb="${inb%$'\r'}"
+    tr="${tr%$'\r'}"; mode="${mode%$'\r'}"; ns="${ns%$'\r'}"; nt="${nt%$'\r'}"
+    [ -n "$ns" ] || ns="-"
+    printf '%-14s %-8s %-7s %-8s %-10s %-14s %-12s %s\n' "$n" "$pub" "$pr" "$inb" "$tr" "$mode" "$ns" "$nt"
+  done
+}
+
+cmd_port_show(){
+  need_bin jq; ensure_state
+  local target="" as_json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) as_json=1; shift ;;
+      -*) die "flag nashenakhte: $1" ;;
+      *) [ -z "$target" ] && target="$1"; shift ;;
+    esac
+  done
+  local name row pub inb loc pp proto tr tok ns note
+  name="$(_port_resolve_rule "$target")"
+  row="$(jq -c --arg n "$name" '(.ports // [])[] | select(.name == $n)' "$STATE")"
+  pub="$(printf '%s' "$row" | jq -r '.public_port')"
+  inb="$(printf '%s' "$row" | jq -r '.inbound_port')"
+  loc="$(printf '%s' "$row" | jq -r '.local_port // empty')"
+  pp="$(printf '%s' "$row" | jq -r '.proxy_protocol // false')"
+  proto="$(printf '%s' "$row" | jq -r '.proto // "tcp"')"
+  tr="$(printf '%s' "$row" | jq -r '.transport // "ws"')"
+  tok="$(printf '%s' "$row" | jq -r '.token // ""')"
+  ns="$(printf '%s' "$row" | jq -r '.node_server // ""')"
+  note="$(printf '%s' "$row" | jq -r '.note // ""')"
+  pub="${pub%$'\r'}"; inb="${inb%$'\r'}"; loc="${loc%$'\r'}"; pp="${pp%$'\r'}"
+  proto="${proto%$'\r'}"; tr="${tr%$'\r'}"; tok="${tok%$'\r'}"; ns="${ns%$'\r'}"; note="${note%$'\r'}"
+
+  local rport="$pub" sync_tok="$tok" carrier_cfg=1 cmd_line=""
+  [ "$pp" = "true" ] && [ -n "$loc" ] && rport="$loc"
+
+  case "$tr" in
+    ws) carrier_cfg=1 ;;
+    kcp) [ "$(jq -r '.kcp.enabled // false' "$STATE" 2>/dev/null)" = "true" ] || carrier_cfg=0 ;;
+    plain) [ -n "$(jq -r '.plain_port // empty' "$STATE" 2>/dev/null)" ] || carrier_cfg=0 ;;
+    noise) [ -n "$(jq -r '.noise_port // empty' "$STATE" 2>/dev/null)" ] || carrier_cfg=0 ;;
+    backhaul)
+      sync_tok="$(jq -r '.backhaul_token // ""' "$STATE" 2>/dev/null)"
+      sync_tok="${sync_tok%$'\r'}"
+      [ -n "$sync_tok" ] && [ -n "$(jq -r '.backhaul_port // empty' "$STATE" 2>/dev/null)" ] || carrier_cfg=0
+      ;;
+    frp|frp_gre)
+      [ -n "$(jq -r '.frp_port // empty' "$STATE" 2>/dev/null)" ] || carrier_cfg=0
+      ;;
+    paqet)
+      sync_tok=""
+      [ -n "$(jq -r '.paqet.remote // empty' "$STATE" 2>/dev/null)" ] || carrier_cfg=0
+      ;;
+  esac
+
+  case "$tr" in
+    backhaul)
+      if [ -n "$sync_tok" ]; then cmd_line="ratholenode backhaul add-svc ${name} ${sync_tok} ${inb}"; fi
+      ;;
+    frp|frp_gre)
+      if [ "$proto" = "tcp" ]; then
+        cmd_line="ratholenode add-svc ${name} ${sync_tok} ${inb} ${rport}"
+      else
+        cmd_line="ratholenode add-svc ${name} ${sync_tok} ${inb} ${rport} ${proto}"
+      fi
+      ;;
+    paqet)
+      cmd_line="# Paqet forwards 0.0.0.0:${pub} directly from Iran to node 127.0.0.1:${inb} (no add-svc needed on node)"
+      ;;
+    *)
+      if [ "$proto" = "tcp" ]; then
+        cmd_line="ratholenode add-svc ${name} ${sync_tok} ${inb}"
+      else
+        cmd_line="ratholenode add-svc ${name} ${sync_tok} ${inb} ${proto}"
+      fi
+      ;;
+  esac
+
+  if [ "$as_json" -eq 1 ]; then
+    jq -n \
+      --arg n "$name" --argjson pub "$pub" --argjson inb "$inb" \
+      --arg loc "$loc" --argjson rport "$rport" --arg pr "$proto" --arg tr "$tr" \
+      --argjson pp "$( [ "$pp" = "true" ] && echo true || echo false )" \
+      --arg tok "$sync_tok" --arg ns "$ns" --arg nt "$note" \
+      --argjson ccfg "$( [ "$carrier_cfg" -eq 1 ] && echo true || echo false )" \
+      --arg cmd "$cmd_line" \
+      '{ok:true, name:$n, public_port:$pub, inbound_port:$inb,
+        local_port:(if $loc=="" then null else ($loc|tonumber) end),
+        remote_port:$rport, proto:$pr, transport:$tr, proxy_protocol:$pp,
+        token:$tok, node_server:$ns, note:$nt, carrier_configured:$ccfg, command:$cmd}'
+    return 0
+  fi
+
+  local ip; ip="$(detect_ip)"
+  echo
+  echo "$(c_y "──────── ghanun-e port '${name}' ────────")"
+  echo "  vorodi omomi : ${ip:-<IRAN_IP>}:${pub}  (${proto})"
+  echo "  inbound node : 127.0.0.1:${inb}"
+  echo "  carrier      : ${tr}   mode: $( [ "$pp" = "true" ] && echo "PROXY Protocol (local :${loc})" || echo "Direct (0.0.0.0:${pub})" )"
+  if [ -n "$ns" ]; then echo "  node server  : ${ns}"; fi
+  if [ -n "$note" ]; then echo "  note         : ${note}"; fi
+  echo
+  echo "rooye node kharej ejra kon:"
+  if [ -n "$cmd_line" ]; then
+    echo "  $cmd_line"
+  else
+    warn "carrier '${tr}' hanooz token/port nadarad — aval rooye Iran faalesh kon."
+  fi
+  echo "$(c_y '────────────────────────────────────')"
+}
+
+cmd_port_map(){
+  need_bin jq; ensure_state
+  local as_json=0 map_json
+  [ "${1:-}" = "--json" ] && as_json=1
+  map_json="$(_build_port_map_json)"
+  if [ "$as_json" -eq 1 ]; then
+    printf '%s\n' "$map_json"
+    return 0
+  fi
+  printf '%-7s %-6s %-10s %-20s %-22s %s\n' "PORT" "PROTO" "CATEGORY" "OWNER" "BIND" "DETAIL"
+  printf '%s\n' "----------------------------------------------------------------------------------------"
+  printf '%s\n' "$map_json" | jq -r '.[] | [(.port|tostring), .proto, .category, .owner, (.bind // "-"), (.detail // (if .inbound_port != null then ("-> :" + (.inbound_port|tostring) + " (" + (.transport // "ws") + ")") else "-" end))] | @tsv' |
+  while IFS=$'\t' read -r pt pr cat ow bd dt; do
+    pt="${pt%$'\r'}"; pr="${pr%$'\r'}"; cat="${cat%$'\r'}"; ow="${ow%$'\r'}"; bd="${bd%$'\r'}"; dt="${dt%$'\r'}"
+    printf '%-7s %-6s %-10s %-20s %-22s %s\n' "$pt" "$pr" "$cat" "$ow" "$bd" "$dt"
+  done
+}
+
 usage(){
   cat <<USAGE
 ratholectl — mdirit tunnel rathole mvltilvkishn
@@ -4231,6 +5095,7 @@ dstvrha:
   set <key> <value>            taghir tanzimat srasri (domain/fullchain/key/nginx-conf/fake-port/sub-port/control-port/sub-path/hub-path)
   info                         namayesh damnh/gvahi/enghza va damnhhai SNI (baraye panel)
   status [--json]              dashboard-e kamel: port-ha/halat-ha/service-ha/node-ha (mesl-e panel-e VPN)
+  port <add|edit|rm|ls|show|map> ...   forward L4 TCP/UDP mostaghim rooye port omomi (bedoon path/SNI, ba ya bedoon nginx PP)
   test <name> [--count N] [--json]   test-e do-tarafeh masir/RTT/jitter/loss be yek node
   paths                        namayesh masir-e hameye config-ha va file-ha (ba alamat-e vojood)
   cert <domain> [email]        grftn gvahi Let's Encrypt + tanzim damnh asli (ghir-taamoli)
@@ -4415,6 +5280,7 @@ main(){
 
     control-path) cmd_control_path "$@" ;;
     game)   cmd_game "$@" ;;
+    port)   cmd_port "$@" ;;
     restart) need_root; systemctl restart "$RATHOLE_SVC" && log "$RATHOLE_SVC restart shod (hame tunnelha lhzhai ghat shdnd)." ;;
     enable) need_root; systemctl enable --now "$RATHOLE_SVC"; log "$RATHOLE_SVC faal shod." ;;
     update) cmd_update "$@" ;;

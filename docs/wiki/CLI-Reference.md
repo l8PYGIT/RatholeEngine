@@ -197,6 +197,20 @@ ratholenode control-path clear                                 # یا upstream c
 
 > تغییر `control-path` یک تغییر transport است و restart می‌خواهد؛ هر دو CLI در صورت بالا نیامدن تونل، خودکار rollback می‌کنند. `rotate` پیش‌نیاز پشتیبانی core از `websocket.path` را چک می‌کند (`ratholectl update` در صورت نیاز).
 
+### مدیریت پورت‌های L4 (`port`)
+
+```bash
+ratholectl port add <port|csv|range> <inbound|same> [--name N] [--proto tcp|udp|both] [--transport ws|kcp|plain|noise|backhaul|frp|frp_gre|paqet] [--proxy-protocol] [--node-server S] [--note TXT] [--json]
+# فوروارد مستقیم TCP/UDP روی پورت عمومی بدون path و بدون SNI (حداکثر ۲۰ پورت در هر دستور)
+# با --proxy-protocol (فقط TCP) ترافیک از Nginx stream با PROXY Protocol عبور می‌کند (۴۴۳ دست‌نخورده می‌ماند)
+
+ratholectl port edit <name|port> [--inbound N] [--proto tcp|udp|both] [--transport ...] [--proxy-protocol on|off] [--node-server S|none] [--note TXT]
+ratholectl port rm <name|port>
+ratholectl port ls [--json]
+ratholectl port show <name|port> [--json]
+ratholectl port map [--json]
+```
+
 ### چند دامنه
 
 ```bash

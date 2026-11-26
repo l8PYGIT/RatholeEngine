@@ -1433,3 +1433,132 @@ test('Reverse WS UI form, setup modal, cards, server page & public IP resolution
  assert.equal(postCall.body.public_ip, '203.0.113.99');
  assert.ok(c.lastModal.includes('tok-auto-1234'));
 });
+
+test('Guided Port Manager UI, i18n FA/EN parity, conflict checks, two-sided sync & XSS safety', async () => {
+ const i18nSrc = fs.readFileSync(path.join(__dirname, '../rathole-manager/ratholehub/ui/i18n.js'), 'utf8');
+ const i18nCtx = {};
+ vm.createContext(i18nCtx);
+ vm.runInContext(i18nSrc + '\nthis.DICT = DICT;', i18nCtx);
+ const pmKeys = Object.keys(i18nCtx.DICT.fa).filter(k => k === 'tab_ports' || k.startsWith('pm_'));
+ assert.ok(pmKeys.length >= 40, 'expected Guided Port Manager i18n keys');
+ for (const k of pmKeys) {
+  assert.ok(i18nCtx.DICT.fa[k], 'missing fa.' + k);
+  assert.ok(i18nCtx.DICT.en[k], 'missing en.' + k);
+ }
+
+ const c = context();
+ const store = {};
+ c.localStorage = { getItem: k => store[k] || null, setItem: (k, v) => { store[k] = String(v); } };
+ c.h = x => ('' + (x == null ? '' : x)).replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+ c.esc = s => c.h(s);
+ c.t = k => i18nCtx.DICT.fa[k] || k;
+ c.tbl = cols => '<table><tr>' + cols.map(col => '<th>' + col + '</th>').join('') + '</tr>';
+ c.icon = nm => '<svg data-icon="' + nm + '"></svg>';
+ c.fnd = nm => c.SERVERS.find(s => s.name === nm) || {};
+ c.confirm = () => true;
+ c.closeModal = () => { c.modalClosed = true; };
+ c.outModal = (_t, txt) => { c.lastOut = txt; };
+ c.modal = html => { c.lastModal = html; };
+ const bodyEl = { innerHTML: '' };
+ c.$ = id => (id === 'body_iran' ? bodyEl : null);
+ c.document = { activeElement: null };
+ c.IRAN_TAB = 'ports';
+ c.IRAN_PORT_SUB = 'rules';
+ c.PM_FILTER = { q: '', proto: 'all' };
+ c.PORT_EDITABLE = [{ key: 'fake-port', path: 'fake', ph: '8080' }];
+ c.PATH_EDITABLE = [{ key: 'sub-path', path: 'sub', ph: 'sub' }];
+ c.PORT_READONLY = [{ path: 'frp', k: 'p_frp' }];
+ c.OVS.iran = {
+  domain: 'rp01.l1t.ir',
+  host: '5.202.4.40',
+  status: {
+   domain: 'rp01.l1t.ir',
+   public_ip: '5.202.4.40',
+   ports: { control: 2333, fake: 8080, sub: 2096, internal: 8443, frp: 7000 },
+   features: { frp: { configured: true, active: true, port: 7000, transport: 'quic' }, backhaul: { configured: true, active: true, port: 3080 } },
+   cert: { exists: 'yes' },
+  },
+  nodes: [{ name: 'n1', port: 1005, inbound_port: 8444, transport: 'ws' }],
+  port_rules: [
+   { name: 'p2083', public_port: 2083, inbound_port: 2083, proto: 'tcp', transport: 'frp', proxy_protocol: false, local_port: null, node_server: 'node', note: '<script>alert(1)</script> خیلی طولانی '.repeat(2) },
+  ],
+  port_map: [
+   { port: 22, proto: 'tcp', category: 'system', owner: 'ssh', detail: 'SSH' },
+   { port: 443, proto: 'tcp', category: 'system', owner: 'nginx-443', detail: 'Nginx' },
+   { port: 2083, proto: 'tcp', category: 'port_rule', owner: 'p2083', detail: 'Direct' },
+  ],
+ };
+
+ c.api = async (method, url, body) => {
+  c.calls.push({ method, url, ...(body || {}) });
+  if (url.includes('/portconnect/')) {
+   const rnm = url.split('/portconnect/')[1];
+   if (rnm === 'bh_9001') {
+    return { status: 200, j: { ok: true, name: 'bh_9001', token: '4'.repeat(32), inbound_port: 443, remote_port: 9001, transport: 'backhaul' } };
+   }
+   return { status: 200, j: { ok: true, name: rnm, token: '3'.repeat(32), inbound_port: 8448, remote_port: 8448, transport: 'frp' } };
+  }
+  if (body && body.action === 'port_add') {
+   return { status: 200, j: { rc: 0, out: JSON.stringify({ ok: true, created: [{ name: body.args.name || ('p' + body.args.public_port), public_port: 9001, inbound_port: 443 }] }) } };
+  }
+  return { status: 200, j: { rc: 0, out: '{}' } };
+ };
+
+ for (const fn of [
+  'tbl', 'esc', 'featureOn', 'toggleAction', 'connSummary', 'carrierLabel',
+  'pmParsePortSpec', 'pmProtosOverlap', 'pmFallbackPortMap', 'pmCheckConflicts',
+  'pmCarrierLabel', 'pmProtoBadge', 'pmCarrierConfigured', 'setIranPortSub',
+  'syncPmSegPill', 'setPmFilter', 'renderIranPortsTab', 'renderIran',
+  'pmPipelineHtml', 'pmSubmitRule', 'pmDeleteRule', 'bhUsageLine', 'iranNodeMode', 'iranNodeCarrierSel', 'serviceMenu',
+ ]) {
+  if (source.includes('function ' + fn + '(')) vm.runInContext(definition(fn), c);
+ }
+
+ // 1) Parse & conflict rules (including TCP/UDP coexistence & 20-port cap)
+ assert.deepEqual(Array.from(c.pmParsePortSpec('2080-2082').ports), [2080, 2081, 2082]);
+ assert.equal(c.pmParsePortSpec('2080-2100').ok, false);
+ assert.equal(c.pmParsePortSpec('2083,2083').ok, false);
+ const pmap = c.pmFallbackPortMap(c.OVS.iran);
+ assert.equal(c.pmCheckConflicts([2083], 'tcp', pmap, null).length, 1);
+ assert.equal(c.pmCheckConflicts([2083], 'udp', pmap, null).length, 0); // UDP coexists with TCP on 2083
+ assert.equal(c.pmCheckConflicts([2083], 'tcp', pmap, 'p2083').length, 0);
+
+ // 2) Guided tab render + XSS escape + sub-view switching + empty worst-case
+ const htmlRules = c.renderIran('iran', c.OVS.iran);
+ assert.ok(htmlRules.includes('pm-hero') && htmlRules.includes('pm-seg'));
+ assert.ok(htmlRules.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+ assert.equal(htmlRules.includes('<script>alert(1)</script>'), false);
+
+ c.setIranPortSub('iran', 'map');
+ assert.ok(bodyEl.innerHTML.includes('pm-map-grid') && bodyEl.innerHTML.includes('2083/tcp'));
+
+ c.setIranPortSub('iran', 'sys');
+ assert.ok(bodyEl.innerHTML.includes('pm_sys_fake'));
+
+ c.OVS.iran.port_rules = [];
+ c.setIranPortSub('iran', 'rules');
+ assert.ok(bodyEl.innerHTML.includes('empty'));
+
+ // 3) Backhaul TCP rejects UDP; valid Backhaul TCP syncs add_bh_svc
+ assert.equal(await c.pmSubmitRule('iran', null, { public_port: '9001', inbound: '443', proto: 'udp', transport: 'backhaul', node_server: 'node', proxy_protocol: false }), false);
+ assert.equal(await c.pmSubmitRule('iran', null, { public_port: '9001', inbound: '443', proto: 'tcp', transport: 'backhaul', name: 'bh_9001', node_server: 'node', proxy_protocol: false }), true);
+ assert.ok(c.calls.some(x => x.action === 'port_add'));
+ assert.ok(c.calls.some(x => x.url === 'api/servers/node/action' && x.action === 'add_bh_svc' && x.args.name === 'bh_9001'));
+
+ // 4) FRP UDP syncs add_svc with remote_port + proto=udp; Paqet skips node sync
+ c.calls.length = 0;
+ assert.equal(await c.pmSubmitRule('iran', null, { public_port: '8448', inbound: '8448', proto: 'udp', transport: 'frp', name: 'frp_8448', node_server: 'node', proxy_protocol: false }), true);
+ const svcCall = c.calls.find(x => x.action === 'add_svc');
+ assert.ok(svcCall && svcCall.args.proto === 'udp' && svcCall.args.remote_port === '8448');
+
+ c.calls.length = 0;
+ assert.equal(await c.pmSubmitRule('iran', null, { public_port: '9090', inbound: '9090', proto: 'both', transport: 'paqet', name: 'pq_9090', node_server: 'node', proxy_protocol: false }), true);
+ assert.equal(c.calls.some(x => x.url === 'api/servers/node/action'), false);
+
+ // 5) pmDeleteRule cleans up both Iran and Node
+ c.OVS.iran.port_rules = [{ name: 'frp_8448', public_port: 8448, inbound_port: 8448, proto: 'udp', transport: 'frp', node_server: 'node' }];
+ c.calls.length = 0;
+ assert.equal(await c.pmDeleteRule('iran', 'frp_8448'), true);
+ assert.ok(c.calls.some(x => x.action === 'port_rm' && x.args.name === 'frp_8448'));
+ assert.ok(c.calls.some(x => x.action === 'rm_svc' && x.args.name === 'frp_8448'));
+});

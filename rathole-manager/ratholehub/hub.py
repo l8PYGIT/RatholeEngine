@@ -1251,6 +1251,30 @@ def mock_run(server, cmd_args):
                  "sni": None, "transport": "frp"},
                 {"name": "grenode", "port": 1011, "inbound_port": 8451, "api_local_port": None,
                  "sni": None, "transport": "gre"}
+            ],
+            "port_rules": [
+                {"name": "p2083", "public_port": 2083, "inbound_port": 2083, "proto": "tcp",
+                 "transport": "frp", "proxy_protocol": False, "local_port": None,
+                 "node_server": "trk01", "note": "VLESS REALITY Vision"},
+                {"name": "p8448", "public_port": 8448, "inbound_port": 8448, "proto": "udp",
+                 "transport": "kcp", "proxy_protocol": False, "local_port": None,
+                 "node_server": "trk02", "note": "Hysteria2"},
+                {"name": "p2053", "public_port": 2053, "inbound_port": 2053, "proto": "tcp",
+                 "transport": "backhaul", "proxy_protocol": True, "local_port": 21000,
+                 "node_server": "trk01", "note": "VLESS+TCP+HTTP (IP vaghei)"}
+            ],
+            "port_map": [
+                {"port": 22, "proto": "tcp", "category": "system", "owner": "ssh", "bind": "0.0.0.0:22", "detail": "SSH"},
+                {"port": 80, "proto": "tcp", "category": "system", "owner": "nginx-http", "bind": "0.0.0.0:80", "detail": "Nginx HTTP / ACME"},
+                {"port": 443, "proto": "tcp", "category": "system", "owner": "nginx-443", "bind": "0.0.0.0:443", "detail": "Nginx Stream SNI"},
+                {"port": 2053, "proto": "tcp", "category": "port_rule", "owner": "p2053", "bind": "0.0.0.0:2053 (nginx PP)", "transport": "backhaul", "proxy_protocol": True, "local_port": 21000, "inbound_port": 2053, "node_server": "trk01", "note": "VLESS+TCP+HTTP (IP vaghei)"},
+                {"port": 2083, "proto": "tcp", "category": "port_rule", "owner": "p2083", "bind": "0.0.0.0:2083", "transport": "frp", "proxy_protocol": False, "local_port": None, "inbound_port": 2083, "node_server": "trk01", "note": "VLESS REALITY Vision"},
+                {"port": 2333, "proto": "tcp", "category": "system", "owner": "control_port", "bind": "127.0.0.1", "detail": "Rathole Control"},
+                {"port": 3080, "proto": "tcp", "category": "carrier", "owner": "backhaul", "bind": "127.0.0.1", "detail": "Backhaul wsmux"},
+                {"port": 7000, "proto": "tcp", "category": "carrier", "owner": "frp", "bind": "0.0.0.0", "detail": "FRP tcp"},
+                {"port": 8080, "proto": "tcp", "category": "system", "owner": "fake_port", "bind": "127.0.0.1", "detail": "Fake Web / Panel"},
+                {"port": 8448, "proto": "udp", "category": "port_rule", "owner": "p8448", "bind": "0.0.0.0:8448", "transport": "kcp", "proxy_protocol": False, "local_port": None, "inbound_port": 8448, "node_server": "trk02", "note": "Hysteria2"},
+                {"port": 21000, "proto": "tcp", "category": "port_rule", "owner": "p2053 (PP local)", "bind": "127.0.0.1:21000", "detail": "Upstream for :2053"}
             ]
         }), "err": ""}
     if j == "ratholectl backhaul show":
@@ -1443,6 +1467,83 @@ def mock_run(server, cmd_args):
             ip = server.get("host") or "198.51.100.5"
             return {"rc": 0, "out": f"vless://11111111-2222-4333-8444-555555555555@{ip}:443?type=tcp&security=reality&encryption=none&flow=xtls-rprx-vision&sni=www.microsoft.com&fp=chrome&pbk=mOCKPubKey&sid=a1b2c3d4#rathole-reality", "err": ""}
         return {"rc": 0, "out": f"[mock] ratholenode xray {sub} ok", "err": ""}
+    if cmd_args[:2] == ["ratholectl", "port"]:
+        sub = cmd_args[2] if len(cmd_args) > 2 else "ls"
+        mock_rules = [
+            {"name": "p2083", "public_port": 2083, "inbound_port": 2083, "proto": "tcp",
+             "transport": "frp", "proxy_protocol": False, "local_port": None,
+             "node_server": "trk01", "note": "VLESS REALITY Vision"},
+            {"name": "p8448", "public_port": 8448, "inbound_port": 8448, "proto": "udp",
+             "transport": "kcp", "proxy_protocol": False, "local_port": None,
+             "node_server": "trk02", "note": "Hysteria2"},
+            {"name": "p2053", "public_port": 2053, "inbound_port": 2053, "proto": "tcp",
+             "transport": "backhaul", "proxy_protocol": True, "local_port": 21000,
+             "node_server": "trk01", "note": "VLESS+TCP+HTTP (IP vaghei)"},
+        ]
+        if sub == "ls":
+            return {"rc": 0, "out": json.dumps(mock_rules), "err": ""}
+        if sub == "map":
+            return {"rc": 0, "out": json.dumps([
+                {"port": 22, "proto": "tcp", "category": "system", "owner": "ssh", "bind": "0.0.0.0:22", "detail": "SSH"},
+                {"port": 80, "proto": "tcp", "category": "system", "owner": "nginx-http", "bind": "0.0.0.0:80", "detail": "Nginx HTTP"},
+                {"port": 443, "proto": "tcp", "category": "system", "owner": "nginx-443", "bind": "0.0.0.0:443", "detail": "Nginx HTTPS / SNI"},
+                {"port": 2083, "proto": "tcp", "category": "port_rule", "owner": "p2083", "bind": "0.0.0.0:2083", "transport": "frp", "proxy_protocol": False, "inbound_port": 2083, "node_server": "trk01", "note": "VLESS REALITY Vision"},
+            ]), "err": ""}
+        if sub == "show":
+            nm = cmd_args[3] if len(cmd_args) > 3 else "p2083"
+            found = next((r for r in mock_rules if r["name"] == nm or str(r["public_port"]) == str(nm)), None) or {
+                "name": nm, "public_port": int(nm) if str(nm).isdigit() else 2083,
+                "inbound_port": 2083, "proto": "tcp", "transport": "ws",
+                "proxy_protocol": False, "local_port": None, "node_server": "trk01", "note": "",
+            }
+            tok = "4e9c1f7a2b8d6053ae71cc94f20d3b6857aa19ef" if found["transport"] == "backhaul" else "a0370655deadbeefcafe1234deadbeef"
+            rport = found["local_port"] if (found["proxy_protocol"] and found["local_port"]) else found["public_port"]
+            cmd_txt = (f"ratholenode backhaul add-svc {found['name']} {tok} {found['inbound_port']}"
+                       if found["transport"] == "backhaul"
+                       else f"ratholenode add-svc {found['name']} {tok} {found['inbound_port']}")
+            if "--json" in cmd_args:
+                return {"rc": 0, "out": json.dumps({
+                    "ok": True, **found, "remote_port": rport, "token": tok,
+                    "carrier_configured": True, "command": cmd_txt,
+                }), "err": ""}
+            return {"rc": 0, "out": f"──────── ghanun-e port '{found['name']}' ────────\n  {cmd_txt}\n", "err": ""}
+        if sub == "add":
+            spec = cmd_args[3] if len(cmd_args) > 3 else "2095"
+            inb_s = cmd_args[4] if len(cmd_args) > 4 else "same"
+            ports = []
+            if "-" in spec:
+                a_s, b_s = spec.split("-", 1)
+                ports = list(range(int(a_s), int(b_s) + 1))
+            elif "," in spec:
+                ports = [int(x) for x in spec.split(",") if x.isdigit()]
+            else:
+                ports = [int(spec)]
+            def _opt(flag, default=""):
+                return cmd_args[cmd_args.index(flag) + 1] if flag in cmd_args and cmd_args.index(flag) + 1 < len(cmd_args) else default
+            proto = _opt("--proto", "tcp")
+            tr = _opt("--transport", "ws")
+            bname = _opt("--name", "")
+            ns = _opt("--node-server", "")
+            note = _opt("--note", "")
+            pp = "--proxy-protocol" in cmd_args
+            created = []
+            for idx, pt in enumerate(ports):
+                rname = (bname if len(ports) == 1 else f"{bname}_{pt}") if bname else f"p{pt}"
+                created.append({
+                    "name": rname, "public_port": pt,
+                    "inbound_port": pt if inb_s == "same" else int(inb_s),
+                    "proto": proto, "transport": tr, "proxy_protocol": pp,
+                    "local_port": (21001 + idx) if pp else None,
+                    "node_server": ns, "note": note,
+                })
+            return {"rc": 0, "out": json.dumps({"ok": True, "created": created}), "err": ""}
+        if sub == "edit":
+            nm = cmd_args[3] if len(cmd_args) > 3 else "p2083"
+            return {"rc": 0, "out": json.dumps({"ok": True, "rule": {"name": nm}}), "err": ""}
+        if sub == "rm":
+            nm = cmd_args[3] if len(cmd_args) > 3 else "p2083"
+            return {"rc": 0, "out": json.dumps({"ok": True, "removed": nm, "public_port": 2083}), "err": ""}
+        return {"rc": 0, "out": f"[mock] ratholectl port {sub} ok", "err": ""}
     if len(cmd_args) >= 3 and cmd_args[0] in ("ratholectl", "ratholenode") and cmd_args[1] == "bench":
         sub = cmd_args[2]
         if sub == "listen":
@@ -1904,6 +2005,8 @@ def collect_server_overview(s):
                 })
             ov["nodes"] = norm_nodes
             ov["game"] = [{"name": x["name"], "sni": x["sni"], "port": x["port"]} for x in norm_nodes if x.get("sni")]
+            ov["port_rules"] = st.get("port_rules") if isinstance(st.get("port_rules"), list) else []
+            ov["port_map"] = st.get("port_map") if isinstance(st.get("port_map"), list) else []
             feats = st.get("features") or {}
             f_pl = feats.get("plain") or {}
             f_dr = feats.get("direct") or {}
@@ -2209,6 +2312,11 @@ class Handler(BaseHTTPRequestHandler):
             if not scope_allows(info["scope"], "operate"):
                 return self._send(403, {"error": "insufficient scope", "required": "operate"})
             return self._nodeconnect(m.group(1), m.group(2))
+        m = re.match(r"^/api/servers/([A-Za-z0-9_-]+)/portconnect/([A-Za-z0-9_-]+)$", p)
+        if m:
+            if not scope_allows(info["scope"], "operate"):
+                return self._send(403, {"error": "insufficient scope", "required": "operate"})
+            return self._portconnect(m.group(1), m.group(2))
         return self._send(404, {"error": "not found"})
 
 
@@ -3239,6 +3347,26 @@ class Handler(BaseHTTPRequestHandler):
                                 "transport": peer.get("transport") or "ws",
                                 "api_token": info.get("api_token", ""),
                                 "api_inbound": info.get("api_inbound", "")})
+
+    def _portconnect(self, name, rule):
+        s = self._find(name)
+        if not s:
+            return self._send(404, {"error": "server not found"})
+        if s.get("role") != "iran":
+            return self._send(400, {"error": "portconnect fght baraye server iran ast"})
+        if not RE_NAME.match(rule):
+            return self._send(400, {"error": "name-e ghanun namotabar"})
+        res = run_on_server(s, ["ratholectl", "port", "show", rule, "--json"])
+        if res.get("rc") != 0:
+            err = (res.get("err") or res.get("out") or "port show failed").strip()
+            return self._send(200, {"ok": False, "error": err})
+        try:
+            data = json.loads((res.get("out") or "").strip())
+        except Exception as e:
+            return self._send(200, {"ok": False, "error": f"port show json invalid: {e}"})
+        if not isinstance(data, dict) or not data.get("ok"):
+            return self._send(200, {"ok": False, "error": "port rule not found"})
+        return self._send(200, data)
 
     def _mainconnect(self, name):
         # az server Iran, MAGHSAD-e daghigh-e tunnel-e asli (SERVER) ra migirad ta hangam-e

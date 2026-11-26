@@ -166,6 +166,24 @@ ratholenode fakeweb start 8081               # وب فیک سبک برای fallb
 
 > این حالت SNI↔IP منسجم دارد (game.l1t.ir → IP ایران)، گواهی واقعی، روی ۴۴۳، و سبک (L4). در برابر passive DPI منسجم‌تر از Reality با SNI قرضی است.
 
+### مدیریت پورت‌های L4 (`port` — بدون Path و بدون SNI)
+
+برای کانفیگ‌هایی که از **Path** پشتیبانی نمی‌کنند (`VLESS+TCP+REALITY`، `MTProto`، یا سرویس‌های UDP مثل `Hysteria2` و `TUIC`) می‌توانید مستقیماً پورت عمومی TCP/UDP روی ایران به اینباند نود فوروارد کنید:
+
+```bash
+# پیش‌فرض: اتصال مستقیم روی خود هسته (بدون Nginx در مسیر دیتا)
+ratholectl port add 2083 443 --transport frp --note "VLESS REALITY"
+ratholectl port add 8448 8448 --proto udp --transport kcp --note "Hysteria2"
+ratholectl port add 2053,2086,2095 same --proto both --transport ws
+
+# حالت اختیاری PROXY Protocol (ارسال IP واقعی کاربر فقط روی همین پورت؛ پورت ۴۴۳ تغییر نمی‌کند):
+ratholectl port add 8444 443 --transport backhaul --proxy-protocol
+
+ratholectl port ls | show <name|port> | edit <name> ... | rm <name|port> | map
+```
+
+> روی نود خارج (به جز `paqet` که مستقیماً از ایران فوروارد می‌شود) دستور همگام‌سازی از خروجی `ratholectl port show <name>` قابل اجراست یا از **تب «مدیریت پورت‌ها» در هاب** به‌صورت خودکار و دوطرفه انجام می‌شود: `ratholenode add-svc <name> <token> <inbound> [remote_port] [tcp|udp|both]`.
+
 ### روی هر نود خارج — `ratholenode`
 
 ```bash

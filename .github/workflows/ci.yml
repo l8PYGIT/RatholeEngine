@@ -97,6 +97,9 @@ jobs:
       - name: M7 paqet Direct PCK, Managed Xray & cover scanner tests
         run: bash tests/test_m7_paqet_and_xray.sh
 
+      - name: Port Manager CLI & TCP/UDP service tests
+        run: bash tests/test_port_manager.sh
+
       - name: adaptive probe + controller tests
         run: |
           bash tests/test_adaptive.sh

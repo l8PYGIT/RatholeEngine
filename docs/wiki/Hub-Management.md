@@ -119,7 +119,7 @@ sudo install-agent.sh --role node --reverse "wss://<DOMAIN>/hub/ws/agent" --name
 | صفحه | آدرس | محتوا |
 |------|------|-------|
 | **داشبورد** | `#/dashboard` | **۴ کارت KPI**، نوار وضعیت هاب، فیلتر سریع (نقش/وضعیت/متن)، کارت/فهرست سرورها، وضعیت آنلاین/در انتظار `reverse_ws`، افزودن/Provision/`reverse_ws` و آپدیت همه با progress |
-| **صفحه سرور** | `#/server/<name>` | overview، دامنه/گواهی، پورت/path، carrierها، `paqet`، `Managed Xray`، ابزار اتصال/تبدیل `reverse_ws`، ingress، جستجوی زنده و سرویس‌های rathole و Backhaul، game، upstreamها و ابزارهای تشخیص |
+| **صفحه سرور** | `#/server/<name>` | overview، دامنه/گواهی، پورت/path، **تب «🔌 مدیریت پورت‌ها» (Guided — فوروارد L4 TCP/UDP، نقشه اشغال و پورت‌های سیستم)**، carrierها، `paqet`، `Managed Xray`، ابزار اتصال/تبدیل `reverse_ws`، ingress، جستجوی زنده و سرویس‌های rathole و Backhaul، game، upstreamها و ابزارهای تشخیص |
 | **تستر و تیونر شبکه** | `#/tuner` | اجرای غیرهم‌زمان بنچمارک ۶ مرحله‌ای `rathole-tuner` (ماندگار هنگام رفرش)، کارت وضعیت زنده کرنل (`GET /api/tuner/status`)، امتیاز ۵بعدی، کپی/ایمپورت `rthprof1:` و JSON، کتابخانه پروفایل دیتاسنترها، تست A/B و اعمال دوفازه‌ای (`--confirm-ttl 45` + `bench confirm`) یا Rollback |
 | **مسیریابی / کنسول** | `#/routing` | **فقط‌خواندنی**: نمای گراف/جدول topology و کنسول؛ تغییر مسیر از ردیف سرویس یا کارت حامل انجام می‌شود |
 | **فعالیت** | `#/audit` | تاریخچه‌ی عملیات با جستجوی زنده (زمان، کاربر، سرور، action، rc) — ۱۰۰ رکورد آخر |
